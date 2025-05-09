@@ -1,0 +1,5 @@
+*.zip
+model
+results_replication
+data_replication
+__pycache__
