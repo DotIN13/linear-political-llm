@@ -3,3 +3,4 @@ model
 results_replication
 data_replication
 __pycache__
+*.pdf
