@@ -1,5 +1,3 @@
-# Linear Representations of Political Perspective Emerge in Large Language Models
-
 ## Dependency
 
 The required Python packages are:
@@ -19,7 +17,6 @@ The required Python packages are:
 ## Files
 
 - `./replication_results.ipynb`: Code to replicate the results in the draft.
-- `./generate_figures.ipynb`: Code to replicate the figures in the draft.
+- `./create_statements.ipynb`: Code to create the statements used in the experiments.
 - `./custom_llama/llama`: Code to access attention head outputs.
-- `./data_replication/`: Data can be downloaded from https://osf.io/d9y47/
-- `./results_replication/`: Results to replicate the figures can be downloaded from https://osf.io/d9y47/
+- `./data_replication/`: Data for experiments.
