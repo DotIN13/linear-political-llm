@@ -19,4 +19,4 @@ The required Python packages are:
 - `./replication_results.ipynb`: Code to replicate the results in the draft.
 - `./create_statements.ipynb`: Code to create the statements used in the experiments.
 - `./custom_llama/llama`: Code to access attention head outputs.
-- `./data_replication/`: Data for experiments.
+- `./data/`: Data for experiments.

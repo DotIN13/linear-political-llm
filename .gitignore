@@ -1,6 +1,6 @@
 *.zip
 model
-results_replication
-data_replication
+results
+data
 __pycache__
 *.pdf
