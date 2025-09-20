@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../transformers"
+		},
+		{
+			"path": "../DeepSeek-V3"
+		}
+	],
+	"settings": {}
+}
