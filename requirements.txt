@@ -154,7 +154,7 @@ torchvision==0.22.1
 tornado==6.5.1
 tqdm==4.67.1
 traitlets==5.14.3
--e git+https://github.com/huggingface/transformers@15e6081ad19b769cdc86f86096f87ba24afcf756#egg=transformers
+transformers @ git+https://github.com/DotIN13/transformers@e264baf12972ee03f11bd7a24eabf1eb9e7969a6
 triton==3.3.1
 typer-slim==0.20.0
 types-python-dateutil==2.9.0.20250516
