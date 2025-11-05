@@ -4,7 +4,6 @@
 Tianyi Zhang – The University of Chicago
 [Paper Link](https://aclanthology.org/2025.findings-emnlp.1267.pdf)
 
----
 
 ## Overview
 
@@ -17,8 +16,6 @@ This repository provides replication materials for:
 The study investigates how large language models encode political ideology and whether latent ideological directions identified through linear probes generalize across reasoning tasks such as bias detection, simulated voting, and neutrality rewriting.
 
 All replication code and analysis are contained in **`llama3.ipynb`**. Running this single notebook reproduces all results, figures, and tables from the paper.
-
----
 
 ## Repository Structure
 
@@ -39,8 +36,6 @@ LINEAR-POLITICAL-LLM/
 └── README.md
 ```
 
----
-
 ## Installation
 
 ```bash
@@ -53,8 +48,6 @@ conda activate linear-politics
 pip install -r requirements.txt
 ```
 
----
-
 ## Running the Notebook
 
 1. Open **`llama3.ipynb`** in Jupyter or VS Code.
@@ -66,8 +59,6 @@ pip install -r requirements.txt
    * Evaluate tasks (bias detection, voting, rewriting),
    * Save outputs under `results/` and figures under `figs/`.
 
----
-
 ## Data
 
 * **Synthetic Policy Statements:** Generated using templates aligned with the paper.
@@ -76,8 +67,6 @@ pip install -r requirements.txt
 
 The dataset used in the study is publicly available at:
 [Hugging Face – DotIN13/political-statements](https://huggingface.co/datasets/DotIN13/political-statements)
-
----
 
 ## Citation
 
@@ -101,8 +90,6 @@ If you use or build upon this work, please cite:
     ISBN = "979-8-89176-335-7",
 }
 ```
-
----
 
 ## Contact
 
