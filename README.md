@@ -71,11 +71,10 @@ The custom version is automatically installed via `requirements.txt`, and no man
 
 ## Data
 
-* **Synthetic Policy Statements:** Generated using templates aligned with the paper.
+* **Synthetic Policy Statements:** Generated using templates as described in the appendix.
 * **Voting Simulation Prompts:** Constructed to test intervention effects under ideological personas.
-* **Rewriting Inputs:** Derived from the same policy statement set.
 
-The dataset used in the study is publicly available at:
+The Synthetic Policy Statements dataset is also available at:
 [Hugging Face – DotIN13/political-statements](https://huggingface.co/datasets/DotIN13/political-statements)
 
 ## Citation
@@ -103,5 +102,5 @@ If you use or build upon this work, please cite:
 
 ## Contact
 
-Tianyi Zhang
-Email: [tzhang3@uchicago.edu](mailto:tzhang3@uchicago.edu)
+Tianyi Zhang  
+[tzhang3@uchicago.edu](mailto:tzhang3@uchicago.edu)
