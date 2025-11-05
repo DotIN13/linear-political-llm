@@ -1,6 +1,5 @@
 *.zip
 model
 results
-data
 __pycache__
 *.pdf
