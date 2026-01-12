@@ -72,7 +72,6 @@ def load_tokenizer_and_model(
         model_path,
         torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
         low_cpu_mem_usage=True,
-        use_auth_token=hf_token
     ).to(device).eval()
     return tokenizer, model
 
@@ -169,24 +168,21 @@ def clean_up(device: Optional[Union[str, torch.device]] = None) -> None:
 # Feature Extraction & Probing
 # =========================
 
-def extract_and_save_features(
+def extract_features(
     model,
-    model_path: str,
     prompts: List,
-    labels: List,
-    output_dir: str = "results",
-    prefix: str = "politician",
     device: Optional[Union[str, torch.device]] = None,
     mode: str = "text"
-):
+) -> np.ndarray:
     """
-    Given a DataFrame with columns ['prompt', 'label'], extract attention head outputs
-    (last-token slice) and save to pickle:
-      (features: np.ndarray [N, 1, L, H, D], labels: np.ndarray [N])
+    Extracts attention head outputs (last-token slice) from the model.
+    
+    Returns:
+        features: np.ndarray [N, 1, L, H, D]
     """
     device = _resolve_device(device)
 
-    # Tokenize
+    # Tokenize / Move to device
     encoded_list = [p['input_ids'].to(device) for p in prompts]
 
     num_layers, _ = _get_layer_head_counts(model, mode)
@@ -194,35 +190,114 @@ def extract_and_save_features(
 
     head_wise_hidden_states_list: List[np.ndarray] = []
 
-    for enc in tqdm(encoded_list, total=len(encoded_list)):
+    # Iterate and Trace
+    for enc in tqdm(encoded_list, total=len(encoded_list), desc="Extracting features"):
         with torch.no_grad():
             with TraceDict(model, heads) as ret:
                 _ = model(enc.to(device))
-                # ret[head].output -> shape [B, S, H, D] or similar (we squeeze)
+                
+                # Collect outputs from all heads
                 per_head = []
                 for head in heads:
+                    # ret[head].output -> shape [B, S, H, D] (we squeeze B)
                     out = ret[head].output.squeeze().detach().to(dtype=torch.float32).cpu()
                     per_head.append(out)
-                # Stack across layers -> [L, S, H, D], keep all tokens (slice later)
+                
+                # Stack across layers -> [L, S, H, D]
                 per_head = torch.stack(per_head, dim=0).numpy()
                 head_wise_hidden_states_list.append(per_head)
 
-    # Select last token across sequences for each (L, H, D)
-    # Convert to target shape: [N, 1, L, H, D]
+    # Post-processing: Select last token across sequences
     features = []
     for arr in head_wise_hidden_states_list:  # arr: [L, S, H, D]
         last_tok = arr[:, -1, :, :]           # [L, H, D]
-        features.append([last_tok])           # add T=1 dimension
-    features = np.stack(features, axis=0)     # [N, 1, L, H, D]
+        features.append([last_tok])           # add T=1 dimension -> [1, L, H, D]
+    
+    # Stack samples -> [N, 1, L, H, D]
+    features = np.stack(features, axis=0)
+    
+    return features
 
-    # Save
+
+def save_features(
+    features: np.ndarray,
+    model_path: str,
+    labels: Optional[List] = None,
+    output_dir: str = "results",
+    prefix: str = "politician",
+    save_as_numpy: bool = False
+) -> str:
+    """
+    Saves features to disk.
+    
+    Args:
+        features: The feature array [N, 1, L, H, D]
+        model_path: Path/name of the model (for directory naming)
+        labels: Optional list of labels corresponding to features.
+        output_dir: Root directory for results.
+        prefix: Filename prefix.
+        save_as_numpy: If True, saves features as .npy (and labels as separate .pkl).
+                       If False, pickles a tuple (features, labels).
+    """
     base_name = model_base_name(model_path)
     base_dir = os.path.join(output_dir, base_name)
     os.makedirs(base_dir, exist_ok=True)
-    out_path = os.path.join(base_dir, f"{prefix}_features.pkl")
-    with open(out_path, 'wb') as f:
-        pickle.dump((features, labels), f)
-    print(f"Saved features to {out_path}")
+    
+    if save_as_numpy:
+        # Save features as .npy
+        out_path = os.path.join(base_dir, f"{prefix}_features.npy")
+        np.save(out_path, features)
+        print(f"Saved features to {out_path}")
+        
+        # Save labels separately if they exist
+        if labels is not None:
+            lbl_path = os.path.join(base_dir, f"{prefix}_labels.pkl")
+            with open(lbl_path, 'wb') as f:
+                pickle.dump(labels, f)
+            print(f"Saved labels to {lbl_path}")
+            
+    else:
+        # Save as combined pickle tuple
+        out_path = os.path.join(base_dir, f"{prefix}_features.pkl")
+        with open(out_path, 'wb') as f:
+            pickle.dump((features, labels), f)
+        print(f"Saved features and labels to {out_path}")
+    
+    return out_path
+
+
+def extract_and_save_features(
+    model,
+    model_path: str,
+    prompts: List,
+    labels: Optional[List] = None,
+    output_dir: str = "results",
+    prefix: str = "politician",
+    device: Optional[Union[str, torch.device]] = None,
+    mode: str = "text",
+    save_as_numpy: bool = False
+):
+    """
+    Orchestrator function: Given a list of prompts, extract attention head outputs 
+    (last-token slice) and save to disk.
+    """
+    # 1. Extract
+    features = extract_features(
+        model=model, 
+        prompts=prompts, 
+        device=device, 
+        mode=mode
+    )
+    
+    # 2. Save
+    save_features(
+        features=features, 
+        labels=labels, 
+        model_path=model_path, 
+        output_dir=output_dir, 
+        prefix=prefix,
+        save_as_numpy=save_as_numpy
+    )
 
     return features
 
@@ -311,10 +386,13 @@ def probe_heads(
     # Load tokenizer and model (if needed)
     delete_model = False
     if model is None:
-        _, model = load_tokenizer_and_model(model_path, device=device)
+        tokenizer, model = load_tokenizer_and_model(model_path, device=device)
         delete_model = True
     else:
         model.to(device)
+
+    if mode == "text" and isinstance(prompts[0], str):
+        prompts = [tokenizer(p, return_tensors='pt').to(device) for p in prompts]
 
     # Extract features and save to disk
     extract_and_save_features(
