@@ -3,3 +3,5 @@ model
 results
 __pycache__
 *.pdf
+data/unsplash
+data/unsplash-25k-photos-embeddings.pkl

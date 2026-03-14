@@ -133,7 +133,7 @@ def get_layer_module_prefix(mode: str) -> str:
     if mode == "text":
         return "model.layers"
     if mode == "vision":
-        return "model.language_model.layers"
+        return "model.layers"
     raise ValueError(f"Unknown mode '{mode}', expected 'text' or 'vision'.")
 
 def get_head_out_key(layer_idx: int, mode: str) -> str:
@@ -183,7 +183,10 @@ def extract_features(
     device = _resolve_device(device)
 
     # Tokenize / Move to device
-    encoded_list = [p['input_ids'].to(device) for p in prompts]
+    encoded_list = [
+        {k: v.to(device) for k, v in p.items() if isinstance(v, torch.Tensor)}
+        for p in prompts
+    ]
 
     num_layers, _ = _get_layer_head_counts(model, mode)
     heads = get_all_head_out_keys(model, mode)
@@ -194,7 +197,7 @@ def extract_features(
     for enc in tqdm(encoded_list, total=len(encoded_list), desc="Extracting features"):
         with torch.no_grad():
             with TraceDict(model, heads) as ret:
-                _ = model(enc.to(device))
+                _ = model(**enc)
                 
                 # Collect outputs from all heads
                 per_head = []
@@ -561,13 +564,17 @@ def predict_per_token_scores(
     results: List[Dict],
     ridge_models: Dict[int, Dict[int, Ridge]],
     performance: np.ndarray,
-    k: int
+    k: Optional[int] = None,
+    top_idx: Optional[np.ndarray] = None
 ):
     """
     For each result with 'features' [T, L, H, D], predict a per-token scalar using
     the average of the top-k heads' ridge predictions.
     """
-    top_indices = get_top_indices(performance, k=k)
+    if top_idx is not None:
+        top_indices = top_idx
+    else:
+        top_indices = get_top_indices(performance, k=k)
 
     for res in results:
         feats = res['features']  # [T, L, H, D]
