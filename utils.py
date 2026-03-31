@@ -133,7 +133,9 @@ def get_layer_module_prefix(mode: str) -> str:
     if mode == "text":
         return "model.layers"
     if mode == "vision":
-        return "model.layers"
+        return "model.language_model.layers"
+    if mode == "qwen3-vl":
+        return "model.language_model.layers"
     raise ValueError(f"Unknown mode '{mode}', expected 'text' or 'vision'.")
 
 def get_head_out_key(layer_idx: int, mode: str) -> str:
@@ -191,30 +193,26 @@ def extract_features(
     num_layers, _ = _get_layer_head_counts(model, mode)
     heads = get_all_head_out_keys(model, mode)
 
-    head_wise_hidden_states_list: List[np.ndarray] = []
+    # Keep only last-token activations per sample to avoid storing huge [L, S, H, D] arrays.
+    features: List[np.ndarray] = []
 
     # Iterate and Trace
     for enc in tqdm(encoded_list, total=len(encoded_list), desc="Extracting features"):
         with torch.no_grad():
             with TraceDict(model, heads) as ret:
                 _ = model(**enc)
-                
-                # Collect outputs from all heads
+
+                # Collect last-token outputs from all layers.
                 per_head = []
                 for head in heads:
-                    # ret[head].output -> shape [B, S, H, D] (we squeeze B)
-                    out = ret[head].output.squeeze().detach().to(dtype=torch.float32).cpu()
+                    # ret[head].output shape: [B, S, H, D]
+                    # We only need the final token for probing.
+                    out = ret[head].output[:, -1, :, :].squeeze(0).detach().to(dtype=torch.float32).cpu()
                     per_head.append(out)
-                
-                # Stack across layers -> [L, S, H, D]
-                per_head = torch.stack(per_head, dim=0).numpy()
-                head_wise_hidden_states_list.append(per_head)
 
-    # Post-processing: Select last token across sequences
-    features = []
-    for arr in head_wise_hidden_states_list:  # arr: [L, S, H, D]
-        last_tok = arr[:, -1, :, :]           # [L, H, D]
-        features.append([last_tok])           # add T=1 dimension -> [1, L, H, D]
+                # Stack across layers -> [L, H, D], then add T=1 -> [1, L, H, D]
+                per_head_last = torch.stack(per_head, dim=0).numpy()
+                features.append(np.expand_dims(per_head_last, axis=0))
     
     # Stack samples -> [N, 1, L, H, D]
     features = np.stack(features, axis=0)
@@ -836,7 +834,8 @@ def generate_with_head_intervention_gpu(
     max_new_tokens: int = 200,
     combined_coefs: torch.Tensor = None,  # [L, H, D]
     return_features: bool = False,
-    device: Optional[torch.device] = None
+    device: Optional[torch.device] = None,
+    mode: str = "text"
 ) -> Union[List[str], List[Dict]]:
     """
     Fully‐GPU head‐intervention + feature capture on one/many prompts, via a single hook.
@@ -854,9 +853,9 @@ def generate_with_head_intervention_gpu(
     if combined_coefs is None:
         raise ValueError("combined_coefs [L, H, D] must be provided.")
 
-    # Infer dims from combined_coefs and model for robustness
+    # Infer dims from combined_coefs and model for robustness.
     L, H, D = combined_coefs.shape
-    heads = [get_head_out_key(i, "text") for i in range(L)]  # intervention currently on text path
+    heads = [get_head_out_key(i, mode) for i in range(L)]
 
     # Buffer for captured head outputs
     captured: Dict[int, List[torch.Tensor]] = {li: [] for li in range(L)}
@@ -864,7 +863,10 @@ def generate_with_head_intervention_gpu(
     def hook_fn(output, module_name):
         # output: [B, S, H, D]
         h = output
-        li = int(module_name.split('.')[2])  # 'model.layers.{i}.self_attn.head_out'
+        parts = module_name.split('.')
+        if "layers" not in parts:
+            raise ValueError(f"Could not parse layer index from module name: {module_name}")
+        li = int(parts[parts.index("layers") + 1])
         # apply intervention on last token logits of heads
         h[:, -1] = h[:, -1] + alpha * combined_coefs[li]
         # capture (whole sequence)

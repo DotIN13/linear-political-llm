@@ -5,3 +5,5 @@ __pycache__
 *.pdf
 data/unsplash
 data/unsplash-25k-photos-embeddings.pkl
+data/congress_images
+datasets

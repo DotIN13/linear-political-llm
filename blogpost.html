@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>What Images "Think" About Politics</title>
+  <style>
+    /* ─── Reset & base ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --text:       #1a1a1a;
+      --muted:      #6b6b6b;
+      --light-bg:   #f7f7f7;
+      --border:     #e5e5e5;
+      --accent:     #1a73e8;
+      --red:        #c0392b;
+      --blue:       #2471a3;
+      --max-w:      740px;
+      --wide-w:     1020px;
+    }
+
+    body {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      background: #fff;
+      color: var(--text);
+      line-height: 1.8;
+      font-size: 20px;
+    }
+
+    /* ─── Layout helpers ─── */
+    .container   { max-width: var(--max-w);  margin: 0 auto; padding: 0 24px; }
+    .wide        { max-width: var(--wide-w); margin: 0 auto; padding: 0 24px; }
+
+    /* ─── Header ─── */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 18px 0;
+    }
+    header .inner {
+      max-width: var(--wide-w);
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header .pub-name {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--text);
+      text-decoration: none;
+    }
+    header .meta {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* ─── Hero ─── */
+    .hero { padding: 72px 0 48px; }
+    .kicker {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--accent);
+      margin-bottom: 18px;
+    }
+    h1 {
+      font-size: clamp(32px, 5vw, 52px);
+      line-height: 1.15;
+      font-weight: 700;
+      margin-bottom: 24px;
+      letter-spacing: -.02em;
+    }
+    .subtitle {
+      font-size: 22px;
+      color: var(--muted);
+      line-height: 1.5;
+      margin-bottom: 36px;
+    }
+    .byline {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 14px;
+      color: var(--muted);
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    .byline strong { color: var(--text); }
+    .byline-dot { color: var(--border); }
+
+    /* ─── Body copy ─── */
+    .body-copy { padding: 48px 0; }
+    .body-copy > * + * { margin-top: 1.6em; }
+
+    h2 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -.01em;
+      line-height: 1.25;
+      margin-top: 2.8em;
+      margin-bottom: .6em;
+    }
+    h3 {
+      font-size: 21px;
+      font-weight: 700;
+      margin-top: 2.2em;
+      margin-bottom: .4em;
+    }
+
+    p { margin: 0 0 1em; }
+    a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+    /* ─── Pull quote ─── */
+    blockquote {
+      border-left: 4px solid var(--text);
+      margin: 2em 0;
+      padding: 4px 0 4px 28px;
+      font-size: 24px;
+      line-height: 1.4;
+      font-style: italic;
+      color: #333;
+    }
+
+    /* ─── Callout box ─── */
+    .callout {
+      background: var(--light-bg);
+      border-radius: 6px;
+      padding: 24px 28px;
+      font-size: 17px;
+      line-height: 1.7;
+      margin: 2em 0;
+    }
+    .callout strong { display: block; font-size: 14px; font-family: 'Helvetica Neue', Arial, sans-serif; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; color: var(--muted); }
+
+    /* ─── Figures ─── */
+    figure {
+      margin: 2.4em 0;
+    }
+    figure img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    figcaption {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 14px;
+      color: var(--muted);
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+    figcaption em { font-style: normal; font-weight: 600; color: #444; }
+
+    /* wide figures break out of the text column */
+    .fig-wide {
+      max-width: var(--wide-w);
+      margin-left: auto;
+      margin-right: auto;
+      padding: 0 24px;
+    }
+    .fig-wide figure { margin: 2.4em 0; }
+
+    /* ─── Two-up figures ─── */
+    .fig-duo {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 2.4em 0;
+    }
+    @media (max-width: 640px) {
+      .fig-duo { grid-template-columns: 1fr; }
+    }
+
+    /* ─── Stat pills ─── */
+    .stats-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin: 2em 0;
+    }
+    .stat-pill {
+      flex: 1 1 160px;
+      background: var(--light-bg);
+      border-radius: 8px;
+      padding: 16px 20px;
+      text-align: center;
+    }
+    .stat-pill .num {
+      display: block;
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: -.02em;
+      line-height: 1.1;
+    }
+    .stat-pill .label {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .stat-pill.accent .num  { color: var(--accent); }
+    .stat-pill.red    .num  { color: var(--red); }
+    .stat-pill.blue   .num  { color: var(--blue); }
+
+    /* ─── Section divider ─── */
+    .section-num {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      padding-top: 40px;
+      margin-top: 64px;
+    }
+
+    /* ─── Conclusion / TL;DR ─── */
+    .tldr {
+      background: #0d1117;
+      color: #f0f0f0;
+      border-radius: 8px;
+      padding: 36px 40px;
+      margin: 3em 0;
+      font-size: 17px;
+      line-height: 1.75;
+    }
+    .tldr h2 {
+      color: #fff;
+      font-size: 22px;
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+    .tldr ul { padding-left: 22px; }
+    .tldr li { margin-bottom: 10px; }
+
+    /* ─── Footer ─── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+      margin-top: 64px;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* ─── Separator ─── */
+    .sep {
+      text-align: center;
+      color: var(--border);
+      font-size: 28px;
+      letter-spacing: .5em;
+      margin: 3em 0;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─────────────────────────── HEADER ─────────────────────────── -->
+<header>
+  <div class="inner">
+    <a class="pub-name" href="#">Linear Political LLM · Research Blog</a>
+    <span class="meta">March 2026</span>
+  </div>
+</header>
+
+
+<!-- ─────────────────────────── HERO ─────────────────────────── -->
+<div class="container">
+  <div class="hero">
+    <p class="kicker">Visual Language Models &amp; Political Ideology</p>
+    <h1>What Images &ldquo;Think&rdquo; About Politics</h1>
+    <p class="subtitle">
+      We probe a visual language model with 25,000 stock photos and hundreds of
+      Congressional portraits. The result: a coherent liberal–conservative axis
+      encoded in pixel-level features—and it aligns surprisingly well with probes
+      built from text alone.
+    </p>
+    <div class="byline">
+      <strong>Tyler Zhang &amp; Jedd Evans</strong>
+      <span class="byline-dot">·</span>
+      <span>15 min read</span>
+      <span class="byline-dot">·</span>
+      <span>Qwen3-VL-8B-Instruct &nbsp;|&nbsp; DW-NOMINATE&nbsp;</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ─────────────────────────── BODY ─────────────────────────── -->
+<div class="container">
+<div class="body-copy">
+
+<p>
+  Does a visual language model see politics in a photograph of jellyfish? Or in a
+  sand dune with an ATV kicking up rooster tails of dust? The question sounds absurd—
+  and yet, here we are.
+</p>
+<p>
+  Over the past year we have been studying the <em>linear political structure</em>
+  of large language models. Our earlier work showed that a simple ridge-regression
+  probe trained on a model's internal attention-head activations can read off a
+  politician's DW-NOMINATE ideology score from the text they generate. The probe
+  generalizes well across topics, models, and prompts, suggesting the model has
+  learned a coherent latent representation of the liberal–conservative spectrum.
+</p>
+<p>
+  The natural next question: <strong>does this structure transfer to vision?</strong>
+  When we feed a multimodal model an image instead of text, do the same head
+  activations carry the same ideological signal? And can we learn a probe
+  <em>directly</em> from portraits of politicians—rather than from text about
+  policy—and still recover ideology?
+</p>
+<p>
+  In this post we report two lines of experiments that together paint a consistent
+  picture: yes, visual and textual ideology representations are deeply intertwined
+  inside a vision-language model.
+</p>
+
+<!-- ── Background ── -->
+<div class="section-num">Background</div>
+<h2>The DW-NOMINATE Probe</h2>
+
+<p>
+  <a href="https://voteview.com/about" target="_blank">DW-NOMINATE</a>
+  is the canonical political-science measure of Congressional voting ideology. Its
+  first dimension (<code>nominate_dim1</code>) places legislators on a
+  liberal (−1) to conservative (+1) axis, estimated from roll-call votes.
+  It is not a survey—it is derived purely from revealed voting behavior on thousands
+  of bills over many Congresses.
+</p>
+<p>
+  Our <strong>textual ideology probe</strong> works as follows.  We prompt a causal
+  language model—here <em>Qwen3-VL-8B-Instruct</em>—to respond as a named
+  U.S. politician on policy topics (immigration, gun control, climate, etc.).
+  During generation we record the per-token hidden state at every attention head
+  (<em>layer &times; head &times; d_head</em>).  A ridge regression is then fit,
+  across politicians, to predict their DW-NOMINATE score from the first generated
+  token's head activations.  Cross-validated R² values for the strongest heads
+  routinely exceed 0.5, and the heatmap below shows the per-head performance
+  across all 36 &times; 32 heads of the model.
+</p>
+
+</div><!-- /body-copy -->
+</div><!-- /container -->
+
+<!-- wide figure: R² heatmap -->
+<div class="fig-wide">
+  <figure>
+    <img src="results/vision_probe/r2_heatmap.png"
+         alt="Heatmap of ideology probe R² across 36 layers × 32 attention heads of Qwen3-VL-8B-Instruct. Warmer colors indicate higher cross-validated R²." />
+    <figcaption>
+      <em>Figure 1.</em> Cross-validated ideology probe R² at every attention head
+      (36 layers × 32 heads) of Qwen3-VL-8B-Instruct.  Scores are multiplied by
+      100 for display.  The top quarter of layers consistently exceeds R²&nbsp;≈&nbsp;0.50,
+      indicating a robust linear ideology representation distributed across many heads.
+    </figcaption>
+  </figure>
+</div>
+
+<div class="container">
+<div class="body-copy">
+
+<p>
+  The pattern in Figure 1 is striking: ideology is not localized to a handful of
+  heads—it is broadly distributed across the upper layers of the transformer,
+  consistent with findings from interpretability research on factual recall
+  and semantic composition.
+</p>
+
+<!-- ═══════════════════════════════════════════ PART 1 ════════════════════════════════════════════ -->
+<div class="section-num">Part One</div>
+<h2>Applying the Textual Probe to 25,000 Stock Photos</h2>
+
+<p>
+  The Unsplash 25k dataset is a curated sample from Unsplash's open-license
+  photography collection.  It covers essentially every subject imaginable: nature,
+  architecture, food, travel, animals, sports, art, and more.  These images have
+  <em>nothing to do with politics</em>—they were never tagged with ideology, they do
+  not depict politicians, and Unsplash is not a political platform.
+</p>
+<p>
+  Yet our question is: if we feed each image to Qwen3-VL-8B-Instruct with the
+  prompt <em>"What's his/her position on US politics?"</em> and extract the
+  attention-head activations at the image tokens, then apply the
+  DW-NOMINATE–trained probe, what scores come out?
+</p>
+
+<h3>Setup</h3>
+<p>
+  For each of the 24,996 images we obtained a per-patch score vector from the
+  top-<em>k</em> ideology probe heads and averaged across patches to produce a
+  single <strong>mean DW score</strong> per image.  This score is in the same units
+  as the original DW-NOMINATE dimension: negative means more liberal, positive means
+  more conservative.
+</p>
+
+</div>
+</div>
+
+<!-- wide: DW distribution -->
+<div class="fig-wide">
+  <figure>
+    <img src="results/unsplash/dw_dist.png"
+         alt="Histogram of per-image mean DW scores across 24,996 Unsplash images. Distribution is roughly normal, centered near −0.06." />
+    <figcaption>
+      <em>Figure 2.</em> Distribution of mean DW scores across the 24,996-image
+      Unsplash dataset.  The distribution is approximately bell-shaped with a slight
+      left (liberal) skew.  Dashed line: mean (−0.061); dotted line: median (−0.051).
+    </figcaption>
+  </figure>
+</div>
+
+<div class="container">
+<div class="body-copy">
+
+<div class="stats-row">
+  <div class="stat-pill">
+    <span class="num">24,996</span>
+    <span class="label">Images scored</span>
+  </div>
+  <div class="stat-pill blue">
+    <span class="num">−0.54</span>
+    <span class="label">Most liberal image</span>
+  </div>
+  <div class="stat-pill red">
+    <span class="num">+0.56</span>
+    <span class="label">Most conservative image</span>
+  </div>
+  <div class="stat-pill">
+    <span class="num">−0.061</span>
+    <span class="label">Mean DW score</span>
+  </div>
+</div>
+
+<p>
+  The distribution is reassuringly well-behaved: tightly centered near zero with
+  a standard deviation of 0.13.  The slight liberal lean of the mean may simply
+  reflect the aesthetic character of Unsplash photography (urban, colorful,
+  internationally diverse), but the full range spans over a full DW-NOMINATE unit.
+</p>
+
+<h3>What Makes an Image &ldquo;Conservative&rdquo; or &ldquo;Liberal&rdquo;?</h3>
+
+<p>
+  The extremes tell the most interesting story.
+</p>
+
+</div>
+</div>
+
+<!-- wide: highest/lowest extremes -->
+<div class="fig-wide">
+  <figure>
+    <img src="results/unsplash/highest.png"
+         alt="Grid of the 12 highest-scoring (most conservative) Unsplash images: sand-dune off-road vehicles, elk antlers, arid desert landscapes." />
+    <figcaption>
+      <em>Figure 3.</em> The 12 highest mean DW-score images from Unsplash 25k.
+      The model consistently assigns conservative-leaning signals to
+      <strong>arid, rugged, outdoors content</strong>: sand-dune ATVs (top scorer:
+      +0.56), trophy antlers, and sun-baked southwestern landscapes.
+    </figcaption>
+  </figure>
+  <figure style="margin-top:24px;">
+    <img src="results/unsplash/lowest.png"
+         alt="Grid of the 12 lowest-scoring (most liberal) Unsplash images: jellyfish, colorful flowers and fruit, a crowded street market in South Asia." />
+    <figcaption>
+      <em>Figure 4.</em> The 12 lowest mean DW-score images.
+      The most liberal signals attach to <strong>vibrant, close-up, or aquatic
+      imagery</strong>: bioluminescent jellyfish (−0.54), vivid floral arrangements,
+      cut pomegranates and citrus, and a busy street scene in South Asia (−0.47).
+    </figcaption>
+  </figure>
+</div>
+
+<div class="container">
+<div class="body-copy">
+
+<blockquote>
+  The model is not &ldquo;seeing politics&rdquo;&mdash;it is responding to deep
+  visual texture, color palette, and subject matter that statistically co-vary with
+  the trained politicians&rsquo; imagery of the world.
+</blockquote>
+
+<p>
+  The patterns are interpretable without being cartoonish.  High-scoring images
+  share visual themes associated with rural, outdoor, and traditionally
+  &ldquo;masculine&rdquo; American recreational culture: off-road vehicles on sandy
+  terrain, big-game trophies, open ranchland, and desert roads.
+  Low-scoring images cluster around saturated color, biological forms (jellyfish,
+  flowers, produce), and urban diversity.
+</p>
+<p>
+  Importantly, these are <em>correlational</em> signals learned from the model's
+  training distribution as reflected in politician response patterns—they are not
+  intentional value judgments encoded by the probe or the researchers.
+</p>
+
+<h3>Topic Clusters &amp; the t-SNE Map</h3>
+
+<p>
+  To go beyond individual images we embedded all 24,996 images using pre-computed
+  Unsplash embeddings, clustered them into 10 coarse topics with K-Means, and
+  projected to 2D with t-SNE.  Each point's color encodes its mean DW score.
+</p>
+
+</div>
+</div>
+
+<!-- wide: t-SNE -->
+<div class="fig-wide">
+  <figure>
+    <img src="results/unsplash/clustering.png"
+         alt="t-SNE plot of 24,996 Unsplash images colored by mean DW score (blue=liberal, red=conservative). Clear spatial separation of ideological signal by visual topic." />
+    <figcaption>
+      <em>Figure 5.</em> t-SNE projection of all 24,996 Unsplash images.
+      Marker shape encodes K-Means topic cluster; color encodes mean DW score
+      (blue: liberal &lt; −0.2; white: neutral; red: conservative &gt; 0.2).
+      Spatially coherent red regions (upper-left, upper-center) correspond to
+      desert/automotive imagery; blue regions (lower-center, lower-right) correspond
+      to nature close-ups, jellyfish, and diverse human subjects.
+    </figcaption>
+  </figure>
+</div>
+
+<div class="container">
+<div class="body-copy">
+
+<p>
+  The t-SNE map reveals that ideological signal is <em>not</em> randomly scattered—
+  it clusters with visual topic.  The reddest (most conservative) island in the
+  upper portion of the map is almost entirely composed of sand-dune vehicles and
+  arid landscapes.  The deepest blue region corresponds to the aquatic/jellyfish
+  and floral photography topics.  The broad neutral center is populated by cityscapes,
+  portraits, and general travel photography.
+</p>
+<p>
+  Selected clusters further illustrate the pattern.  Cluster&nbsp;9 (below) pits
+  bioluminescent jellyfish (strongly liberal) against elk and horned lizards
+  (strongly conservative)—two very different wildlife subjects, separated by an
+  enormous DW gap of nearly 1.0 unit.
+</p>
+
+</div>
+</div>
+
+<!-- wide: two clusters side by side -->
+<div class="fig-wide">
+  <div class="fig-duo">
+    <figure>
+      <img src="results/unsplash/cluster9.png"
+           alt="Cluster 9 DW extremes: colorful jellyfish on the low end, deer antlers and horned lizards on the high end." />
+      <figcaption>
+        <em>Figure 6a.</em> Cluster 9 — Wildlife.  Low (liberal): vivid jellyfish
+        (−0.44 to −0.43).  High (conservative): majestic elk and a horned lizard
+        (+0.41 to +0.47).
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="results/unsplash/cluster5.png"
+           alt="Cluster 5 DW extremes: ISS cupola and astronaut on the low end, desert windmills and rural plains on the high end." />
+      <figcaption>
+        <em>Figure 6b.</em> Cluster 5 — Sky &amp; Space.  Low: ISS cupola and NASA
+        space-walk photographs.  High: windmills on open plains and a child sitting
+        outside a farmhouse.
+      </figcaption>
+    </figure>
+  </div>
+  <div class="fig-duo">
+    <figure>
+      <img src="results/unsplash/cluster3.png"
+           alt="Cluster 3: colorful Italian coastal villages on the low end, open Australian beach and sand dunes on the high end." />
+      <figcaption>
+        <em>Figure 6c.</em> Cluster 3 — Coastal.  Low: densely colored European
+        cliff towns (Cinque Terre).  High: open Australian beaches with kangaroos;
+        lone vehicle on sandy shore.
+      </figcaption>
+    </figure>
+    <figure>
+      <img src="results/unsplash/cluster4.png"
+           alt="Cluster 4: vivid fruit and flowers on the low end, barbed wire, desert camping, and a lone winter interior on the high end." />
+      <figcaption>
+        <em>Figure 6d.</em> Cluster 4 — Still Life &amp; Nature.  Low: colorful
+        pomegranates, tulips, hydrangeas.  High: a pine cone on bare wood, an agave,
+        a campfire in the dark.
+      </figcaption>
+    </figure>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════ PART 2 ════════════════════════════════════════════ -->
+<div class="container">
+<div class="body-copy">
+
+<div class="section-num">Part Two</div>
+<h2>A Probe Built Directly from Portraits</h2>
+
+<p>
+  The experiments above used the DW-NOMINATE probe originally trained on <em>text</em>
+  activations and applied it, without retraining, to image tokens.  The success of
+  that transfer is already suggestive.  But we can push further: can we train a probe
+  <em>entirely from portraits</em>—with no policy text involved—that also predicts ideology?
+</p>
+
+<h3>Portrait Probe Setup</h3>
+
+<p>
+  We assembled official portrait images for members of the 116th House of
+  Representatives (2019–21) and matched each portrait to its owner's DW-NOMINATE
+  score.  After filtering for image availability we obtained a dataset of
+  <strong>~450 portraits</strong> covering both parties.
+</p>
+<p>
+  For each portrait we ran Qwen3-VL-8B-Instruct with the prompt
+  <em>"What's his/her position on US politics?"</em> and captured the same
+  attention-head activations at the very first generated token.  A ridge regression
+  was then fit on these visual activations with DW-NOMINATE as the target—
+  independently from any text prompt at training time.
+</p>
+<p>
+  This is a genuinely visual probe: the label (ideology) is matched to
+  <em>image</em> activations, not text activations.  If the probe is predictive, it
+  means the model encodes ideology-relevant information in how it processes a
+  person's face and backdrop.
+</p>
+
+</div>
+</div>
+
+<!-- wide: party portrait heatmaps -->
+<div class="fig-wide">
+  <figure>
+    <img src="results/vision_probe/coloring_portraits_textual_probe.png"
+         alt="Four panels: Democrat and Republican mean image-token score heatmaps (10x8 grid), their difference, and a boxplot comparing parties." />
+    <figcaption>
+      <em>Figure 7.</em> Applying the <em>textual</em> ideology probe to image tokens
+      from Congressional portraits.  <strong>Top row:</strong> mean per-grid-cell ideology
+      score averaged across all Democrat (left) and Republican (right) portraits that share the
+      most common image-token grid size (10&nbsp;×&nbsp;8; n&nbsp;=&nbsp;401 portraits).
+      <strong>Bottom-left:</strong> Republican&nbsp;−&nbsp;Democrat difference map, showing
+      systematically higher conservative scores in the central face region.
+      <strong>Bottom-right:</strong> Per-portrait mean scores—Republicans score
+      significantly higher (less negative) than Democrats, consistent with the
+      ground-truth DW-NOMINATE labels.
+    </figcaption>
+  </figure>
+</div>
+
+<div class="container">
+<div class="body-copy">
+
+<p>
+  Even without knowing <em>who</em> is in the portrait, the model assigns noticeably
+  different ideological activations to the two parties.  The central image tokens—
+  corresponding to the face and upper body—drive most of the difference, while
+  backgrounds and edge patches are more neutral.
+</p>
+
+<div class="callout">
+  <strong>Key finding</strong>
+  On a per-portrait basis, Democrat portraits receive a mean image-token score of
+  roughly −0.26, while Republican portraits score around −0.14—a gap of
+  ~0.12 DW units that is statistically robust given the large sample.
+  Republicans are shifted roughly half a standard deviation toward the conservative
+  pole relative to Democrats, <em>using only pixel information</em>.
+</div>
+
+
+<!-- ═══════════════════════════════════════════ PART 3 ════════════════════════════════════════════ -->
+<div class="section-num">Part Three</div>
+<h2>Do the Two Probes See the Same Thing?</h2>
+
+<p>
+  At this point we have <em>two</em> ideology probes for the same model:
+</p>
+<ul style="margin: 1em 0 1em 2em; line-height: 2;">
+  <li><strong>Textual probe</strong>&nbsp;— trained on text activations from politician impersonation prompts.</li>
+  <li><strong>Portrait probe</strong>&nbsp;— trained on image-token activations from Congress member portraits.</li>
+</ul>
+<p>
+  Both predict DW-NOMINATE ideology, but via completely different inputs.
+  Do they point in the same direction in activation space?
+</p>
+
+<h3>Cosine Similarity of Probe Directions</h3>
+
+<p>
+  For each of the 36&nbsp;×&nbsp;32&nbsp;=&nbsp;1,152 attention heads we computed
+  the cosine similarity between the ridge-regression coefficient vectors of the two
+  probes (weighted by activation standard deviation, to match the magnitude scaling
+  used at inference).  A cosine similarity of +1 means the two probes learned
+  <em>exactly the same</em> linear direction in that head's hidden space.
+</p>
+
+</div>
+</div>
+
+<!-- wide: cosine similarity heatmaps -->
+<div class="fig-wide">
+  <figure>
+    <img src="results/vision_probe/text_vision_sim.png"
+         alt="Two heatmaps showing cosine similarity between politician (text) and portrait_ideology (vision) probe directions per attention head. Most values are positive/warm, indicating robustly aligned directions." />
+    <figcaption>
+      <em>Figure 8.</em> Per-head cosine similarity between the textual ideology probe
+      and the portrait-based ideology probe.
+      <strong>Left:</strong> all heads.  <strong>Right:</strong> masked to show only heads
+      where at least one probe achieves R²&nbsp;≥&nbsp;0.7.
+      The predominantly warm (reddish) palette confirms substantial directional
+      agreement: most heads encode liberal–conservative ideology along a
+      <em>shared</em> axis regardless of whether the input was text or an image.
+    </figcaption>
+  </figure>
+</div>
+
+<div class="container">
+<div class="body-copy">
+
+<p>
+  The result is striking.  Across all 1,152 heads the <strong>mean cosine
+  similarity is approximately +0.4</strong> and the vast majority of cells are warm.
+  When we restrict attention to the heads that are strongly predictive (R²&nbsp;≥&nbsp;0.7
+  for either probe), the alignment is even cleaner—these high-signal heads show
+  predominantly positive cosine similarity, indicating that the <em>same</em>
+  linear direction learned from text also captures ideology from portraits.
+</p>
+<p>
+  The few blue cells (negative cosine similarity) exist mainly in early layers,
+  where low-level visual features dominate and the textual probe has not yet learned
+  a meaningful representation.
+</p>
+
+<blockquote>
+  The model represents ideology along a single latent axis—and that axis is
+  accessible from both language and vision.
+</blockquote>
+
+<h3>Co-Firing Analysis: Token-by-Token Agreement</h3>
+
+<p>
+  As a third line of evidence, we examined whether the two probes <em>co-fire</em>
+  during text generation.  We asked the model to generate responses to ten policy
+  prompts (<em>"As a U.S. politician, what is your position on immigration policy?"</em> etc.)
+  and scored each generated token with <em>both</em> probes simultaneously.
+  If the probes are tracking the same latent variable, their token-level scores
+  should be correlated across the sequence.
+</p>
+
+</div>
+</div>
+
+<!-- wide: co-firing plots -->
+<div class="fig-wide">
+  <figure>
+    <img src="results/vision_probe/cross_probing.png"
+         alt="Grid of 10 plots, each showing probe score vs generated token index for both the politician (text) and portrait_ideology (vision) probes. Pearson correlations range from 0.10 to 0.45." />
+    <figcaption>
+      <em>Figure 9.</em> Token-level probe scores during free generation on ten policy
+      prompts.  Blue: textual ideology probe.  Orange: portrait-based ideology probe.
+      Pearson correlations per prompt range from ~0.10 to ~0.45, with a
+      mean of ~0.28 across all prompts.  Both probes rise and fall together within
+      individual responses, suggesting they track a shared internal state.
+    </figcaption>
+  </figure>
+</div>
+
+<div class="container">
+<div class="body-copy">
+
+<p>
+  Across ten policy prompts the <strong>mean prompt-wise Pearson correlation is
+  approximately 0.28</strong>, and the global token-level correlation (pooling all
+  tokens across all prompts) is similar.  For a probe derived from politician
+  portraits—completely different inputs—to track the continuous variation of a
+  text-based probe during language generation is a non-trivial finding.
+</p>
+<p>
+  Prompt 5 (federal taxation) and Prompt 7 (voting rights), which yielded the highest
+  correlations (~0.4–0.45), also happen to produce the most politically differentiated
+  text outputs—suggesting the ideological "temperature" of the response is what both
+  probes are sensing.
+</p>
+
+<!-- ═══════════════════════════════════════════ DISCUSSION ════════════════════════════════════════ -->
+<div class="section-num">Discussion</div>
+<h2>Interpretations and Limitations</h2>
+
+<h3>What could explain the visual–textual alignment?</h3>
+
+<p>
+  Multimodal training data is the most natural explanation.  Models like Qwen3-VL
+  are trained on image–text pairs scraped from the web, and the web has strong
+  correlations between visual aesthetics and cultural politics.  Rural landscapes,
+  outdoor sports, hunting, and farming appear disproportionately in politically
+  conservative media contexts; bright, urban, and diverse imagery appears more in
+  progressive media.  The model apparently absorbed these correlations.
+</p>
+<p>
+  Alternatively, the alignment may reflect a more fundamental property of high-capacity
+  transformers: they tend to build <em>universal</em> semantic representations that
+  bind across modalities.  If the ideology dimension is genuinely a semantic axis
+  (capturing something about worldviews, aesthetics, and values), the model's
+  multi-modal pre-training may construct it once and use it everywhere.
+</p>
+
+<h3>Why does the probe transfer from text to portraits?</h3>
+
+<p>
+  The portrait finding is perhaps the most surprising.  A portrait is a photograph of
+  a person—face, expression, clothing, backdrop—not a statement of views.  Yet the
+  model's image activations for that portrait carry ideology signal that correlates
+  with the person's actual voting record.
+</p>
+<p>
+  Several confounds are worth naming.  Skin tone, gender, and age correlate both with
+  party affiliation at the aggregate level and with how a vision model processes
+  images.  Official congressional portraits also differ systematically in backdrop,
+  lighting, and attire between parties and eras.  The probe may be detecting these
+  proxies rather than anything deeper.  Disentangling them requires controlled ablations
+  (e.g., swapping backgrounds, adjusting color balance) that we plan for future work.
+</p>
+
+<h3>Limitations</h3>
+<p>
+  The Unsplash experiment involves no ground-truth labels: we cannot say whether a
+  photograph of jellyfish is "actually" liberal. The DW score assigned is entirely a
+  property of the model's internal representation, not an objective cultural fact.
+  Replication with other VLMs and other training corpora would strengthen confidence
+  in the generality of the findings.
+</p>
+<p>
+  The portrait probe is trained and evaluated on members of a single Congress
+  (116th, 2019–21), a period of unusually sharp partisan polarization.  Performance
+  on earlier, less polarized sessions should be tested.
+</p>
+
+<div class="sep">· · ·</div>
+
+<div class="tldr">
+  <h2>TL;DR — What We Found</h2>
+  <ul>
+    <li>A DW-NOMINATE probe trained on text activations <strong>transfers to visual image tokens</strong> from a multimodal VLM without any retraining.</li>
+    <li>Applied to 25,000 stock photos, the probe reveals systematic visual correlates of the liberal–conservative axis: <strong>arid + rugged + rural = conservative</strong>; <strong>colorful + aquatic + urban-diverse = liberal</strong>.</li>
+    <li>A probe trained <em>solely on congressional portrait images</em> achieves meaningful prediction of voting ideology—and Democrats vs. Republicans are separable from their official photos alone.</li>
+    <li>The textual and portrait probe directions are <strong>substantially aligned</strong> in activation space (mean cosine sim ≈ +0.4), and they <strong>co-fire token-by-token</strong> during generation (mean Pearson ≈ 0.28).</li>
+    <li>Taken together, the results suggest that a multimodal LLM encodes a <strong>unimodal ideological axis</strong> shared across language and vision—most likely absorbed from the correlated statistics of political media during pre-training.</li>
+  </ul>
+</div>
+
+<h2>What Comes Next</h2>
+
+<p>
+  We are currently exploring controlled image edits—background swaps, style transfers,
+  pose normalization—to isolate which visual features drive the portrait ideological
+  signal.  We are also investigating whether the visual ideology axis can be used for
+  <em>steering</em>: can a political portrait shift the model's generated text toward
+  liberal or conservative positions beyond what a text prompt alone achieves?
+  Preliminary results from Qwen3-VL with head-intervention steering look promising.
+</p>
+<p>
+  More broadly, these findings have implications for how we think about value alignment in
+  multimodal AI.  If political ideology is structurally represented across modalities, then
+  attempts to de-bias a model's textual responses may leave visual biases intact—and
+  vice versa.  Auditing AI systems for ideological representation may need to happen at
+  the level of the shared latent geometry, not modality by modality.
+</p>
+
+<p style="margin-top:3em;">
+  <em>Code, data, and model checkpoints will be made available upon publication.
+  Questions and collaboration inquiries are welcome.</em>
+</p>
+
+</div><!-- /body-copy -->
+</div><!-- /container -->
+
+<!-- ─────────────────────────── FOOTER ─────────────────────────── -->
+<footer>
+  <div class="container">
+    <p>
+      This work uses the <a href="https://voteview.com/data" target="_blank">Voteview
+      DW-NOMINATE dataset</a> (Lewis et al.) and the
+      <a href="https://unsplash.com/data" target="_blank">Unsplash 25k dataset</a>.
+      Model: Qwen3-VL-8B-Instruct.  Probe method adapted from our earlier
+      <em>Linear Political LLM</em> work.
+    </p>
+    <p style="margin-top:12px;">© 2026 Tyler Zhang &amp; Jedd Evans · CC BY 4.0</p>
+  </div>
+</footer>
+
+</body>
+</html>
