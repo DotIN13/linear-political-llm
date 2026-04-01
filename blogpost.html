@@ -345,7 +345,7 @@
 <p>
   Our <strong>textual ideology probe</strong> works as follows.  We prompt a causal
   language model—here <em>Qwen3-VL-8B-Instruct</em>—to respond as a named
-  U.S. politician on policy topics (immigration, gun control, climate, etc.).
+  U.S. politician.
   During generation we record the per-token hidden state at every attention head
   (<em>layer &times; head &times; d_head</em>).  A ridge regression is then fit,
   across politicians, to predict their DW-NOMINATE score from the first generated
@@ -361,18 +361,76 @@
 
 <!-- ═══════════════════════════════════════════ PART 1 ════════════════════════════════════════════ -->
 <div class="section-num">Part One</div>
-<h2>Applying the Textual Probe to Images (Unsplash + Portraits)</h2>
+
+
+<div class="container">
+<div class="body-copy">
+
+<h3>Generalization Check: Text Probe on Congressional Portraits</h3>
+
+<p>
+  As our first transfer test, we apply the same text-trained probe to image tokens
+  from official Congressional portraits, with no retraining. If the textual
+  probe captures a stable ideology axis, we hypothesize that it should also separate parties on portraits.
+</p>
+
+</div>
+</div>
+
+<!-- wide: party portrait heatmaps -->
+<div class="fig-wide">
+  <figure>
+    <img src="figs/vision_probe/coloring_portraits_textual_probe.png"
+         alt="Four panels: Democrat and Republican mean image-token score heatmaps (10x8 grid), their difference, and a boxplot comparing parties." />
+    <figcaption>
+      <em>Figure 7.</em> Applying the <em>textual</em> ideology probe to image tokens
+      from Congressional portraits.  <strong>Top row:</strong> mean per-grid-cell ideology
+      score averaged across all Democrat (left) and Republican (right) portraits that share the
+      most common image-token grid size (10&nbsp;×&nbsp;8; n&nbsp;=&nbsp;401 portraits).
+      <strong>Bottom-left:</strong> Republican&nbsp;−&nbsp;Democrat difference map, showing
+      systematically higher conservative scores in the central face region.
+      <strong>Bottom-right:</strong> Per-portrait mean scores—Republicans score
+      significantly higher (less negative) than Democrats, consistent with the
+      ground-truth DW-NOMINATE labels.
+    </figcaption>
+  </figure>
+</div>
+
+<div class="container">
+<div class="body-copy">
+
+<p>
+  Even without explicitly revealing to the model <em>who</em> is in the portrait,
+  the model assigns noticeably
+  different ideological activations to the two parties.  The central image tokens—
+  corresponding to the face and upper body—drive most of the difference, while
+  backgrounds and edge patches are more neutral.
+</p>
+
+<div class="callout">
+  <strong>Key finding</strong>
+  On a per-portrait basis, Democrat portraits receive a mean image-token score of
+  roughly −0.26, while Republican portraits score around −0.14.
+  Republicans are shifted roughly half a standard deviation toward the conservative
+  pole relative to Democrats, <em>using only pixel information</em>.
+</div>
+
+
+</div>
+</div>
+
+<h2>Applying the Textual Probe to Images (Portraits + Unsplash)</h2>
 
 <p>
   The Unsplash 25k dataset is a curated sample from Unsplash's open-license
   photography collection.  It covers essentially every subject imaginable: nature,
-  architecture, food, travel, animals, sports, art, and more.  These images have
-  <em>nothing to do with politics</em>—they were never tagged with ideology, they do
-  not depict politicians, and Unsplash is not a political platform.
+  architecture, food, travel, animals, sports, art, and more. These images are not
+  inherently associated with political ideology.
 </p>
 <p>
   Yet our question is: if we feed each image to Qwen3-VL-8B-Instruct with the
-  prompt <em>"What's his/her position on US politics?"</em> and extract the
+  prompt <em>"Write a possible news article that would best accompany this image, from the best
+  possible media outlet."</em> and extract the
   attention-head activations at the image tokens, then apply the
   DW-NOMINATE–trained probe, what scores come out?
 </p>
@@ -425,10 +483,9 @@
 </div>
 
 <p>
-  The distribution is reassuringly well-behaved: tightly centered near zero with
+  The distribution is surprisingly well-behaved: tightly centered near zero with
   a standard deviation of 0.13.  The slight liberal lean of the mean may simply
-  reflect the aesthetic character of Unsplash photography (urban, colorful,
-  internationally diverse), but the full range spans over a full DW-NOMINATE unit.
+  reflect the aesthetic character of Unsplash photography, but the full range spans over a full DW-NOMINATE unit.
 </p>
 
 <h3>What Makes an Image &ldquo;Conservative&rdquo; or &ldquo;Liberal&rdquo;?</h3>
@@ -468,13 +525,13 @@
 <div class="body-copy">
 
 <blockquote>
-  The model is not &ldquo;seeing politics&rdquo;&mdash;it is responding to deep
+  The model is not &ldquo;seeing politics&rdquo;&mdash;it seems to be responding to deep
   visual texture, color palette, and subject matter that statistically co-vary with
   the trained politicians&rsquo; imagery of the world.
 </blockquote>
 
 <p>
-  The patterns are interpretable without being cartoonish.  High-scoring images
+  The patterns are interpretable to a great extent.  High-scoring images
   share visual themes associated with rural, outdoor, and traditionally
   &ldquo;masculine&rdquo; American recreational culture: off-road vehicles on sandy
   terrain, big-game trophies, open ranchland, and desert roads.
@@ -484,14 +541,16 @@
 <p>
   Importantly, these are <em>correlational</em> signals learned from the model's
   training distribution as reflected in politician response patterns—they are not
-  intentional value judgments encoded by the probe or the researchers.
+  intentional value judgments encoded by the probe or the researchers. This is likely the
+  effect of the multi-modal pretraining where models learn how to associate images with 
+  political symbols both textual and visual.
 </p>
 
 <h3>Topic Clusters &amp; the t-SNE Map</h3>
 
 <p>
   To go beyond individual images we embedded all 24,996 images using pre-computed
-  Unsplash embeddings, clustered them into 10 coarse topics with K-Means, and
+  Unsplash embeddings (encoded with <i>clip-ViT-B-32</i>), clustered them into 10 coarse topics with K-Means, and
   projected to 2D with t-SNE.  Each point's color encodes its mean DW score.
 </p>
 
@@ -507,9 +566,8 @@
       <em>Figure 5.</em> t-SNE projection of all 24,996 Unsplash images.
       Marker shape encodes K-Means topic cluster; color encodes mean DW score
       (blue: liberal &lt; −0.2; white: neutral; red: conservative &gt; 0.2).
-      Spatially coherent red regions (upper-left, upper-center) correspond to
-      desert/automotive imagery; blue regions (lower-center, lower-right) correspond
-      to nature close-ups, jellyfish, and diverse human subjects.
+      It's surprising that the embedding space is separable by ideological representation on the t-SNE 1 dimension,
+      with coherent red regions upper-left and upper-center, and blue regions lower-center and lower-right.
     </figcaption>
   </figure>
 </div>
@@ -580,63 +638,6 @@
 </div>
 
 
-<div class="container">
-<div class="body-copy">
-
-<h3>Generalization Check: Text Probe on Congressional Portraits</h3>
-
-<p>
-  As a second transfer test, we apply the same text-trained probe to image tokens
-  from official Congressional portraits, still with no retraining. If the textual
-  probe captures a stable ideology axis, it should also separate parties on portraits.
-</p>
-
-</div>
-</div>
-
-<!-- wide: party portrait heatmaps -->
-<div class="fig-wide">
-  <figure>
-    <img src="figs/vision_probe/coloring_portraits_textual_probe.png"
-         alt="Four panels: Democrat and Republican mean image-token score heatmaps (10x8 grid), their difference, and a boxplot comparing parties." />
-    <figcaption>
-      <em>Figure 7.</em> Applying the <em>textual</em> ideology probe to image tokens
-      from Congressional portraits.  <strong>Top row:</strong> mean per-grid-cell ideology
-      score averaged across all Democrat (left) and Republican (right) portraits that share the
-      most common image-token grid size (10&nbsp;×&nbsp;8; n&nbsp;=&nbsp;401 portraits).
-      <strong>Bottom-left:</strong> Republican&nbsp;−&nbsp;Democrat difference map, showing
-      systematically higher conservative scores in the central face region.
-      <strong>Bottom-right:</strong> Per-portrait mean scores—Republicans score
-      significantly higher (less negative) than Democrats, consistent with the
-      ground-truth DW-NOMINATE labels.
-    </figcaption>
-  </figure>
-</div>
-
-<div class="container">
-<div class="body-copy">
-
-<p>
-  Even without knowing <em>who</em> is in the portrait, the model assigns noticeably
-  different ideological activations to the two parties.  The central image tokens—
-  corresponding to the face and upper body—drive most of the difference, while
-  backgrounds and edge patches are more neutral.
-</p>
-
-<div class="callout">
-  <strong>Key finding</strong>
-  On a per-portrait basis, Democrat portraits receive a mean image-token score of
-  roughly −0.26, while Republican portraits score around −0.14—a gap of
-  ~0.12 DW units that is statistically robust given the large sample.
-  Republicans are shifted roughly half a standard deviation toward the conservative
-  pole relative to Democrats, <em>using only pixel information</em>.
-</div>
-
-
-</div>
-</div>
-
-
 <!-- ═══════════════════════════════════════════ PART 2 ════════════════════════════════════════════ -->
 <div class="container">
 <div class="body-copy">
@@ -657,12 +658,12 @@
   We assembled official portrait images for members of the 116th House of
   Representatives (2019–21) and matched each portrait to its owner's DW-NOMINATE
   score.  After filtering for image availability we obtained a dataset of
-  <strong>~450 portraits</strong> covering both parties.
+  <strong>550 portraits</strong> covering both parties.
 </p>
 <p>
   For each portrait we ran Qwen3-VL-8B-Instruct with the prompt
   <em>"What's his/her position on US politics?"</em> and captured the same
-  attention-head activations at the very first generated token.  A ridge regression
+  attention-head activations at the last token.  A ridge regression
   was then fit on these visual activations with DW-NOMINATE as the target—
   independently from any text prompt at training time.
 </p>
@@ -695,10 +696,10 @@
 <div class="body-copy">
 
 <p>
-  The headwise R² map shows this portrait probe is not riding on a single lucky
-  neuron. Predictive accuracy is distributed across many upper-layer heads,
-  suggesting ideology is represented as a broad linear subspace in portrait mode,
-  not a narrow artifact.
+  The headwise R² map shows this portrait probe underperforms the textual probe, where we were able to reach an R² of over 0.8.
+  Predictive accuracy is distributed across many mid-late heads,
+  suggesting ideology is also represented as a broad linear subspace in portrait mode, yet the image tokens were more noisy than its textual counterpart.
+  <i>The degradation in performance might also be the result of not directly probing on the image tokens residing in the facial area.</i>
 </p>
 
 
@@ -752,21 +753,16 @@
 <div class="body-copy">
 
 <p>
-  The result is striking.  Across all 1,152 heads the <strong>mean cosine
-  similarity is approximately +0.4</strong> and the vast majority of cells are warm.
+  Across all 1,152 heads the <strong>mean cosine
+  similarity is approximately +0.4</strong>.
   When we restrict attention to the heads that are strongly predictive (R²&nbsp;≥&nbsp;0.7
   for either probe), the alignment is even cleaner—these high-signal heads show
   predominantly positive cosine similarity, indicating that the <em>same</em>
   linear direction learned from text also captures ideology from portraits.
 </p>
-<p>
-  The few blue cells (negative cosine similarity) exist mainly in early layers,
-  where low-level visual features dominate and the textual probe has not yet learned
-  a meaningful representation.
-</p>
 
 <blockquote>
-  The model represents ideology along a single latent axis—and that axis is
+  The model likely represents ideology along some latent axis, and that axis is
   accessible from both language and vision.
 </blockquote>
 
@@ -774,7 +770,7 @@
 
 <p>
   As a third line of evidence, we examined whether the two probes <em>co-fire</em>
-  during text generation.  We asked the model to generate responses to ten policy
+  during text generation.  We asked the model to generate responses to 10 policy
   prompts (<em>"As a U.S. politician, what is your position on immigration policy?"</em> etc.)
   and scored each generated token with <em>both</em> probes simultaneously.
   If the probes are tracking the same latent variable, their token-level scores
@@ -835,24 +831,7 @@
   transformers: they tend to build <em>universal</em> semantic representations that
   bind across modalities.  If the ideology dimension is genuinely a semantic axis
   (capturing something about worldviews, aesthetics, and values), the model's
-  multi-modal pre-training may construct it once and use it everywhere.
-</p>
-
-<h3>Why does the probe transfer from text to portraits?</h3>
-
-<p>
-  The portrait finding is perhaps the most surprising.  A portrait is a photograph of
-  a person—face, expression, clothing, backdrop—not a statement of views.  Yet the
-  model's image activations for that portrait carry ideology signal that correlates
-  with the person's actual voting record.
-</p>
-<p>
-  Several confounds are worth naming.  Skin tone, gender, and age correlate both with
-  party affiliation at the aggregate level and with how a vision model processes
-  images.  Official congressional portraits also differ systematically in backdrop,
-  lighting, and attire between parties and eras.  The probe may be detecting these
-  proxies rather than anything deeper.  Disentangling them requires controlled ablations
-  (e.g., swapping backgrounds, adjusting color balance) that we plan for future work.
+  multi-modal pre-training may directly reuse such dimension from textual pretraining and apply it across modality.
 </p>
 
 <h3>Limitations</h3>
@@ -900,11 +879,6 @@
   the level of the shared latent geometry, not modality by modality.
 </p>
 
-<p style="margin-top:3em;">
-  <em>Code, data, and model checkpoints will be made available upon publication.
-  Questions and collaboration inquiries are welcome.</em>
-</p>
-
 </div><!-- /body-copy -->
 </div><!-- /container -->
 
@@ -918,7 +892,7 @@
       Model: Qwen3-VL-8B-Instruct.  Probe method adapted from our earlier
       <em>Linear Political LLM</em> work.
     </p>
-    <p style="margin-top:12px;">© 2026 Tyler Zhang &amp; Jedd Evans · CC BY 4.0</p>
+    <p style="margin-top:12px;">Co-written with Claude</p>
   </div>
 </footer>
 
