@@ -290,7 +290,7 @@
       built from text alone.
     </p>
     <div class="byline">
-      <strong>Tyler Zhang &amp; Jedd Evans</strong>
+      <strong>Tianyi Zhang</strong>
       <span class="byline-dot">·</span>
       <span>15 min read</span>
       <span class="byline-dot">·</span>
@@ -349,41 +349,19 @@
   During generation we record the per-token hidden state at every attention head
   (<em>layer &times; head &times; d_head</em>).  A ridge regression is then fit,
   across politicians, to predict their DW-NOMINATE score from the first generated
-  token's head activations.  Cross-validated R² values for the strongest heads
-  routinely exceed 0.5, and the heatmap below shows the per-head performance
-  across all 36 &times; 32 heads of the model.
+  token's head activations.  This gives us a reusable textual probe that can be
+  tested in visual transfer settings.
 </p>
 
 </div><!-- /body-copy -->
 </div><!-- /container -->
 
-<!-- wide figure: R² heatmap -->
-<div class="fig-wide">
-  <figure>
-    <img src="results/vision_probe/r2_heatmap.png"
-         alt="Heatmap of ideology probe R² across 36 layers × 32 attention heads of Qwen3-VL-8B-Instruct. Warmer colors indicate higher cross-validated R²." />
-    <figcaption>
-      <em>Figure 1.</em> Cross-validated ideology probe R² at every attention head
-      (36 layers × 32 heads) of Qwen3-VL-8B-Instruct.  Scores are multiplied by
-      100 for display.  The top quarter of layers consistently exceeds R²&nbsp;≈&nbsp;0.50,
-      indicating a robust linear ideology representation distributed across many heads.
-    </figcaption>
-  </figure>
-</div>
-
 <div class="container">
 <div class="body-copy">
 
-<p>
-  The pattern in Figure 1 is striking: ideology is not localized to a handful of
-  heads—it is broadly distributed across the upper layers of the transformer,
-  consistent with findings from interpretability research on factual recall
-  and semantic composition.
-</p>
-
 <!-- ═══════════════════════════════════════════ PART 1 ════════════════════════════════════════════ -->
 <div class="section-num">Part One</div>
-<h2>Applying the Textual Probe to 25,000 Stock Photos</h2>
+<h2>Applying the Textual Probe to Images (Unsplash + Portraits)</h2>
 
 <p>
   The Unsplash 25k dataset is a curated sample from Unsplash's open-license
@@ -414,7 +392,7 @@
 <!-- wide: DW distribution -->
 <div class="fig-wide">
   <figure>
-    <img src="results/unsplash/dw_dist.png"
+    <img src="figs/unsplash/dw_dist.png"
          alt="Histogram of per-image mean DW scores across 24,996 Unsplash images. Distribution is roughly normal, centered near −0.06." />
     <figcaption>
       <em>Figure 2.</em> Distribution of mean DW scores across the 24,996-image
@@ -465,7 +443,7 @@
 <!-- wide: highest/lowest extremes -->
 <div class="fig-wide">
   <figure>
-    <img src="results/unsplash/highest.png"
+    <img src="figs/unsplash/highest.png"
          alt="Grid of the 12 highest-scoring (most conservative) Unsplash images: sand-dune off-road vehicles, elk antlers, arid desert landscapes." />
     <figcaption>
       <em>Figure 3.</em> The 12 highest mean DW-score images from Unsplash 25k.
@@ -475,7 +453,7 @@
     </figcaption>
   </figure>
   <figure style="margin-top:24px;">
-    <img src="results/unsplash/lowest.png"
+    <img src="figs/unsplash/lowest.png"
          alt="Grid of the 12 lowest-scoring (most liberal) Unsplash images: jellyfish, colorful flowers and fruit, a crowded street market in South Asia." />
     <figcaption>
       <em>Figure 4.</em> The 12 lowest mean DW-score images.
@@ -523,7 +501,7 @@
 <!-- wide: t-SNE -->
 <div class="fig-wide">
   <figure>
-    <img src="results/unsplash/clustering.png"
+    <img src="figs/unsplash/clustering.png"
          alt="t-SNE plot of 24,996 Unsplash images colored by mean DW score (blue=liberal, red=conservative). Clear spatial separation of ideological signal by visual topic." />
     <figcaption>
       <em>Figure 5.</em> t-SNE projection of all 24,996 Unsplash images.
@@ -561,7 +539,7 @@
 <div class="fig-wide">
   <div class="fig-duo">
     <figure>
-      <img src="results/unsplash/cluster9.png"
+      <img src="figs/unsplash/cluster9.png"
            alt="Cluster 9 DW extremes: colorful jellyfish on the low end, deer antlers and horned lizards on the high end." />
       <figcaption>
         <em>Figure 6a.</em> Cluster 9 — Wildlife.  Low (liberal): vivid jellyfish
@@ -570,7 +548,7 @@
       </figcaption>
     </figure>
     <figure>
-      <img src="results/unsplash/cluster5.png"
+      <img src="figs/unsplash/cluster5.png"
            alt="Cluster 5 DW extremes: ISS cupola and astronaut on the low end, desert windmills and rural plains on the high end." />
       <figcaption>
         <em>Figure 6b.</em> Cluster 5 — Sky &amp; Space.  Low: ISS cupola and NASA
@@ -581,7 +559,7 @@
   </div>
   <div class="fig-duo">
     <figure>
-      <img src="results/unsplash/cluster3.png"
+      <img src="figs/unsplash/cluster3.png"
            alt="Cluster 3: colorful Italian coastal villages on the low end, open Australian beach and sand dunes on the high end." />
       <figcaption>
         <em>Figure 6c.</em> Cluster 3 — Coastal.  Low: densely colored European
@@ -590,7 +568,7 @@
       </figcaption>
     </figure>
     <figure>
-      <img src="results/unsplash/cluster4.png"
+      <img src="figs/unsplash/cluster4.png"
            alt="Cluster 4: vivid fruit and flowers on the low end, barbed wire, desert camping, and a lone winter interior on the high end." />
       <figcaption>
         <em>Figure 6d.</em> Cluster 4 — Still Life &amp; Nature.  Low: colorful
@@ -602,40 +580,15 @@
 </div>
 
 
-<!-- ═══════════════════════════════════════════ PART 2 ════════════════════════════════════════════ -->
 <div class="container">
 <div class="body-copy">
 
-<div class="section-num">Part Two</div>
-<h2>A Probe Built Directly from Portraits</h2>
+<h3>Generalization Check: Text Probe on Congressional Portraits</h3>
 
 <p>
-  The experiments above used the DW-NOMINATE probe originally trained on <em>text</em>
-  activations and applied it, without retraining, to image tokens.  The success of
-  that transfer is already suggestive.  But we can push further: can we train a probe
-  <em>entirely from portraits</em>—with no policy text involved—that also predicts ideology?
-</p>
-
-<h3>Portrait Probe Setup</h3>
-
-<p>
-  We assembled official portrait images for members of the 116th House of
-  Representatives (2019–21) and matched each portrait to its owner's DW-NOMINATE
-  score.  After filtering for image availability we obtained a dataset of
-  <strong>~450 portraits</strong> covering both parties.
-</p>
-<p>
-  For each portrait we ran Qwen3-VL-8B-Instruct with the prompt
-  <em>"What's his/her position on US politics?"</em> and captured the same
-  attention-head activations at the very first generated token.  A ridge regression
-  was then fit on these visual activations with DW-NOMINATE as the target—
-  independently from any text prompt at training time.
-</p>
-<p>
-  This is a genuinely visual probe: the label (ideology) is matched to
-  <em>image</em> activations, not text activations.  If the probe is predictive, it
-  means the model encodes ideology-relevant information in how it processes a
-  person's face and backdrop.
+  As a second transfer test, we apply the same text-trained probe to image tokens
+  from official Congressional portraits, still with no retraining. If the textual
+  probe captures a stable ideology axis, it should also separate parties on portraits.
 </p>
 
 </div>
@@ -644,7 +597,7 @@
 <!-- wide: party portrait heatmaps -->
 <div class="fig-wide">
   <figure>
-    <img src="results/vision_probe/coloring_portraits_textual_probe.png"
+    <img src="figs/vision_probe/coloring_portraits_textual_probe.png"
          alt="Four panels: Democrat and Republican mean image-token score heatmaps (10x8 grid), their difference, and a boxplot comparing parties." />
     <figcaption>
       <em>Figure 7.</em> Applying the <em>textual</em> ideology probe to image tokens
@@ -680,6 +633,75 @@
 </div>
 
 
+</div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════ PART 2 ════════════════════════════════════════════ -->
+<div class="container">
+<div class="body-copy">
+
+<div class="section-num">Part Two</div>
+<h2>A Probe Built Directly from Portraits</h2>
+
+<p>
+  The experiments above used a text-trained probe in transfer mode.
+  Next we ask a stricter question: can we train a probe
+  <em>entirely from portraits</em>—with no policy-text activations involved—and still
+  recover ideology?
+</p>
+
+<h3>Portrait Probe Setup</h3>
+
+<p>
+  We assembled official portrait images for members of the 116th House of
+  Representatives (2019–21) and matched each portrait to its owner's DW-NOMINATE
+  score.  After filtering for image availability we obtained a dataset of
+  <strong>~450 portraits</strong> covering both parties.
+</p>
+<p>
+  For each portrait we ran Qwen3-VL-8B-Instruct with the prompt
+  <em>"What's his/her position on US politics?"</em> and captured the same
+  attention-head activations at the very first generated token.  A ridge regression
+  was then fit on these visual activations with DW-NOMINATE as the target—
+  independently from any text prompt at training time.
+</p>
+<p>
+  This is a genuinely visual probe: the label (ideology) is matched to
+  <em>image</em> activations, not text activations.  If the probe is predictive, it
+  means the model encodes ideology-relevant information in how it processes a
+  person's face and backdrop.
+</p>
+
+</div>
+</div>
+
+<!-- wide figure: R² heatmap -->
+<div class="fig-wide">
+  <figure>
+    <img src="figs/vision_probe/r2_heatmap.png"
+         alt="Heatmap of ideology probe R² across 36 layers × 32 attention heads of Qwen3-VL-8B-Instruct. Warmer colors indicate higher cross-validated R²." />
+    <figcaption>
+      <em>Figure 1.</em> Cross-validated ideology probe R² at every attention head
+      (36 layers × 32 heads) for the portrait-trained probe on Qwen3-VL-8B-Instruct.
+      Scores are multiplied by 100 for display.  The top quarter of layers consistently
+      exceeds R²&nbsp;≈&nbsp;0.50, indicating strong head-level predictive signal from
+      portrait activations.
+    </figcaption>
+  </figure>
+</div>
+
+<div class="container">
+<div class="body-copy">
+
+<p>
+  The headwise R² map shows this portrait probe is not riding on a single lucky
+  neuron. Predictive accuracy is distributed across many upper-layer heads,
+  suggesting ideology is represented as a broad linear subspace in portrait mode,
+  not a narrow artifact.
+</p>
+
+
 <!-- ═══════════════════════════════════════════ PART 3 ════════════════════════════════════════════ -->
 <div class="section-num">Part Three</div>
 <h2>Do the Two Probes See the Same Thing?</h2>
@@ -712,7 +734,7 @@
 <!-- wide: cosine similarity heatmaps -->
 <div class="fig-wide">
   <figure>
-    <img src="results/vision_probe/text_vision_sim.png"
+    <img src="figs/vision_probe/text_vision_sim.png"
          alt="Two heatmaps showing cosine similarity between politician (text) and portrait_ideology (vision) probe directions per attention head. Most values are positive/warm, indicating robustly aligned directions." />
     <figcaption>
       <em>Figure 8.</em> Per-head cosine similarity between the textual ideology probe
@@ -765,7 +787,7 @@
 <!-- wide: co-firing plots -->
 <div class="fig-wide">
   <figure>
-    <img src="results/vision_probe/cross_probing.png"
+    <img src="figs/vision_probe/cross_probing.png"
          alt="Grid of 10 plots, each showing probe score vs generated token index for both the politician (text) and portrait_ideology (vision) probes. Pearson correlations range from 0.10 to 0.45." />
     <figcaption>
       <em>Figure 9.</em> Token-level probe scores during free generation on ten policy
