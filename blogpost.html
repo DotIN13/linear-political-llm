@@ -978,6 +978,18 @@
         common objects are immediately available with clear labels.
       </p>
       <p>
+        We also seem to be able to find a clear divide in the t-SNE plots of the unsplash embeddings that
+        correspond to the liberal and conservative clusters. Is ideology association a major factor in how
+        images are represented in the CLIP model used to generate those embeddings? Can we use a PCA to verify if
+        the first or second principal component is aligned with the ideology dimension?
+      </p>
+      <p>
+        Also, it's interesting that we observed the probe correctly coloring people's figure or faces in the images
+        with red or blue. Does this mean that the ViT encoder in the VLM not only mixes information across image
+        patches,
+        but also preserve token level information at each position? Is there a way to prove or quantify this?
+      </p>
+      <p>
         Another fascinating extension of this work is audio probing. Vision and text are not the only ways models
         interact with the world—can we probe a "silence dimension" using audio data? What will steering
         on the silence dimension do to textual generation? Extending our linear probing framework into the
