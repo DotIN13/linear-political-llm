@@ -7,4 +7,6 @@ data/unsplash
 data/unsplash-25k-photos-embeddings.pkl
 data/congress_images
 data/audio_silence_probe
+data/news_images
+data/twitter_images
 datasets

@@ -29,6 +29,49 @@ from scipy.stats import spearmanr
 # Utilities
 # =========================
 
+
+class RaggedHeadFeatures(list):
+    """List-like container for per-layer features with variable head_dim.
+
+    Each item has shape [N, T, H, D_i]. Exposes `.shape` for backward-compatible
+    logging in notebooks that expect `features.shape`.
+    """
+
+    @property
+    def shape(self):
+        if len(self) == 0:
+            return (0, 0, 0, 0, ())
+        first = self[0]
+        n = int(first.shape[0])
+        t = int(first.shape[1])
+        h = int(first.shape[2])
+        d_per_layer = tuple(int(layer.shape[-1]) for layer in self)
+        return (n, t, len(self), h, d_per_layer)
+
+    def __getitem__(self, key):
+        """
+        Support ndarray-like indexing for common access patterns used in probing code.
+
+        Expected ragged layout is list of arrays with shape [N, T, H, D_i] per layer.
+        This enables code like `features[:, 0, layer_idx, head_idx, :]`.
+        """
+        if isinstance(key, tuple):
+            if len(key) != 5:
+                raise TypeError(
+                    "RaggedHeadFeatures tuple indexing expects 5 indices [N, T, L, H, D]."
+                )
+
+            n_idx, t_idx, l_idx, h_idx, d_idx = key
+            if not isinstance(l_idx, (int, np.integer)):
+                raise TypeError(
+                    "RaggedHeadFeatures requires an integer layer index in tuple indexing for ragged dimensions."
+                )
+
+            layer_arr = list.__getitem__(self, int(l_idx))
+            return layer_arr[n_idx, t_idx, h_idx, d_idx]
+
+        return list.__getitem__(self, key)
+
 def set_seed(seed: int = 42) -> None:
     """
     Set seeds and configurations for reproducibility across Python, NumPy, and PyTorch.
@@ -155,6 +198,37 @@ def _get_layer_head_counts(model, mode: str) -> Tuple[int, int]:
     return get_num_layers(model, mode), get_num_heads(model, mode)
 
 
+def _get_feature_for_head(
+    features: Union[np.ndarray, List],
+    layer_idx: int,
+    head_idx: int,
+    sample_indices: Optional[np.ndarray] = None
+) -> np.ndarray:
+    """
+    Extract features for a specific head from either uniform [N,1,L,H,D] or ragged List[[N,1,H,D]] format.
+    
+    Args:
+        features: Either np.ndarray [N,1,L,H,D] or List of [N,1,H,D] arrays
+        layer_idx: Layer index
+        head_idx: Head index
+        sample_indices: Optional sample indices to slice; if None, returns all samples
+    
+    Returns:
+        X: np.ndarray [N, D] or [len(sample_indices), D]
+    """
+    is_ragged = isinstance(features, list)
+    
+    if is_ragged:
+        X = features[layer_idx][:, 0, head_idx, :]  # [N, D]
+    else:
+        X = features[:, 0, layer_idx, head_idx, :]  # [N, D]
+    
+    if sample_indices is not None:
+        X = X[sample_indices]
+    
+    return X
+
+
 def clean_up(device: Optional[Union[str, torch.device]] = None) -> None:
     """
     Clean up CPU/GPU memory.
@@ -175,12 +249,15 @@ def extract_features(
     prompts: List,
     device: Optional[Union[str, torch.device]] = None,
     mode: str = "text"
-) -> np.ndarray:
+) -> Union[np.ndarray, RaggedHeadFeatures]:
     """
     Extracts attention head outputs (last-token slice) from the model.
     
     Returns:
-        features: np.ndarray [N, 1, L, H, D]
+        features: If all layers have same head_dim: np.ndarray [N, 1, L, H, D]
+                  Otherwise: List[np.ndarray] of shape [N, 1, H, D] per layer (ragged, no padding)
+    
+    Handles models with variable head dimensions across layers (e.g., Gemma4) without padding.
     """
     device = _resolve_device(device)
 
@@ -193,31 +270,50 @@ def extract_features(
     num_layers, _ = _get_layer_head_counts(model, mode)
     heads = get_all_head_out_keys(model, mode)
 
-    # Keep only last-token activations per sample to avoid storing huge [L, S, H, D] arrays.
-    features: List[np.ndarray] = []
-
-    # Iterate and Trace
-    for enc in tqdm(encoded_list, total=len(encoded_list), desc="Extracting features"):
-        with torch.no_grad():
-            with TraceDict(model, heads) as ret:
-                _ = model(**enc)
-
-                # Collect last-token outputs from all layers.
-                per_head = []
-                for head in heads:
-                    # ret[head].output shape: [B, S, H, D]
-                    # We only need the final token for probing.
-                    out = ret[head].output[:, -1, :, :].squeeze(0).detach().to(dtype=torch.float32).cpu()
-                    per_head.append(out)
-
-                # Stack across layers -> [L, H, D], then add T=1 -> [1, L, H, D]
-                per_head_last = torch.stack(per_head, dim=0).numpy()
-                features.append(np.expand_dims(per_head_last, axis=0))
+    # First pass: discover head_dims per layer
+    head_dims_per_layer = {}
     
-    # Stack samples -> [N, 1, L, H, D]
-    features = np.stack(features, axis=0)
+    with torch.no_grad():
+        with TraceDict(model, heads) as ret:
+            _ = model(**encoded_list[0])
+            for layer_idx, head in enumerate(heads):
+                head_dim = ret[head].output.shape[-1]
+                head_dims_per_layer[layer_idx] = head_dim
     
-    return features
+    # Check if all dimensions are uniform
+    dims = list(head_dims_per_layer.values())
+    all_same_dim = len(set(dims)) == 1
+    
+    # Iterate and extract
+    if all_same_dim:
+        # Use original stacked format for backward compatibility
+        features: List[np.ndarray] = []
+        for enc in tqdm(encoded_list, total=len(encoded_list), desc="Extracting features"):
+            with torch.no_grad():
+                with TraceDict(model, heads) as ret:
+                    _ = model(**enc)
+                    per_head = []
+                    for head in heads:
+                        out = ret[head].output[:, -1, :, :].squeeze(0).detach().to(dtype=torch.float32).cpu()
+                        per_head.append(out)
+                    per_head_last = torch.stack(per_head, dim=0).numpy()
+                    features.append(np.expand_dims(per_head_last, axis=0))
+        return np.stack(features, axis=0)  # [N, 1, L, H, D]
+    else:
+        # Use ragged format: List of per-layer arrays [N, 1, H, D]
+        features_per_layer: List[List[np.ndarray]] = [[] for _ in range(num_layers)]
+        for enc in tqdm(encoded_list, total=len(encoded_list), desc="Extracting features"):
+            with torch.no_grad():
+                with TraceDict(model, heads) as ret:
+                    _ = model(**enc)
+                    for layer_idx, head in enumerate(heads):
+                        out = ret[head].output[:, -1, :, :].squeeze(0).detach().to(dtype=torch.float32).cpu().numpy()
+                        features_per_layer[layer_idx].append(out)
+        
+        # Stack samples per layer: [N, 1, H, D]
+        return RaggedHeadFeatures(
+            [np.stack([f for f in layer_features], axis=0)[:, np.newaxis, :, :] for layer_features in features_per_layer]
+        )
 
 
 def save_features(
@@ -316,6 +412,8 @@ def train_ridge_models(
     """
     Load saved features and labels, train per-head Ridge regressors with KFold CV,
     returning (performance [L,H], ridge_models: dict[layer][head] -> model).
+    
+    Handles both uniform-dim arrays [N,1,L,H,D] and ragged lists List[[N,1,H,D]].
     """
     # Load
     base_name = model_base_name(model_path)
@@ -326,6 +424,10 @@ def train_ridge_models(
     n_layers, n_heads = _get_layer_head_counts(model, mode)
     performance = np.zeros((n_layers, n_heads), dtype=np.float32)
     ridge_dict: Dict[int, Dict[int, Ridge]] = {}
+    
+    # Detect if ragged (list) or uniform (array)
+    is_ragged = isinstance(features, list)
+    n_samples = len(features[0]) if is_ragged else features.shape[0]
 
     # Train per head
     for i in tqdm(range(n_layers), desc="Layers"):
@@ -333,9 +435,14 @@ def train_ridge_models(
         for j in range(n_heads):
             kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
             score_sum = 0.0
-            for train_idx, test_idx in kf.split(range(features.shape[0])):
-                X_train = features[train_idx, 0, i, j, :]  # [N_train, D]
-                X_test  = features[test_idx, 0, i, j, :]   # [N_test, D]
+            for train_idx, test_idx in kf.split(range(n_samples)):
+                if is_ragged:
+                    X_train = features[i][train_idx, 0, j, :]  # [N_train, D]
+                    X_test  = features[i][test_idx, 0, j, :]   # [N_test, D]
+                else:
+                    X_train = features[train_idx, 0, i, j, :]  # [N_train, D]
+                    X_test  = features[test_idx, 0, i, j, :]   # [N_test, D]
+                
                 y_train = np.asarray(labels)[train_idx]
                 y_test  = np.asarray(labels)[test_idx]
 
