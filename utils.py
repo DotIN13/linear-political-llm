@@ -29,49 +29,6 @@ from scipy.stats import spearmanr
 # Utilities
 # =========================
 
-
-class RaggedHeadFeatures(list):
-    """List-like container for per-layer features with variable head_dim.
-
-    Each item has shape [N, T, H, D_i]. Exposes `.shape` for backward-compatible
-    logging in notebooks that expect `features.shape`.
-    """
-
-    @property
-    def shape(self):
-        if len(self) == 0:
-            return (0, 0, 0, 0, ())
-        first = self[0]
-        n = int(first.shape[0])
-        t = int(first.shape[1])
-        h = int(first.shape[2])
-        d_per_layer = tuple(int(layer.shape[-1]) for layer in self)
-        return (n, t, len(self), h, d_per_layer)
-
-    def __getitem__(self, key):
-        """
-        Support ndarray-like indexing for common access patterns used in probing code.
-
-        Expected ragged layout is list of arrays with shape [N, T, H, D_i] per layer.
-        This enables code like `features[:, 0, layer_idx, head_idx, :]`.
-        """
-        if isinstance(key, tuple):
-            if len(key) != 5:
-                raise TypeError(
-                    "RaggedHeadFeatures tuple indexing expects 5 indices [N, T, L, H, D]."
-                )
-
-            n_idx, t_idx, l_idx, h_idx, d_idx = key
-            if not isinstance(l_idx, (int, np.integer)):
-                raise TypeError(
-                    "RaggedHeadFeatures requires an integer layer index in tuple indexing for ragged dimensions."
-                )
-
-            layer_arr = list.__getitem__(self, int(l_idx))
-            return layer_arr[n_idx, t_idx, h_idx, d_idx]
-
-        return list.__getitem__(self, key)
-
 def set_seed(seed: int = 42) -> None:
     """
     Set seeds and configurations for reproducibility across Python, NumPy, and PyTorch.
@@ -249,7 +206,7 @@ def extract_features(
     prompts: List,
     device: Optional[Union[str, torch.device]] = None,
     mode: str = "text"
-) -> Union[np.ndarray, RaggedHeadFeatures]:
+) -> Union[np.ndarray, List]:
     """
     Extracts attention head outputs (last-token slice) from the model.
     
@@ -311,9 +268,8 @@ def extract_features(
                         features_per_layer[layer_idx].append(out)
         
         # Stack samples per layer: [N, 1, H, D]
-        return RaggedHeadFeatures(
-            [np.stack([f for f in layer_features], axis=0)[:, np.newaxis, :, :] for layer_features in features_per_layer]
-        )
+        return [np.stack([f for f in layer_features], axis=0)[:, np.newaxis, :, :] 
+                for layer_features in features_per_layer]
 
 
 def save_features(

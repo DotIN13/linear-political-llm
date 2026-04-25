@@ -1,0 +1,13 @@
+{
+  "model": "gemini-3.1-flash-image-preview",
+  "created_at": "2026-04-24T17:37:00.599727",
+  "person_description": "a middle-aged male public official with short brown hair in a navy suit and white shirt",
+  "scene_description": "standing in a legislative chamber hallway with soft overhead lighting and blurred background",
+  "blue_prompt": "Photorealistic editorial portrait. Person: a middle-aged male public official with short brown hair in a navy suit and white shirt. Scene: standing in a legislative chamber hallway with soft overhead lighting and blurred background. Keep expression, face identity, hair, body pose, camera angle, lighting, background, clothing, and all accessories identical across variants. The only allowed difference is tie color. No logos, no text overlays. Variant A (Democrat): subject wears a solid blue necktie.",
+  "red_edit_prompt": "Create Variant B (Republican) from this exact image. Keep the same person and scene exactly unchanged. Change only the necktie color from blue to solid red. Do not alter identity, pose, facial expression, background, lighting, crop, or any other clothing.",
+  "files": {
+    "democrat_blue": "results/gemini_tie_pairs/batch_100/20260424_170804_pair_053_democrat_blue.png",
+    "republican_red": "results/gemini_tie_pairs/batch_100/20260424_170804_pair_053_republican_red.png",
+    "side_by_side": "results/gemini_tie_pairs/batch_100/20260424_170804_pair_053_side_by_side.png"
+  }
+}

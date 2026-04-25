@@ -44,8 +44,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-path", default=DEFAULT_MODEL_PATH)
     parser.add_argument("--image-dir", default=DEFAULT_IMAGE_DIR)
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--activations-name", default="twitter_images_patch_scores.pt")
-    parser.add_argument("--stats-name", default="twitter_images_patch_stats.csv")
     parser.add_argument("--ridge-prefix", default="politician")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     parser.add_argument("--max-width", type=int, default=DEFAULT_MAX_WIDTH)
@@ -64,7 +62,9 @@ def resolve_output_paths(args: argparse.Namespace) -> Tuple[str, str]:
     if output_dir is None:
         output_dir = os.path.join("results", model_base_name(args.model_path))
     os.makedirs(output_dir, exist_ok=True)
-    return os.path.join(output_dir, args.activations_name), os.path.join(output_dir, args.stats_name)
+    activations_name = f"twitter_images_patch_scores_{args.ridge_prefix}.pt"
+    stats_name = f"twitter_images_patch_stats_{args.ridge_prefix}.csv"
+    return os.path.join(output_dir, activations_name), os.path.join(output_dir, stats_name)
 
 
 def ensure_writable(path: str, overwrite: bool) -> None:

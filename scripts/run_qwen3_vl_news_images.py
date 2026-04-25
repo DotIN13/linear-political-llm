@@ -1,5 +1,15 @@
 """
 python run_qwen3_vl_news_images.py --recursive --batch-size 4
+
+python scripts/run_qwen3_vl_news_images.py \
+  --model-path /project/jevans/tzhang3/models/Qwen3-VL-8B-Instruct \
+  --image-dir results/gemini_tie_pairs/red_blue \
+  --output-dir results/qwen3-vl-8b-instruct/red_blue \
+  --batch-size 4 \
+  --top-k 16 \
+  --dtype auto \
+  --device-map auto \
+  --overwrite
 """
 
 import argparse
@@ -47,6 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-dir", default=DEFAULT_IMAGE_DIR)
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--activations-name", default="news_images_patch_scores.pt")
+    parser.add_argument("--all-tokens-name", default="news_images_all_tokens.pt")
     parser.add_argument("--stats-name", default="news_images_patch_stats.csv")
     parser.add_argument("--ridge-prefix", default="politician")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
@@ -61,12 +72,16 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_output_paths(args: argparse.Namespace) -> Tuple[str, str]:
+def resolve_output_paths(args: argparse.Namespace) -> Tuple[str, str, str]:
     output_dir = args.output_dir
     if output_dir is None:
         output_dir = os.path.join("results", model_base_name(args.model_path))
     os.makedirs(output_dir, exist_ok=True)
-    return os.path.join(output_dir, args.activations_name), os.path.join(output_dir, args.stats_name)
+    return (
+        os.path.join(output_dir, args.activations_name),
+        os.path.join(output_dir, args.all_tokens_name),
+        os.path.join(output_dir, args.stats_name),
+    )
 
 
 def ensure_writable(path: str, overwrite: bool) -> None:
@@ -297,15 +312,19 @@ def summarize_scores(image_scores: np.ndarray) -> Dict[str, float]:
 
 def save_outputs(
     activations_path: str,
+    all_tokens_path: str,
     stats_path: str,
     image_paths: List[str],
     image_names: List[str],
     grid_hw: List[Tuple[int, int]],
     offsets: List[int],
     flat_scores: List[torch.Tensor],
+    all_token_scores: List[torch.Tensor],
+    all_seq_lengths: List[int],
     stats_rows: List[Dict[str, object]],
     metadata: Dict[str, object],
 ) -> None:
+    # Save patch-level scores (existing behavior)
     score_tensor = torch.cat(flat_scores, dim=0) if flat_scores else torch.empty(0, dtype=torch.float32)
     payload = {
         "metadata": metadata,
@@ -317,6 +336,17 @@ def save_outputs(
     }
     torch.save(payload, activations_path)
 
+    # Save all-token scores
+    all_tokens_payload = {
+        "metadata": metadata,
+        "image_names": image_names,
+        "image_paths": image_paths,
+        "seq_lengths": torch.tensor(all_seq_lengths, dtype=torch.int64),
+        "all_token_scores": all_token_scores,  # List of tensors, one per image
+    }
+    torch.save(all_tokens_payload, all_tokens_path)
+
+    # Save statistics CSV
     fieldnames = [
         "image_name",
         "image_path",
@@ -342,8 +372,9 @@ def main() -> None:
     if args.max_width is not None and args.max_width < 1:
         raise ValueError("--max-width must be at least 1")
 
-    activations_path, stats_path = resolve_output_paths(args)
+    activations_path, all_tokens_path, stats_path = resolve_output_paths(args)
     ensure_writable(activations_path, args.overwrite)
+    ensure_writable(all_tokens_path, args.overwrite)
     ensure_writable(stats_path, args.overwrite)
 
     image_paths = collect_image_paths(args.image_dir, recursive=args.recursive, limit=args.limit)
@@ -377,6 +408,8 @@ def main() -> None:
     all_grid_hw: List[Tuple[int, int]] = []
     offsets: List[int] = [0]
     flat_scores: List[torch.Tensor] = []
+    all_token_scores: List[torch.Tensor] = []
+    all_seq_lengths: List[int] = []
     stats_rows: List[Dict[str, object]] = []
     skipped_images = 0
 
@@ -411,6 +444,9 @@ def main() -> None:
             image_mask = (input_ids[row_idx] == image_pad_id) & valid_mask
             image_scores = score_batch[row_idx][image_mask].numpy().astype(np.float32, copy=False)
 
+            # Collect all-token scores (all valid tokens in the sequence)
+            all_valid_scores = score_batch[row_idx][valid_mask].numpy().astype(np.float32, copy=False)
+
             if image_scores.size == 0:
                 raise RuntimeError(f"No image patch scores found for {sample['image_path']}")
             if image_scores.size != sample["expected_patches"]:
@@ -423,6 +459,8 @@ def main() -> None:
             all_image_names.append(sample["image_name"])
             all_grid_hw.append((sample["grid_h"], sample["grid_w"]))
             flat_scores.append(torch.from_numpy(image_scores.copy()))
+            all_token_scores.append(torch.from_numpy(all_valid_scores.copy()))
+            all_seq_lengths.append(int(all_valid_scores.size))
             offsets.append(offsets[-1] + image_scores.size)
 
             row = {
@@ -449,17 +487,21 @@ def main() -> None:
     }
     save_outputs(
         activations_path=activations_path,
+        all_tokens_path=all_tokens_path,
         stats_path=stats_path,
         image_paths=all_image_paths,
         image_names=all_image_names,
         grid_hw=all_grid_hw,
         offsets=offsets,
         flat_scores=flat_scores,
+        all_token_scores=all_token_scores,
+        all_seq_lengths=all_seq_lengths,
         stats_rows=stats_rows,
         metadata=metadata,
     )
 
     print(f"Saved activations to {activations_path}")
+    print(f"Saved all-token scores to {all_tokens_path}")
     print(f"Saved stats to {stats_path}")
     print(f"Processed {len(all_image_paths)} images")
     print(f"Skipped {skipped_images} unreadable images")
