@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from scipy.stats import pearsonr, spearmanr
 
-from probes.base import BaseDimensionProbe, features_is_ragged, get_layer_tensor, get_num_layers
+from probes.base import BaseDimensionProbe, features_is_ragged, get_layer_tensor
 from probes.rfm.direction_utils import train_rfm_probe_on_concept
 
 
@@ -18,6 +18,7 @@ class LayerwiseRFM(BaseDimensionProbe):
         model_path: str,
         prefix: str,
         mode: str = "text",
+        model_family: str = "qwen3-vl",
         data_dir: str = "results/probes",
         seed: int = 42,
         train_fraction: float = 0.8,
@@ -28,6 +29,7 @@ class LayerwiseRFM(BaseDimensionProbe):
             model_path=model_path,
             prefix=prefix,
             mode=mode,
+            model_family=model_family,
             data_dir=data_dir,
             seed=seed,
             module_paths=module_paths,
@@ -47,7 +49,7 @@ class LayerwiseRFM(BaseDimensionProbe):
         y_np = self._prepare_labels(labels)
         features = self.extract_probe_features(model=model, prompts=prompts, tokenizer=tokenizer, device=device)
 
-        n_layers = get_num_layers(model, self.mode, self.module_paths)
+        n_layers = len(features) if features_is_ragged(features) else features.shape[2]
         n_samples = len(features[0]) if features_is_ragged(features) else features.shape[0]
         if n_samples != len(y_np):
             raise ValueError(f"Feature/label mismatch: {n_samples} features vs {len(y_np)} labels.")

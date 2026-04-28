@@ -6,7 +6,7 @@ from scipy.stats import spearmanr
 from sklearn.linear_model import Ridge
 from sklearn.model_selection import KFold
 
-from probes.base import BaseDimensionProbe, features_is_ragged, get_head_tensor, get_num_heads, get_num_layers
+from probes.base import BaseDimensionProbe, features_is_ragged, get_head_tensor, get_num_heads
 
 
 class HeadwiseLinearProbe(BaseDimensionProbe):
@@ -19,6 +19,7 @@ class HeadwiseLinearProbe(BaseDimensionProbe):
         model_path: str,
         prefix: str,
         mode: str = "text",
+        model_family: str = "qwen3-vl",
         data_dir: str = "results/probes",
         alpha: float = 1.0,
         n_splits: int = 2,
@@ -29,6 +30,7 @@ class HeadwiseLinearProbe(BaseDimensionProbe):
             model_path=model_path,
             prefix=prefix,
             mode=mode,
+            model_family=model_family,
             data_dir=data_dir,
             seed=seed,
             module_paths=module_paths,
@@ -40,8 +42,8 @@ class HeadwiseLinearProbe(BaseDimensionProbe):
         y = self._prepare_labels(labels)
         features = self.extract_probe_features(model=model, prompts=prompts, tokenizer=tokenizer, device=device)
 
-        n_layers = get_num_layers(model, self.mode, self.module_paths)
-        n_heads = get_num_heads(model, self.mode, self.module_paths)
+        n_layers = len(features) if features_is_ragged(features) else features.shape[2]
+        n_heads = get_num_heads(model, self.model_family, self.module_paths)
         n_samples = len(features[0]) if features_is_ragged(features) else features.shape[0]
 
         if n_samples != len(y):

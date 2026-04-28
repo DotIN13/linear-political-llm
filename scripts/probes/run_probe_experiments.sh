@@ -29,7 +29,7 @@ MODELS="${MODELS:-qwen3-vl gemma4 llama-3.2-vision}"
 PROBES="${PROBES:-headwise_linear layerwise_linear layerwise_rfm}"
 
 # ---------------------------------------------------------------------------
-# Model registry: path and mode for each model key
+# Model registry: path, mode, and model family for each model key
 # ---------------------------------------------------------------------------
 
 declare -A MODEL_PATHS=(
@@ -38,10 +38,10 @@ declare -A MODEL_PATHS=(
     [llama-3.2-vision]="/project/jevans/tzhang3/models/Llama-3.2-11B-Vision-Instruct"
 )
 
-declare -A MODEL_MODES=(
+declare -A MODEL_FAMILIES=(
     [qwen3-vl]="qwen3-vl"
-    [gemma4]="vision"
-    [llama-3.2-vision]="vision"
+    [gemma4]="gemma4"
+    [llama-3.2-vision]="mllama"
 )
 
 # ---------------------------------------------------------------------------
@@ -61,7 +61,13 @@ run_probe() {
     local data="$4"
 
     local model_path="${MODEL_PATHS[$model]}"
-    local mode="${MODEL_MODES[$model]}"
+    local mode="text"
+    local model_family="${MODEL_FAMILIES[$model]}"
+
+    # Combined ideology is multimodal: force vision mode to include cross-attention.
+    if [[ "$prefix" == "combined_ideology" ]]; then
+        mode="vision"
+    fi
 
     echo
     echo "=== ${model}  |  ${probe}  |  ${prefix} ==="
@@ -70,6 +76,7 @@ run_probe() {
     python -m probes.cli \
         --model-path  "$model_path" \
         --mode        "$mode" \
+        --model-family "$model_family" \
         --probe       "$probe" \
         --prefix      "$prefix" \
         --data        "$data" \

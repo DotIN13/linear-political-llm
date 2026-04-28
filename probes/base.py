@@ -45,8 +45,8 @@ ModulePathsLike = Optional[Union[ModulePaths, Dict[str, str]]]
 
 
 DEFAULT_MODULE_PATHS: Dict[str, ModulePaths] = {
-    "text": ModulePaths(layer_prefix="model.layers"),
-    "vision": ModulePaths(layer_prefix="model.language_model.layers"),
+    "gemma4": ModulePaths(layer_prefix="model.language_model.layers"),
+    "mllama": ModulePaths(layer_prefix="model.language_model.layers"),
     "qwen3-vl": ModulePaths(layer_prefix="model.language_model.layers"),
 }
 
@@ -75,11 +75,11 @@ def _resolve_device(device: Optional[Union[str, torch.device]]) -> torch.device:
     return device if isinstance(device, torch.device) else torch.device(device)
 
 
-def resolve_module_paths(mode: str, module_paths: ModulePathsLike = None) -> ModulePaths:
-    if mode not in DEFAULT_MODULE_PATHS:
-        raise ValueError(f"Unknown mode '{mode}'.")
+def resolve_module_paths(model_family: str, module_paths: ModulePathsLike = None) -> ModulePaths:
+    if model_family not in DEFAULT_MODULE_PATHS:
+        raise ValueError(f"Unknown model_family '{model_family}'.")
 
-    default_paths = DEFAULT_MODULE_PATHS[mode]
+    default_paths = DEFAULT_MODULE_PATHS[model_family]
     if module_paths is None:
         return default_paths
     if isinstance(module_paths, ModulePaths):
@@ -100,29 +100,28 @@ def resolve_module_paths(mode: str, module_paths: ModulePathsLike = None) -> Mod
 # =========================
 
 
-def _get_text_cfg(model, mode: str, module_paths: ModulePathsLike = None):
-    resolved_paths = resolve_module_paths(mode, module_paths)
-    if mode in {"vision", "qwen3-vl"}:
-        try:
-            cfg = _resolve_attr_path(model, resolved_paths.text_config_path)
-            if cfg is not None:
-                return cfg
-        except AttributeError:
-            pass
+def _get_text_cfg(model, model_family: str, module_paths: ModulePathsLike = None):
+    resolved_paths = resolve_module_paths(model_family, module_paths)
+    try:
+        cfg = _resolve_attr_path(model, resolved_paths.text_config_path)
+        if cfg is not None:
+            return cfg
+    except AttributeError:
+        pass
     return model.config
 
 
-def get_num_layers(model, mode: str, module_paths: ModulePathsLike = None) -> int:
-    cfg = _get_text_cfg(model, mode, module_paths)
+def get_num_layers(model, model_family: str, module_paths: ModulePathsLike = None) -> int:
+    cfg = _get_text_cfg(model, model_family, module_paths)
     if hasattr(cfg, "num_hidden_layers"):
         return int(cfg.num_hidden_layers)
-    resolved_paths = resolve_module_paths(mode, module_paths)
+    resolved_paths = resolve_module_paths(model_family, module_paths)
     layers = _resolve_attr_path(model, resolved_paths.layer_prefix)
     return int(len(layers))
 
 
-def get_num_heads(model, mode: str, module_paths: ModulePathsLike = None) -> int:
-    cfg = _get_text_cfg(model, mode, module_paths)
+def get_num_heads(model, model_family: str, module_paths: ModulePathsLike = None) -> int:
+    cfg = _get_text_cfg(model, model_family, module_paths)
     if not hasattr(cfg, "num_attention_heads"):
         raise ValueError("Model config missing num_attention_heads.")
     return int(cfg.num_attention_heads)
@@ -131,16 +130,41 @@ def get_num_heads(model, mode: str, module_paths: ModulePathsLike = None) -> int
 def get_head_module_names(
     model,
     mode: str,
+    model_family: str,
     module_paths: ModulePathsLike = None,
 ) -> List[str]:
-    resolved_paths = resolve_module_paths(mode, module_paths)
-    n_layers = get_num_layers(model, mode, module_paths)
+    resolved_paths = resolve_module_paths(model_family, module_paths)
+    n_layers = get_num_layers(model, model_family, module_paths)
 
     template = resolved_paths.head_module_template
     if template is None:
         template = f"{resolved_paths.layer_prefix}.{{layer_idx}}.{resolved_paths.head_out_suffix}"
 
-    return [template.format(layer_idx=i) for i in range(n_layers)]
+    # Build list of actual module names, handling mixed attention architectures
+    # For mllama models with both self_attn and cross_attn layers, only include
+    # layers with self_attn since cross_attn requires vision features that may not
+    # be available during text-only feature extraction.
+    head_names = []
+    named_modules = dict(model.named_modules())
+    for i in range(n_layers):
+        # Always prefer self_attn for text-only probing
+        self_attn_path = f"{resolved_paths.layer_prefix}.{i}.self_attn.head_out"
+
+        if self_attn_path in named_modules:
+            head_names.append(self_attn_path)
+        else:
+            # Include cross-attn only for mllama when mode is explicitly vision.
+            cross_attn_path = f"{resolved_paths.layer_prefix}.{i}.cross_attn.head_out"
+            if cross_attn_path in named_modules and model_family == "mllama" and mode == "vision":
+                head_names.append(cross_attn_path)
+            else:
+                # Fall back to a generic template when provided by module_paths overrides.
+                generic_path = template.format(layer_idx=i)
+                if generic_path in named_modules:
+                    head_names.append(generic_path)
+            # Otherwise skip this layer (it doesn't have self_attn and we're not in vision mode)
+    
+    return head_names
 
 
 # =========================
@@ -180,12 +204,21 @@ def _capture_module_outputs(model, encoded_inputs: Dict[str, Any], module_names:
     return outputs
 
 
-def _extract_last_token_head_output(layer_out: torch.Tensor) -> torch.Tensor:
-    # Expected shape is [B, S, H, D]; we keep [H, D] for batch-size 1 probing.
+def _extract_last_token_head_output(layer_out: torch.Tensor, num_heads: int) -> torch.Tensor:
+    # Convert to [H, D] for batch-size 1 probing.
+    # Common cases:
+    # - [B, S, H, D] -> take last token -> [H, D]
+    # - [B, S, H*D]  -> take last token and reshape -> [H, D]
     if layer_out.dim() == 4:
         return layer_out[:, -1, :, :].squeeze(0)
     if layer_out.dim() == 3:
-        return layer_out[-1, :, :]
+        last_token = layer_out[:, -1, :].squeeze(0)
+        if last_token.numel() % num_heads != 0:
+            raise ValueError(
+                f"Cannot reshape head output of size {last_token.numel()} into {num_heads} heads."
+            )
+        head_dim = last_token.numel() // num_heads
+        return last_token.reshape(num_heads, head_dim)
     raise ValueError(f"Unexpected head output shape: {tuple(layer_out.shape)}")
 
 
@@ -194,6 +227,7 @@ def extract_features(
     prompts: List,
     device: Optional[Union[str, torch.device]] = None,
     mode: str = "text",
+    model_family: str = "qwen3-vl",
     module_paths: ModulePathsLike = None,
 ) -> Union[np.ndarray, List[np.ndarray]]:
     """
@@ -203,12 +237,17 @@ def extract_features(
     """
     dev = _resolve_device(device)
     encoded_list = [{k: v.to(dev) for k, v in p.items() if isinstance(v, torch.Tensor)} for p in prompts]
+    num_heads = get_num_heads(model, model_family, module_paths)
 
-    head_names = get_head_module_names(model, mode=mode, module_paths=module_paths)
+    head_names = get_head_module_names(model, mode=mode, model_family=model_family, module_paths=module_paths)
+    if len(head_names) == 0:
+        raise ValueError("No probeable attention head_out modules were found for the given mode/model_family.")
 
     # First pass determines whether head dimensions vary by layer.
     first_outputs = _capture_module_outputs(model, encoded_list[0], head_names)
-    head_dims_per_layer = [int(_extract_last_token_head_output(first_outputs[name]).shape[-1]) for name in head_names]
+    head_dims_per_layer = [
+        int(_extract_last_token_head_output(first_outputs[name], num_heads=num_heads).shape[-1]) for name in head_names
+    ]
     all_same_dim = len(set(head_dims_per_layer)) == 1
 
     if all_same_dim:
@@ -217,7 +256,7 @@ def extract_features(
             out_map = _capture_module_outputs(model, enc, head_names)
             per_layer = []
             for name in head_names:
-                last = _extract_last_token_head_output(out_map[name]).to(dtype=torch.float32).cpu()
+                last = _extract_last_token_head_output(out_map[name], num_heads=num_heads).to(dtype=torch.float32).cpu()
                 per_layer.append(last)
             per_layer_last = torch.stack(per_layer, dim=0).numpy()  # [L, H, D]
             features.append(np.expand_dims(per_layer_last, axis=0))  # [1, L, H, D]
@@ -228,7 +267,9 @@ def extract_features(
     for enc in tqdm(encoded_list, total=len(encoded_list), desc="Extracting features"):
         out_map = _capture_module_outputs(model, enc, head_names)
         for li, name in enumerate(head_names):
-            last = _extract_last_token_head_output(out_map[name]).to(dtype=torch.float32).cpu().numpy()  # [H, D_i]
+            last = _extract_last_token_head_output(out_map[name], num_heads=num_heads).to(
+                dtype=torch.float32
+            ).cpu().numpy()  # [H, D_i]
             features_per_layer[li].append(last)
 
     return [np.stack(layer_feats, axis=0)[:, np.newaxis, :, :] for layer_feats in features_per_layer]
@@ -249,6 +290,7 @@ class BaseDimensionProbe(ABC):
         model_path: str,
         prefix: str,
         mode: str = "text",
+        model_family: str = "qwen3-vl",
         data_dir: str = "results/probes",
         seed: int = 42,
         module_paths: ModulePathsLike = None,
@@ -257,9 +299,10 @@ class BaseDimensionProbe(ABC):
         self.model_base_name = model_base_name(model_path)
         self.prefix = prefix
         self.mode = mode
+        self.model_family = model_family
         self.data_dir = data_dir
         self.seed = seed
-        self.module_paths = resolve_module_paths(mode, module_paths)
+        self.module_paths = resolve_module_paths(model_family, module_paths)
         self.base_dir = os.path.join(self.data_dir, self.model_base_name)
 
         self.weights_: Optional[Any] = None
@@ -316,6 +359,7 @@ class BaseDimensionProbe(ABC):
             prompts=encoded,
             device=device,
             mode=self.mode,
+            model_family=self.model_family,
             module_paths=self.module_paths,
         )
 

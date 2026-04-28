@@ -7,7 +7,8 @@ Trains one probe class for one model and one direction, then saves the result.
 Example:
   python -m probes.cli \
     --model-path /path/to/Qwen3-VL-8B-Instruct \
-    --mode qwen3-vl \
+    --model-family qwen3-vl \
+    --mode text \
     --probe layerwise_rfm \
     --prefix textual_ideology \
     --data data/probes/textual_ideology.jsonl
@@ -51,7 +52,8 @@ def parse_args() -> argparse.Namespace:
     )
     # Required
     p.add_argument("--model-path", required=True)
-    p.add_argument("--mode", required=True, choices=["text", "vision", "qwen3-vl"])
+    p.add_argument("--mode", required=True, choices=["text", "vision"])
+    p.add_argument("--model-family", required=True, choices=["gemma4", "mllama", "qwen3-vl"])
     p.add_argument("--probe", required=True, choices=list(PROBE_CLASSES))
     p.add_argument("--prefix", required=True, help="Direction name, e.g. textual_ideology.")
     p.add_argument("--data", required=True, help="JSONL/JSON/CSV manifest.")
@@ -202,7 +204,7 @@ def build_prompts(
 # Probe construction
 # ---------------------------------------------------------------------------
 
-def parse_module_paths(raw: Optional[str], mode: str) -> Optional[ModulePaths]:
+def parse_module_paths(raw: Optional[str], model_family: str) -> Optional[ModulePaths]:
     if raw is None:
         return None
     if os.path.isfile(raw):
@@ -210,7 +212,7 @@ def parse_module_paths(raw: Optional[str], mode: str) -> Optional[ModulePaths]:
             overrides = json.load(f)
     else:
         overrides = json.loads(raw)
-    return resolve_module_paths(mode, overrides)
+    return resolve_module_paths(model_family, overrides)
 
 
 def build_probe(args: argparse.Namespace, module_paths: Optional[ModulePaths]):
@@ -218,6 +220,7 @@ def build_probe(args: argparse.Namespace, module_paths: Optional[ModulePaths]):
         model_path=args.model_path,
         prefix=args.prefix,
         mode=args.mode,
+        model_family=args.model_family,
         data_dir=args.data_dir,
         seed=args.seed,
         module_paths=module_paths,
@@ -231,14 +234,14 @@ def build_probe(args: argparse.Namespace, module_paths: Optional[ModulePaths]):
     )
 
 
-def select_model_loader(mode: str, model_path: str):
+def select_model_loader(model_family: str, model_path: str):
     path_lower = model_path.lower()
 
-    if mode == "qwen3-vl" or "qwen3-vl" in path_lower:
+    if model_family == "qwen3-vl" or "qwen3-vl" in path_lower:
         return AutoModelForImageTextToText
-    if "gemma-4" in path_lower or "gemma4" in path_lower:
+    if model_family == "gemma4" or "gemma-4" in path_lower or "gemma4" in path_lower:
         return AutoModelForMultimodalLM
-    if "llama-3.2" in path_lower and "vision" in path_lower:
+    if model_family == "mllama" or ("llama-3.2" in path_lower and "vision" in path_lower):
         return MllamaForConditionalGeneration
     return AutoModelForImageTextToText
 
@@ -250,25 +253,36 @@ def select_model_loader(mode: str, model_path: str):
 def main() -> None:
     args = parse_args()
 
+    module_paths = parse_module_paths(args.module_paths_json, args.model_family)
+    probe = build_probe(args, module_paths=module_paths)
+
+    # Check if results already exist before loading models
+    if (os.path.exists(probe.weights_path) and
+        os.path.exists(probe.scores_path) and
+        os.path.exists(probe.metadata_path)):
+        print(f"Results already exist for {args.prefix} ({args.probe}) on {args.model_path}.")
+        print(f"Weights : {probe.weights_path}")
+        print(f"Scores  : {probe.scores_path}")
+        print(f"Metadata: {probe.metadata_path}")
+        return
+
     records = load_records(args.data)
     if args.limit is not None:
         records = records[: args.limit]
     if not records:
         raise ValueError(f"No records loaded from {args.data}.")
 
-    module_paths = parse_module_paths(args.module_paths_json, args.mode)
-
     print(f"Loading model: {args.model_path}")
     torch.backends.cuda.matmul.allow_tf32 = True
     processor = AutoProcessor.from_pretrained(args.model_path)
-    model_cls = select_model_loader(args.mode, args.model_path)
+    model_cls = select_model_loader(args.model_family, args.model_path)
 
     if args.dtype == "auto":
         default_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
     else:
         default_dtype = getattr(torch, args.dtype)
 
-    if model_cls is AutoModelForImageTextToText and (args.mode == "qwen3-vl" or "qwen3-vl" in args.model_path.lower()):
+    if model_cls is AutoModelForImageTextToText and args.model_family == "qwen3-vl":
         load_kwargs = {
             "dtype": default_dtype,
             "low_cpu_mem_usage": True,
