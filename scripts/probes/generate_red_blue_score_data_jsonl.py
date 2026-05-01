@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate score-data JSONL for gemini tie-pairs red/blue images.
+Generate score-data JSONL for paired Gemini image datasets.
 """
 
 import argparse
@@ -21,6 +21,8 @@ DEFAULT_PROMPT = (
     "most likely to have used this image."
 )
 DEFAULT_OUTPUT_PATH = "data/probes/red_blue_score_data.jsonl"
+DEFAULT_ID_PREFIX = "red_blue"
+DEFAULT_SOURCE = "gemini_tie_pairs_red_blue"
 IMAGE_EXTENSIONS = ("*.jpg", "*.jpeg", "*.png", "*.webp")
 
 
@@ -34,6 +36,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--output-path", default=DEFAULT_OUTPUT_PATH)
+    parser.add_argument("--id-prefix", default=DEFAULT_ID_PREFIX)
+    parser.add_argument("--source", default=DEFAULT_SOURCE)
     return parser.parse_args()
 
 
@@ -44,10 +48,17 @@ def collect_image_paths(image_dir: str, recursive: bool, limit: int = None) -> L
         image_paths.extend(glob.glob(query, recursive=recursive))
 
     image_paths = sorted(set(image_paths))
+    if not image_paths and not recursive:
+        for pattern in IMAGE_EXTENSIONS:
+            query = os.path.join(image_dir, "**", pattern)
+            image_paths.extend(glob.glob(query, recursive=True))
+        image_paths = sorted(set(image_paths))
     if limit is not None:
         image_paths = image_paths[:limit]
     if not image_paths:
-        raise FileNotFoundError(f"No images found under {image_dir}")
+        raise FileNotFoundError(
+            f"No images found under {image_dir}. If your files are in nested folders, use --recursive."
+        )
     return image_paths
 
 
@@ -67,8 +78,8 @@ def main() -> None:
         for idx, image_path in enumerate(image_paths):
             width, height = dims(image_path)
             payload = {
-                "id": f"red_blue_{idx:06d}",
-                "source": "gemini_tie_pairs_red_blue",
+                "id": f"{args.id_prefix}_{idx:06d}",
+                "source": args.source,
                 "name": os.path.basename(image_path),
                 "image_path": image_path,
                 "prompt": args.prompt,

@@ -1,0 +1,13 @@
+{
+  "model": "gemini-3.1-flash-image-preview",
+  "created_at": "2026-05-01T01:48:14.398985",
+  "person_description": "a white male public official in his 50s with short gray hair, wearing a dark navy suit and white shirt",
+  "scene_description": "speaking in a TV interview studio with softly lit blurred backdrop",
+  "blue_prompt": "Photorealistic editorial portrait. Person: a white male public official in his 50s with short gray hair, wearing a dark navy suit and white shirt. Scene: speaking in a TV interview studio with softly lit blurred backdrop. Subject is not wearing any hat or headwear. Keep expression, face identity, hair, body pose, camera angle, lighting, background, and clothing identical across variants unless explicitly changed. No logos, no text overlays. Variant A: generate the baseline image.",
+  "red_edit_prompt": "Create Variant B from this exact image. Keep the same person and scene exactly unchanged. Add a red baseball cap with white 'Make America Great Again' text. Do not alter identity, pose, facial expression, background, lighting, crop, or any other clothing.",
+  "files": {
+    "democrat_blue": "results/gemini_tie_pairs/maga_hat_balanced/20260501_013351_magahat_025_with_hat_democrat_blue.png",
+    "republican_red": "results/gemini_tie_pairs/maga_hat_balanced/20260501_013351_magahat_025_with_hat_republican_red.png",
+    "side_by_side": "results/gemini_tie_pairs/maga_hat_balanced/20260501_013351_magahat_025_with_hat_side_by_side.png"
+  }
+}

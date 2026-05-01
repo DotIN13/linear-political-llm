@@ -13,7 +13,7 @@ set -euo pipefail
 #     --unsplash-image-dir data/unsplash
 #
 # Optional prompt overrides:
-#   --congress-prompt "..." --news-prompt "..." --twitter-prompt "..." --unsplash-prompt "..." --red-blue-prompt "..."
+#   --congress-prompt "..." --news-prompt "..." --twitter-prompt "..." --unsplash-prompt "..." --red-blue-prompt "..." --maga-hat-prompt "..."
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROBES_DIR="$ROOT_DIR/scripts/probes"
@@ -36,12 +36,14 @@ TWITTER_MAX_WIDTH="800"
 
 UNSPLASH_IMAGE_DIR="data/unsplash"
 RED_BLUE_IMAGE_DIR="data/gemini_tie_pairs/red_blue"
+MAGA_HAT_IMAGE_DIR="data/gemini_tie_pairs/maga_hat_balanced/images"
 
 CONGRESS_PROMPT=""
 NEWS_PROMPT=""
 TWITTER_PROMPT=""
 UNSPLASH_PROMPT=""
 RED_BLUE_PROMPT=""
+MAGA_HAT_PROMPT=""
 
 usage() {
   cat <<EOF
@@ -66,6 +68,7 @@ Dataset path options:
   --twitter-max-width N
 
   --unsplash-image-dir PATH
+  --maga-hat-image-dir PATH
 
 Prompt overrides:
   --congress-prompt TEXT
@@ -73,9 +76,11 @@ Prompt overrides:
   --twitter-prompt TEXT
   --unsplash-prompt TEXT
   --red-blue-prompt TEXT
+  --maga-hat-prompt TEXT
 
 Additional dataset path options:
   --red-blue-image-dir PATH
+  --maga-hat-image-dir PATH
 
 Outputs:
   <output-dir>/congress_score_data.jsonl
@@ -83,6 +88,7 @@ Outputs:
   <output-dir>/twitter_images_score_data.jsonl
   <output-dir>/unsplash25k_score_data.jsonl
   <output-dir>/red_blue_score_data.jsonl
+  <output-dir>/maga_hat_score_data.jsonl
 EOF
 }
 
@@ -120,6 +126,8 @@ while [[ $# -gt 0 ]]; do
       UNSPLASH_IMAGE_DIR="$2"; shift 2 ;;
     --red-blue-image-dir)
       RED_BLUE_IMAGE_DIR="$2"; shift 2 ;;
+    --maga-hat-image-dir)
+      MAGA_HAT_IMAGE_DIR="$2"; shift 2 ;;
 
     --congress-prompt)
       CONGRESS_PROMPT="$2"; shift 2 ;;
@@ -131,6 +139,8 @@ while [[ $# -gt 0 ]]; do
       UNSPLASH_PROMPT="$2"; shift 2 ;;
     --red-blue-prompt)
       RED_BLUE_PROMPT="$2"; shift 2 ;;
+    --maga-hat-prompt)
+      MAGA_HAT_PROMPT="$2"; shift 2 ;;
 
     -h|--help)
       usage; exit 0 ;;
@@ -178,49 +188,82 @@ if [[ -n "$RED_BLUE_PROMPT" ]]; then
   RED_BLUE_PROMPT_ARGS=(--prompt "$RED_BLUE_PROMPT")
 fi
 
-echo "[1/4] Generating Congress JSONL"
-python "$PROBES_DIR/generate_congress_score_data_jsonl.py" \
-  --image-dir "$CONGRESS_IMAGE_DIR" \
-  --hs-path "$CONGRESS_HS_PATH" \
-  --current-legislators-path "$CONGRESS_CUR_PATH" \
-  --historical-legislators-path "$CONGRESS_HIST_PATH" \
-  --resized-image-width "$CONGRESS_RESIZED_IMAGE_WIDTH" \
-  --output-path "$OUTPUT_DIR/congress_score_data.jsonl" \
-  "${COMMON_LIMIT_ARGS[@]}" \
-  "${CONGRESS_PROMPT_ARGS[@]}"
+MAGA_HAT_PROMPT_ARGS=()
+if [[ -n "$MAGA_HAT_PROMPT" ]]; then
+  MAGA_HAT_PROMPT_ARGS=(--prompt "$MAGA_HAT_PROMPT")
+fi
 
-echo "[2/4] Generating News JSONL"
-python "$PROBES_DIR/generate_news_score_data_jsonl.py" \
-  --image-dir "$NEWS_IMAGE_DIR" \
-  --max-width "$NEWS_MAX_WIDTH" \
-  --output-path "$OUTPUT_DIR/news_images_score_data.jsonl" \
-  "${COMMON_LIMIT_ARGS[@]}" \
-  "${RECURSIVE_ARGS[@]}" \
-  "${NEWS_PROMPT_ARGS[@]}"
+run_if_missing() {
+  local output_path="$1"
+  shift
 
-echo "[3/4] Generating Twitter JSONL"
-python "$PROBES_DIR/generate_twitter_score_data_jsonl.py" \
-  --image-dir "$TWITTER_IMAGE_DIR" \
-  --max-width "$TWITTER_MAX_WIDTH" \
-  --output-path "$OUTPUT_DIR/twitter_images_score_data.jsonl" \
-  "${COMMON_LIMIT_ARGS[@]}" \
-  "${RECURSIVE_ARGS[@]}" \
-  "${TWITTER_PROMPT_ARGS[@]}"
+  if [[ -f "$output_path" ]]; then
+    echo "Skipping existing output: $output_path"
+    return 0
+  fi
+
+  "$@"
+}
+
+echo "[1/6] Generating Congress JSONL"
+run_if_missing "$OUTPUT_DIR/congress_score_data.jsonl" \
+  python "$PROBES_DIR/generate_congress_score_data_jsonl.py" \
+    --image-dir "$CONGRESS_IMAGE_DIR" \
+    --hs-path "$CONGRESS_HS_PATH" \
+    --current-legislators-path "$CONGRESS_CUR_PATH" \
+    --historical-legislators-path "$CONGRESS_HIST_PATH" \
+    --resized-image-width "$CONGRESS_RESIZED_IMAGE_WIDTH" \
+    --output-path "$OUTPUT_DIR/congress_score_data.jsonl" \
+    "${COMMON_LIMIT_ARGS[@]}" \
+    "${CONGRESS_PROMPT_ARGS[@]}"
+
+echo "[2/6] Generating News JSONL"
+run_if_missing "$OUTPUT_DIR/news_images_score_data.jsonl" \
+  python "$PROBES_DIR/generate_news_score_data_jsonl.py" \
+    --image-dir "$NEWS_IMAGE_DIR" \
+    --max-width "$NEWS_MAX_WIDTH" \
+    --output-path "$OUTPUT_DIR/news_images_score_data.jsonl" \
+    "${COMMON_LIMIT_ARGS[@]}" \
+    "${RECURSIVE_ARGS[@]}" \
+    "${NEWS_PROMPT_ARGS[@]}"
+
+echo "[3/6] Generating Twitter JSONL"
+run_if_missing "$OUTPUT_DIR/twitter_images_score_data.jsonl" \
+  python "$PROBES_DIR/generate_twitter_score_data_jsonl.py" \
+    --image-dir "$TWITTER_IMAGE_DIR" \
+    --max-width "$TWITTER_MAX_WIDTH" \
+    --output-path "$OUTPUT_DIR/twitter_images_score_data.jsonl" \
+    "${COMMON_LIMIT_ARGS[@]}" \
+    "${RECURSIVE_ARGS[@]}" \
+    "${TWITTER_PROMPT_ARGS[@]}"
 
 echo "[4/5] Generating Unsplash JSONL"
-python "$PROBES_DIR/generate_unsplash_25k_score_data_jsonl.py" \
-  --image-dir "$UNSPLASH_IMAGE_DIR" \
-  --output-path "$OUTPUT_DIR/unsplash25k_score_data.jsonl" \
-  "${COMMON_LIMIT_ARGS[@]}" \
-  "${RECURSIVE_ARGS[@]}" \
-  "${UNSPLASH_PROMPT_ARGS[@]}"
+run_if_missing "$OUTPUT_DIR/unsplash25k_score_data.jsonl" \
+  python "$PROBES_DIR/generate_unsplash_25k_score_data_jsonl.py" \
+    --image-dir "$UNSPLASH_IMAGE_DIR" \
+    --output-path "$OUTPUT_DIR/unsplash25k_score_data.jsonl" \
+    "${COMMON_LIMIT_ARGS[@]}" \
+    "${RECURSIVE_ARGS[@]}" \
+    "${UNSPLASH_PROMPT_ARGS[@]}"
 
 echo "[5/5] Generating Red-Blue JSONL"
-python "$PROBES_DIR/generate_red_blue_score_data_jsonl.py" \
-  --image-dir "$RED_BLUE_IMAGE_DIR" \
-  --output-path "$OUTPUT_DIR/red_blue_score_data.jsonl" \
-  "${COMMON_LIMIT_ARGS[@]}" \
-  "${RECURSIVE_ARGS[@]}" \
-  "${RED_BLUE_PROMPT_ARGS[@]}"
+run_if_missing "$OUTPUT_DIR/red_blue_score_data.jsonl" \
+  python "$PROBES_DIR/generate_red_blue_score_data_jsonl.py" \
+    --image-dir "$RED_BLUE_IMAGE_DIR" \
+    --output-path "$OUTPUT_DIR/red_blue_score_data.jsonl" \
+    "${COMMON_LIMIT_ARGS[@]}" \
+    "${RECURSIVE_ARGS[@]}" \
+    "${RED_BLUE_PROMPT_ARGS[@]}"
+
+echo "[6/6] Generating MAGA-Hat JSONL"
+run_if_missing "$OUTPUT_DIR/maga_hat_score_data.jsonl" \
+  python "$PROBES_DIR/generate_red_blue_score_data_jsonl.py" \
+    --image-dir "$MAGA_HAT_IMAGE_DIR" \
+    --output-path "$OUTPUT_DIR/maga_hat_score_data.jsonl" \
+    --id-prefix "maga_hat" \
+    --source "gemini_tie_pairs_maga_hat" \
+    "${COMMON_LIMIT_ARGS[@]}" \
+    "${RECURSIVE_ARGS[@]}" \
+    "${MAGA_HAT_PROMPT_ARGS[@]}"
 
 echo "Done. JSONLs written to: $OUTPUT_DIR"

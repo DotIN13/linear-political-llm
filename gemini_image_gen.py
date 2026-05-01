@@ -90,6 +90,8 @@ def generate_tie_pair(
     output_dir: str,
     model: str = "gemini-3.1-flash-image-preview",
     basename: Optional[str] = None,
+    base_prompt_template: Optional[str] = None,
+    red_edit_prompt_template: Optional[str] = None,
 ) -> dict:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -100,27 +102,38 @@ def generate_tie_pair(
 
     client = genai.Client(api_key=api_key)
 
-    base_constraints = (
-        "Photorealistic editorial portrait. "
-        f"Person: {person_description}. "
-        f"Scene: {scene_description}. "
-        "Keep expression, face identity, hair, body pose, camera angle, lighting, background, clothing, "
-        "and all accessories identical across variants. "
-        "The only allowed difference is tie color. "
-        "No logos, no text overlays."
-    )
+    if base_prompt_template is None:
+        base_constraints = (
+            "Photorealistic editorial portrait. "
+            f"Person: {person_description}. "
+            f"Scene: {scene_description}. "
+            "Keep expression, face identity, hair, body pose, camera angle, lighting, background, clothing, "
+            "and all accessories identical across variants. "
+            "The only allowed difference is tie color. "
+            "No logos, no text overlays."
+        )
+        blue_prompt = (
+            f"{base_constraints} "
+            "Variant A (Democrat): subject wears a solid blue necktie."
+        )
+    else:
+        blue_prompt = base_prompt_template.format(
+            person_description=person_description,
+            scene_description=scene_description,
+        )
 
-    blue_prompt = (
-        f"{base_constraints} "
-        "Variant A (Democrat): subject wears a solid blue necktie."
-    )
-
-    red_edit_prompt = (
-        "Create Variant B (Republican) from this exact image. "
-        "Keep the same person and scene exactly unchanged. "
-        "Change only the necktie color from blue to solid red. "
-        "Do not alter identity, pose, facial expression, background, lighting, crop, or any other clothing."
-    )
+    if red_edit_prompt_template is None:
+        red_edit_prompt = (
+            "Create Variant B (Republican) from this exact image. "
+            "Keep the same person and scene exactly unchanged. "
+            "Change only the necktie color from blue to solid red. "
+            "Do not alter identity, pose, facial expression, background, lighting, crop, or any other clothing."
+        )
+    else:
+        red_edit_prompt = red_edit_prompt_template.format(
+            person_description=person_description,
+            scene_description=scene_description,
+        )
 
     blue_image = _generate_image_from_prompt(client=client, model=model, prompt=blue_prompt)
     red_image = _edit_image_with_prompt(
@@ -193,6 +206,16 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional output base name without extension.",
     )
+    parser.add_argument(
+        "--base-prompt-template",
+        default=None,
+        help="Optional template for Variant A prompt. Supports {person_description} and {scene_description}.",
+    )
+    parser.add_argument(
+        "--red-edit-prompt-template",
+        default=None,
+        help="Optional template for Variant B edit prompt. Supports {person_description} and {scene_description}.",
+    )
     return parser.parse_args()
 
 
@@ -204,6 +227,8 @@ def main() -> None:
         output_dir=args.output_dir,
         model=args.model,
         basename=args.basename,
+        base_prompt_template=args.base_prompt_template,
+        red_edit_prompt_template=args.red_edit_prompt_template,
     )
     print("Saved files:")
     for k, v in result["files"].items():
