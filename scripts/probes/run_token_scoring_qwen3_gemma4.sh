@@ -46,6 +46,7 @@ declare -A DATASET_PATHS=(
   [unsplash]="data/probes/unsplash25k_score_data.jsonl"
   [red_blue]="data/probes/red_blue_score_data.jsonl"
   [maga_hat]="data/probes/maga_hat_score_data.jsonl"
+  [lvis]="data/probes/lvis_score_data.jsonl"
 )
 
 # Allow caller to restrict which datasets to run (space-separated names)

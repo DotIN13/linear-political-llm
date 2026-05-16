@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../DeepSeek-V3"
+		},
+		{
+			"path": "../macss-thesis-tzhang3"
 		}
 	],
 	"settings": {}

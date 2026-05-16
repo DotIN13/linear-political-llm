@@ -3,6 +3,7 @@ model
 results
 __pycache__
 *.pdf
+data/probes
 data/unsplash
 data/unsplash-25k-photos-embeddings.pkl
 data/congress_images

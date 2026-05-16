@@ -32,6 +32,7 @@ python scripts/token_scoring.py \
 
 import argparse
 import csv
+import glob
 import hashlib
 import json
 import os
@@ -128,6 +129,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--batch-size", type=int, default=1, help="Number of prompts to score per forward pass.")
     parser.add_argument("--no-progress", action="store_true", help="Disable tqdm progress bar output.")
+    parser.add_argument("--chunk-size", type=int, default=5000, help="Number of records to process before flushing memory.")
 
     return parser.parse_args()
 
@@ -870,130 +872,209 @@ def main() -> None:
     image_token_ids = gather_candidate_image_token_ids(tokenizer)
     image_token_array = np.asarray(sorted(image_token_ids), dtype=np.int64) if image_token_ids else np.empty(0, dtype=np.int64)
 
-    records_meta: List[Dict[str, Any]] = []
-    token_ids_list: List[np.ndarray] = []
-    skipped_unreadable = 0
 
     resized_cache_dir = os.path.join(output_dir, "_resized_images_800")
 
-    progress = make_progress(total=len(records), enabled=not args.no_progress)
+    total_records = len(records)
+    chunk_size = max(1, args.chunk_size if args.chunk_size > 0 else total_records)
 
-    try:
-        for batch_start, batch_records in batched(records, args.batch_size):
-            valid_batch_indices: List[int] = []
-            valid_batch_records: List[Dict[str, Any]] = []
-            batch_messages: List[List[Dict[str, Any]]] = []
-            for offset, record in enumerate(batch_records):
-                messages = build_messages(record, args, cache_dir=resized_cache_dir)
-                if messages is None:
-                    skipped_unreadable += 1
-                    progress.update(1)
+    chunk_files: List[List[str]] = [[] for _ in runtime_entries]
+
+    global_skipped = 0
+
+    for chunk_idx, chunk_start in enumerate(range(0, total_records, chunk_size)):
+        chunk_records = records[chunk_start : chunk_start + chunk_size]
+        chunk_meta: List[Dict[str, Any]] = []
+        chunk_token_ids: List[np.ndarray] = []
+        chunk_image_scores: List[List[np.ndarray]] = [[] for _ in runtime_entries]
+        chunk_all_scores: List[List[np.ndarray]] = [[] for _ in runtime_entries]
+
+        progress = make_progress(total=len(chunk_records), enabled=not args.no_progress)
+        try:
+            for batch_start, batch_records in batched(chunk_records, args.batch_size):
+                valid_batch_indices: List[int] = []
+                valid_batch_records: List[Dict[str, Any]] = []
+                batch_messages: List[List[Dict[str, Any]]] = []
+                for offset, record in enumerate(batch_records):
+                    messages = build_messages(record, args, cache_dir=resized_cache_dir)
+                    if messages is None:
+                        global_skipped += 1
+                        progress.update(1)
+                        continue
+                    valid_batch_indices.append(chunk_start + batch_start + offset)
+                    valid_batch_records.append(record)
+                    batch_messages.append(messages)
+
+                if not batch_messages:
                     continue
-                valid_batch_indices.append(batch_start + offset)
-                valid_batch_records.append(record)
-                batch_messages.append(messages)
 
-            if not batch_messages:
-                continue
+                encoded = encode_prompts(processor, batch_messages)
 
-            encoded = encode_prompts(processor, batch_messages)
-
-            captured = capture_module_outputs(
-                model=model,
-                encoded=encoded,
-                module_names=sorted(all_module_names),
-            )
-
-            batch_scores: Dict[str, np.ndarray] = {}
-            for entry in runtime_entries:
-                score_key = f"{entry['prefix']}:{entry['probe_name']}"
-                batch_scores[score_key] = score_from_captured(captured, entry["runtime"]).cpu().numpy()
-
-            input_ids_batch = encoded["input_ids"].cpu().numpy().astype(np.int64, copy=False)
-            attention_mask = encoded.get("attention_mask")
-            if isinstance(attention_mask, torch.Tensor):
-                seq_lens = attention_mask.sum(dim=1).cpu().numpy().astype(np.int64, copy=False)
-            else:
-                seq_lens = np.full(input_ids_batch.shape[0], input_ids_batch.shape[1], dtype=np.int64)
-
-            for batch_idx, record in enumerate(valid_batch_records):
-                idx = valid_batch_indices[batch_idx]
-                seq_len = int(seq_lens[batch_idx])
-                if seq_len <= 0:
-                    raise ValueError(f"Empty sequence at record index {idx}")
-
-                input_ids = input_ids_batch[batch_idx, :seq_len]
-                token_ids_list.append(input_ids)
-
-                if image_token_array.size > 0:
-                    image_mask = np.isin(input_ids, image_token_array)
-                else:
-                    image_mask = np.zeros_like(input_ids, dtype=bool)
-
-                image_path = extract_first_image_path(batch_messages[batch_idx])
-                image_h, image_w = load_image_size_from_path(image_path) if image_path else (-1, -1)
-                grid_h, grid_w = reconstruct_grid_hw(
-                    model_family=args.model_family,
-                    image_path=image_path,
+                captured = capture_module_outputs(
+                    model=model,
                     encoded=encoded,
-                    processor=processor,
-                    batch_index=batch_idx,
+                    module_names=sorted(all_module_names),
                 )
 
-                expected_image_tokens = -1
-                if grid_h >= 0 and grid_w >= 0:
-                    expected_image_tokens = int(grid_h * grid_w)
-
-                record_id = record.get(args.id_field, idx)
-                records_meta.append(
-                    {
-                        "record_id": str(record_id),
-                        "name": str(record.get("name", f"record_{idx}")),
-                        "image_path": image_path,
-                        "image_h": int(image_h),
-                        "image_w": int(image_w),
-                        "grid_h": int(grid_h),
-                        "grid_w": int(grid_w),
-                        "expected_image_tokens": int(expected_image_tokens),
-                        "image_token_mismatch": 0,
-                    }
-                )
-
+                batch_scores: Dict[str, np.ndarray] = {}
                 for entry in runtime_entries:
                     score_key = f"{entry['prefix']}:{entry['probe_name']}"
-                    token_scores = batch_scores[score_key][batch_idx, :seq_len].astype(np.float32, copy=False)
-                    if token_scores.shape[0] != input_ids.shape[0]:
-                        raise ValueError(
-                            f"Score/token length mismatch on record {idx} for {entry['prefix']}:{entry['probe_name']}: "
-                            f"scores={token_scores.shape[0]} tokens={input_ids.shape[0]}"
-                        )
+                    batch_scores[score_key] = score_from_captured(captured, entry["runtime"]).cpu().numpy()
 
-                    image_scores = token_scores[image_mask].astype(np.float32, copy=False)
-                    entry["image_scores_list"].append(image_scores)
-                    entry["all_scores_list"].append(token_scores)
+                input_ids_batch = encoded["input_ids"].cpu().numpy().astype(np.int64, copy=False)
+                attention_mask = encoded.get("attention_mask")
+                if isinstance(attention_mask, torch.Tensor):
+                    seq_lens = attention_mask.sum(dim=1).cpu().numpy().astype(np.int64, copy=False)
+                else:
+                    seq_lens = np.full(input_ids_batch.shape[0], input_ids_batch.shape[1], dtype=np.int64)
 
-                progress.update(1)
-    finally:
-        progress.close()
+                for batch_idx, record in enumerate(valid_batch_records):
+                    idx = valid_batch_indices[batch_idx]
+                    seq_len = int(seq_lens[batch_idx])
+                    if seq_len <= 0:
+                        raise ValueError(f"Empty sequence at record index {idx}")
 
-    if skipped_unreadable > 0:
-        print(f"Skipped {skipped_unreadable} records with unreadable images.")
+                    input_ids = input_ids_batch[batch_idx, :seq_len]
+                    chunk_token_ids.append(input_ids)
 
-    # Compute mismatch flags using first probe's image-token extraction behavior.
-    # Mismatch is image-token count against reconstructed grid when available.
-    if runtime_entries:
-        first_image_lists = runtime_entries[0]["image_scores_list"]
-        for i, meta in enumerate(records_meta):
-            expected = meta["expected_image_tokens"]
-            if expected >= 0:
-                meta["image_token_mismatch"] = int(len(first_image_lists[i]) != expected)
+                    if image_token_array.size > 0:
+                        image_mask = np.isin(input_ids, image_token_array)
+                    else:
+                        image_mask = np.zeros_like(input_ids, dtype=bool)
 
-    for entry in runtime_entries:
-        probe = entry["probe"]
+                    image_path = extract_first_image_path(batch_messages[batch_idx])
+                    image_h, image_w = load_image_size_from_path(image_path) if image_path else (-1, -1)
+                    grid_h, grid_w = reconstruct_grid_hw(
+                        model_family=args.model_family,
+                        image_path=image_path,
+                        encoded=encoded,
+                        processor=processor,
+                        batch_index=batch_idx,
+                    )
+
+                    expected_image_tokens = -1
+                    if grid_h >= 0 and grid_w >= 0:
+                        expected_image_tokens = int(grid_h * grid_w)
+
+                    record_id = record.get(args.id_field, idx)
+                    chunk_meta.append(
+                        {
+                            "record_id": str(record_id),
+                            "name": str(record.get("name", f"record_{idx}")),
+                            "image_path": image_path,
+                            "image_h": int(image_h),
+                            "image_w": int(image_w),
+                            "grid_h": int(grid_h),
+                            "grid_w": int(grid_w),
+                            "expected_image_tokens": int(expected_image_tokens),
+                            "image_token_mismatch": 0,
+                        }
+                    )
+
+                    for ei, entry in enumerate(runtime_entries):
+                        score_key = f"{entry['prefix']}:{entry['probe_name']}"
+                        token_scores = batch_scores[score_key][batch_idx, :seq_len].astype(np.float32, copy=False)
+                        if token_scores.shape[0] != input_ids.shape[0]:
+                            raise ValueError(
+                                f"Score/token length mismatch on record {idx} for {entry['prefix']}:{entry['probe_name']}: "
+                                f"scores={token_scores.shape[0]} tokens={input_ids.shape[0]}"
+                            )
+
+                        image_scores = token_scores[image_mask].astype(np.float32, copy=False)
+                        chunk_image_scores[ei].append(image_scores)
+                        chunk_all_scores[ei].append(token_scores)
+
+                    progress.update(1)
+        finally:
+            progress.close()
+
+        if chunk_image_scores and chunk_image_scores[0]:
+            for ei, entry in enumerate(runtime_entries):
+                first_image_lists = chunk_image_scores[0] if ei == 0 else chunk_image_scores[ei]
+                for i, meta in enumerate(chunk_meta):
+                    expected = meta["expected_image_tokens"]
+                    if expected >= 0:
+                        meta["image_token_mismatch"] = int(len(first_image_lists[i]) != expected)
+
+        for ei, entry in enumerate(runtime_entries):
+            prefix = entry["prefix"]
+            probe_name = entry["probe_name"]
+
+            chunk_dirs = os.path.join(output_dir, f"_chunks_{prefix}_{probe_name}")
+            os.makedirs(chunk_dirs, exist_ok=True)
+
+            im_path = os.path.join(chunk_dirs, f"chunk_{chunk_idx:04d}_image.pt")
+            all_path = os.path.join(chunk_dirs, f"chunk_{chunk_idx:04d}_all.pt")
+            csv_path = os.path.join(chunk_dirs, f"chunk_{chunk_idx:04d}_stats.csv")
+
+            probe = entry["probe"]
+            chunk_metadata = {
+                "model_path": args.model_path,
+                "model_family": args.model_family,
+                "mode": args.mode,
+                "probe": probe_name,
+                "prefix": prefix,
+                "top_k": int(args.top_k),
+                "data": args.data,
+                "num_records": int(len(chunk_meta)),
+                "num_records_with_images": int(sum(1 for x in chunk_meta if x["image_path"])),
+                "image_token_ids": sorted(int(x) for x in image_token_ids),
+                "probe_weights_path": probe.weights_path,
+                "probe_scores_path": probe.scores_path,
+                "probe_metadata_path": probe.metadata_path,
+                "chunk_index": chunk_idx,
+            }
+
+            save_outputs(
+                image_scores_path=im_path,
+                all_scores_path=all_path,
+                stats_path=csv_path,
+                metadata=chunk_metadata,
+                records_meta=chunk_meta,
+                image_scores_list=chunk_image_scores[ei],
+                all_scores_list=chunk_all_scores[ei],
+                token_ids_list=chunk_token_ids,
+            )
+
+            chunk_files[ei].append(csv_path)
+
+        del chunk_meta, chunk_token_ids, chunk_image_scores, chunk_all_scores
+        print(f"Chunk {chunk_idx + 1}/{(total_records + chunk_size - 1) // chunk_size} done "
+              f"({min(chunk_start + chunk_size, total_records)}/{total_records})")
+
+    if global_skipped > 0:
+        print(f"Skipped {global_skipped} records with unreadable images.")
+
+    # Combine chunks into final outputs
+    for ei, entry in enumerate(runtime_entries):
         prefix = entry["prefix"]
         probe_name = entry["probe_name"]
+        chunk_dirs = os.path.join(output_dir, f"_chunks_{prefix}_{probe_name}")
 
-        metadata = {
+        # Combine image scores
+        all_im_paths = sorted(glob.glob(os.path.join(chunk_dirs, "chunk_*_image.pt")))
+        all_all_paths = sorted(glob.glob(os.path.join(chunk_dirs, "chunk_*_all.pt")))
+        all_csv_paths = sorted(glob.glob(os.path.join(chunk_dirs, "chunk_*_stats.csv")))
+
+        combined_rids: List[str] = []
+        combined_rnames: List[str] = []
+        combined_ipaths: List[str] = []
+        combined_ghw: List[Tuple[int, int]] = []
+        combined_scores: List[torch.Tensor] = []
+        combined_offsets = [0]
+
+        for im_path in all_im_paths:
+            data = torch.load(im_path, weights_only=False)
+            combined_rids.extend(data["record_ids"])
+            combined_rnames.extend(data["record_names"])
+            combined_ipaths.extend(data["image_paths"])
+            if "grid_hw" in data:
+                combined_ghw.extend([(int(h), int(w)) for h, w in data["grid_hw"].tolist()])
+            combined_scores.append(data["scores"])
+            combined_offsets.append(combined_offsets[-1] + int(data["scores"].numel()))
+
+        probe = entry["probe"]
+        final_metadata = {
             "model_path": args.model_path,
             "model_family": args.model_family,
             "mode": args.mode,
@@ -1001,24 +1082,74 @@ def main() -> None:
             "prefix": prefix,
             "top_k": int(args.top_k),
             "data": args.data,
-            "num_records": int(len(records_meta)),
-            "num_records_with_images": int(sum(1 for x in records_meta if x["image_path"])),
+            "num_records": int(len(combined_rids)),
+            "num_records_with_images": int(sum(1 for x in combined_ipaths if x)),
             "image_token_ids": sorted(int(x) for x in image_token_ids),
             "probe_weights_path": probe.weights_path,
             "probe_scores_path": probe.scores_path,
             "probe_metadata_path": probe.metadata_path,
         }
 
-        save_outputs(
-            image_scores_path=entry["image_scores_path"],
-            all_scores_path=entry["all_scores_path"],
-            stats_path=entry["stats_path"],
-            metadata=metadata,
-            records_meta=records_meta,
-            image_scores_list=entry["image_scores_list"],
-            all_scores_list=entry["all_scores_list"],
-            token_ids_list=token_ids_list,
-        )
+        image_payload = {
+            "metadata": final_metadata,
+            "record_ids": combined_rids,
+            "record_names": combined_rnames,
+            "image_paths": combined_ipaths,
+            "grid_hw": torch.tensor(combined_ghw if combined_ghw else [(-1, -1)], dtype=torch.int32),
+            "offsets": torch.tensor(combined_offsets, dtype=torch.int64),
+            "scores": torch.cat(combined_scores, dim=0) if combined_scores else torch.empty(0, dtype=torch.float32),
+        }
+        torch.save(image_payload, entry["image_scores_path"])
+
+        # Combine all-token scores
+        combined_all_seq_lens: List[int] = []
+        combined_all_scores: List[torch.Tensor] = []
+        combined_tids: List[torch.Tensor] = []
+
+        for all_path in all_all_paths:
+            data = torch.load(all_path, weights_only=False)
+            combined_all_seq_lens.extend(data["seq_lengths"].tolist())
+            combined_all_scores.extend(data["all_token_scores"])
+            combined_tids.extend(data["token_ids"])
+
+        all_payload = {
+            "metadata": final_metadata,
+            "record_ids": combined_rids,
+            "record_names": combined_rnames,
+            "image_paths": combined_ipaths,
+            "seq_lengths": torch.tensor(combined_all_seq_lens, dtype=torch.int64),
+            "all_token_scores": combined_all_scores,
+            "token_ids": combined_tids,
+        }
+        torch.save(all_payload, entry["all_scores_path"])
+
+        # Combine CSVs
+        fieldnames = [
+            "record_id", "record_name", "image_path", "image_h", "image_w",
+            "grid_h", "grid_w", "num_image_tokens", "expected_image_tokens",
+            "image_token_mismatch", "num_all_tokens",
+            "image_mean", "image_median", "image_min", "image_max", "image_std",
+            "all_mean", "all_median", "all_min", "all_max", "all_std",
+        ]
+        with open(entry["stats_path"], "w", newline="", encoding="utf-8") as out:
+            writer = csv.DictWriter(out, fieldnames=fieldnames)
+            writer.writeheader()
+            for csv_path in all_csv_paths:
+                with open(csv_path, encoding="utf-8", newline="") as inc:
+                    reader = csv.DictReader(inc)
+                    for row in reader:
+                        writer.writerow(row)
+
+        # Clean up chunk files
+        for f in all_im_paths + all_all_paths + all_csv_paths:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+        try:
+            os.rmdir(chunk_dirs)
+        except OSError:
+            pass
 
         print(f"Saved image token scores: {entry['image_scores_path']}")
         print(f"Saved all token scores: {entry['all_scores_path']}")
