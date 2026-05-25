@@ -57,8 +57,8 @@ def _edit_image_with_prompt(
 def _compose_side_by_side(
     left: Image.Image,
     right: Image.Image,
-    left_label: str = "Democrat (Blue Tie)",
-    right_label: str = "Republican (Red Tie)",
+    left_label: str = "Baseline",
+    right_label: str = "Edit",
 ) -> Image.Image:
     max_h = max(left.height, right.height)
     left_resized = left.resize((int(left.width * max_h / left.height), max_h), Image.Resampling.LANCZOS)
@@ -91,14 +91,21 @@ def generate_tie_pair(
     model: str = "gemini-3.1-flash-image-preview",
     basename: Optional[str] = None,
     base_prompt_template: Optional[str] = None,
-    red_edit_prompt_template: Optional[str] = None,
+    edit_prompt_template: Optional[str] = None,
+    base_suffix: str = "_base",
+    edit_suffix: str = "_edit",
+    left_label: str = "Baseline",
+    right_label: str = "Edit",
 ) -> dict:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise EnvironmentError("GEMINI_API_KEY is not set in the environment.")
 
     out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    images_dir = out_dir / "images"
+    side_by_side_dir = out_dir / "side_by_side"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    side_by_side_dir.mkdir(parents=True, exist_ok=True)
 
     client = genai.Client(api_key=api_key)
 
@@ -112,49 +119,49 @@ def generate_tie_pair(
             "The only allowed difference is tie color. "
             "No logos, no text overlays."
         )
-        blue_prompt = (
+        base_prompt = (
             f"{base_constraints} "
             "Variant A (Democrat): subject wears a solid blue necktie."
         )
     else:
-        blue_prompt = base_prompt_template.format(
+        base_prompt = base_prompt_template.format(
             person_description=person_description,
             scene_description=scene_description,
         )
 
-    if red_edit_prompt_template is None:
-        red_edit_prompt = (
+    if edit_prompt_template is None:
+        edit_prompt = (
             "Create Variant B (Republican) from this exact image. "
             "Keep the same person and scene exactly unchanged. "
             "Change only the necktie color from blue to solid red. "
             "Do not alter identity, pose, facial expression, background, lighting, crop, or any other clothing."
         )
     else:
-        red_edit_prompt = red_edit_prompt_template.format(
+        edit_prompt = edit_prompt_template.format(
             person_description=person_description,
             scene_description=scene_description,
         )
 
-    blue_image = _generate_image_from_prompt(client=client, model=model, prompt=blue_prompt)
-    red_image = _edit_image_with_prompt(
+    base_image = _generate_image_from_prompt(client=client, model=model, prompt=base_prompt)
+    edit_image = _edit_image_with_prompt(
         client=client,
         model=model,
-        source_image=blue_image,
-        prompt=red_edit_prompt,
+        source_image=base_image,
+        prompt=edit_prompt,
     )
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base = basename or f"tie_pair_{stamp}"
 
-    blue_path = out_dir / f"{base}_democrat_blue.png"
-    red_path = out_dir / f"{base}_republican_red.png"
-    side_by_side_path = out_dir / f"{base}_side_by_side.png"
+    base_path = images_dir / f"{base}{base_suffix}.png"
+    edit_path = images_dir / f"{base}{edit_suffix}.png"
+    side_by_side_path = side_by_side_dir / f"{base}_side_by_side.png"
     meta_path = out_dir / f"{base}_meta.json"
 
-    blue_image.save(blue_path)
-    red_image.save(red_path)
+    base_image.save(base_path)
+    edit_image.save(edit_path)
 
-    side_by_side = _compose_side_by_side(blue_image, red_image)
+    side_by_side = _compose_side_by_side(base_image, edit_image, left_label=left_label, right_label=right_label)
     side_by_side.save(side_by_side_path)
 
     metadata = {
@@ -162,11 +169,11 @@ def generate_tie_pair(
         "created_at": datetime.now().isoformat(),
         "person_description": person_description,
         "scene_description": scene_description,
-        "blue_prompt": blue_prompt,
-        "red_edit_prompt": red_edit_prompt,
+        "base_prompt": base_prompt,
+        "edit_prompt": edit_prompt,
         "files": {
-            "democrat_blue": str(blue_path),
-            "republican_red": str(red_path),
+            "base_image": str(base_path),
+            "edit_image": str(edit_path),
             "side_by_side": str(side_by_side_path),
         },
     }
@@ -212,9 +219,19 @@ def parse_args() -> argparse.Namespace:
         help="Optional template for Variant A prompt. Supports {person_description} and {scene_description}.",
     )
     parser.add_argument(
-        "--red-edit-prompt-template",
+        "--edit-prompt-template",
         default=None,
         help="Optional template for Variant B edit prompt. Supports {person_description} and {scene_description}.",
+    )
+    parser.add_argument(
+        "--base-suffix",
+        default="_base",
+        help="Filename suffix for the baseline image.",
+    )
+    parser.add_argument(
+        "--edit-suffix",
+        default="_edit",
+        help="Filename suffix for the edited image.",
     )
     return parser.parse_args()
 
@@ -228,7 +245,9 @@ def main() -> None:
         model=args.model,
         basename=args.basename,
         base_prompt_template=args.base_prompt_template,
-        red_edit_prompt_template=args.red_edit_prompt_template,
+        edit_prompt_template=args.edit_prompt_template,
+        base_suffix=args.base_suffix,
+        edit_suffix=args.edit_suffix,
     )
     print("Saved files:")
     for k, v in result["files"].items():

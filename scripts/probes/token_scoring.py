@@ -225,8 +225,8 @@ def resolve_output_paths(
     stats_name: Optional[str],
 ) -> Tuple[str, str, str]:
     ridge_tag = f"{prefix}_{probe_name}"
-    image_name = activations_name or f"prompt_image_token_scores_{ridge_tag}.pt"
-    all_name = all_tokens_name or f"prompt_all_token_scores_{ridge_tag}.pt"
+    image_name = activations_name or f"prompt_image_token_scores_{ridge_tag}.npz"
+    all_name = all_tokens_name or f"prompt_all_token_scores_{ridge_tag}.npz"
     csv_name = stats_name or f"prompt_token_stats_{ridge_tag}.csv"
     return (
         os.path.join(output_dir, image_name),
@@ -660,45 +660,21 @@ def save_outputs(
     image_scores_path: str,
     all_scores_path: str,
     stats_path: str,
-    metadata: Dict[str, Any],
     records_meta: List[Dict[str, Any]],
     image_scores_list: List[np.ndarray],
     all_scores_list: List[np.ndarray],
-    token_ids_list: List[np.ndarray],
 ) -> None:
-    names = [x["name"] for x in records_meta]
     ids = [x["record_id"] for x in records_meta]
-    image_paths = [x["image_path"] for x in records_meta]
-    grid_hw = [(int(x["grid_h"]), int(x["grid_w"])) for x in records_meta]
 
-    offsets = [0]
-    flat_scores: List[torch.Tensor] = []
-    for arr in image_scores_list:
-        t = torch.from_numpy(arr.astype(np.float32, copy=False))
-        flat_scores.append(t)
-        offsets.append(offsets[-1] + int(t.numel()))
+    image_dict = {}
+    for rid, arr in zip(ids, image_scores_list):
+        image_dict[rid] = arr.astype(np.float32, copy=False)
+    np.savez_compressed(image_scores_path, **image_dict)
 
-    image_payload = {
-        "metadata": metadata,
-        "record_ids": ids,
-        "record_names": names,
-        "image_paths": image_paths,
-        "grid_hw": torch.tensor(grid_hw, dtype=torch.int32),
-        "offsets": torch.tensor(offsets, dtype=torch.int64),
-        "scores": torch.cat(flat_scores, dim=0) if flat_scores else torch.empty(0, dtype=torch.float32),
-    }
-    torch.save(image_payload, image_scores_path)
-
-    all_payload = {
-        "metadata": metadata,
-        "record_ids": ids,
-        "record_names": names,
-        "image_paths": image_paths,
-        "seq_lengths": torch.tensor([len(x) for x in all_scores_list], dtype=torch.int64),
-        "all_token_scores": [torch.from_numpy(x.astype(np.float32, copy=False)) for x in all_scores_list],
-        "token_ids": [torch.from_numpy(x.astype(np.int64, copy=False)) for x in token_ids_list],
-    }
-    torch.save(all_payload, all_scores_path)
+    all_dict = {}
+    for rid, arr in zip(ids, all_scores_list):
+        all_dict[rid] = arr.astype(np.float32, copy=False)
+    np.savez_compressed(all_scores_path, **all_dict)
 
     fieldnames = [
         "record_id",
@@ -885,7 +861,6 @@ def main() -> None:
     for chunk_idx, chunk_start in enumerate(range(0, total_records, chunk_size)):
         chunk_records = records[chunk_start : chunk_start + chunk_size]
         chunk_meta: List[Dict[str, Any]] = []
-        chunk_token_ids: List[np.ndarray] = []
         chunk_image_scores: List[List[np.ndarray]] = [[] for _ in runtime_entries]
         chunk_all_scores: List[List[np.ndarray]] = [[] for _ in runtime_entries]
 
@@ -935,7 +910,6 @@ def main() -> None:
                         raise ValueError(f"Empty sequence at record index {idx}")
 
                     input_ids = input_ids_batch[batch_idx, :seq_len]
-                    chunk_token_ids.append(input_ids)
 
                     if image_token_array.size > 0:
                         image_mask = np.isin(input_ids, image_token_array)
@@ -1003,42 +977,22 @@ def main() -> None:
             chunk_dirs = os.path.join(output_dir, f"_chunks_{prefix}_{probe_name}")
             os.makedirs(chunk_dirs, exist_ok=True)
 
-            im_path = os.path.join(chunk_dirs, f"chunk_{chunk_idx:04d}_image.pt")
-            all_path = os.path.join(chunk_dirs, f"chunk_{chunk_idx:04d}_all.pt")
+            im_path = os.path.join(chunk_dirs, f"chunk_{chunk_idx:04d}_image.npz")
+            all_path = os.path.join(chunk_dirs, f"chunk_{chunk_idx:04d}_all.npz")
             csv_path = os.path.join(chunk_dirs, f"chunk_{chunk_idx:04d}_stats.csv")
-
-            probe = entry["probe"]
-            chunk_metadata = {
-                "model_path": args.model_path,
-                "model_family": args.model_family,
-                "mode": args.mode,
-                "probe": probe_name,
-                "prefix": prefix,
-                "top_k": int(args.top_k),
-                "data": args.data,
-                "num_records": int(len(chunk_meta)),
-                "num_records_with_images": int(sum(1 for x in chunk_meta if x["image_path"])),
-                "image_token_ids": sorted(int(x) for x in image_token_ids),
-                "probe_weights_path": probe.weights_path,
-                "probe_scores_path": probe.scores_path,
-                "probe_metadata_path": probe.metadata_path,
-                "chunk_index": chunk_idx,
-            }
 
             save_outputs(
                 image_scores_path=im_path,
                 all_scores_path=all_path,
                 stats_path=csv_path,
-                metadata=chunk_metadata,
                 records_meta=chunk_meta,
                 image_scores_list=chunk_image_scores[ei],
                 all_scores_list=chunk_all_scores[ei],
-                token_ids_list=chunk_token_ids,
             )
 
             chunk_files[ei].append(csv_path)
 
-        del chunk_meta, chunk_token_ids, chunk_image_scores, chunk_all_scores
+        del chunk_meta, chunk_image_scores, chunk_all_scores
         print(f"Chunk {chunk_idx + 1}/{(total_records + chunk_size - 1) // chunk_size} done "
               f"({min(chunk_start + chunk_size, total_records)}/{total_records})")
 
@@ -1052,76 +1006,25 @@ def main() -> None:
         chunk_dirs = os.path.join(output_dir, f"_chunks_{prefix}_{probe_name}")
 
         # Combine image scores
-        all_im_paths = sorted(glob.glob(os.path.join(chunk_dirs, "chunk_*_image.pt")))
-        all_all_paths = sorted(glob.glob(os.path.join(chunk_dirs, "chunk_*_all.pt")))
+        all_im_paths = sorted(glob.glob(os.path.join(chunk_dirs, "chunk_*_image.npz")))
+        all_all_paths = sorted(glob.glob(os.path.join(chunk_dirs, "chunk_*_all.npz")))
         all_csv_paths = sorted(glob.glob(os.path.join(chunk_dirs, "chunk_*_stats.csv")))
 
-        combined_rids: List[str] = []
-        combined_rnames: List[str] = []
-        combined_ipaths: List[str] = []
-        combined_ghw: List[Tuple[int, int]] = []
-        combined_scores: List[torch.Tensor] = []
-        combined_offsets = [0]
-
+        combined_image_dict: Dict[str, np.ndarray] = {}
         for im_path in all_im_paths:
-            data = torch.load(im_path, weights_only=False)
-            combined_rids.extend(data["record_ids"])
-            combined_rnames.extend(data["record_names"])
-            combined_ipaths.extend(data["image_paths"])
-            if "grid_hw" in data:
-                combined_ghw.extend([(int(h), int(w)) for h, w in data["grid_hw"].tolist()])
-            combined_scores.append(data["scores"])
-            combined_offsets.append(combined_offsets[-1] + int(data["scores"].numel()))
+            data = np.load(im_path)
+            for key in data.files:
+                combined_image_dict[key] = data[key].astype(np.float32, copy=False)
+            data.close()
+        np.savez_compressed(entry["image_scores_path"], **combined_image_dict)
 
-        probe = entry["probe"]
-        final_metadata = {
-            "model_path": args.model_path,
-            "model_family": args.model_family,
-            "mode": args.mode,
-            "probe": probe_name,
-            "prefix": prefix,
-            "top_k": int(args.top_k),
-            "data": args.data,
-            "num_records": int(len(combined_rids)),
-            "num_records_with_images": int(sum(1 for x in combined_ipaths if x)),
-            "image_token_ids": sorted(int(x) for x in image_token_ids),
-            "probe_weights_path": probe.weights_path,
-            "probe_scores_path": probe.scores_path,
-            "probe_metadata_path": probe.metadata_path,
-        }
-
-        image_payload = {
-            "metadata": final_metadata,
-            "record_ids": combined_rids,
-            "record_names": combined_rnames,
-            "image_paths": combined_ipaths,
-            "grid_hw": torch.tensor(combined_ghw if combined_ghw else [(-1, -1)], dtype=torch.int32),
-            "offsets": torch.tensor(combined_offsets, dtype=torch.int64),
-            "scores": torch.cat(combined_scores, dim=0) if combined_scores else torch.empty(0, dtype=torch.float32),
-        }
-        torch.save(image_payload, entry["image_scores_path"])
-
-        # Combine all-token scores
-        combined_all_seq_lens: List[int] = []
-        combined_all_scores: List[torch.Tensor] = []
-        combined_tids: List[torch.Tensor] = []
-
+        combined_all_dict: Dict[str, np.ndarray] = {}
         for all_path in all_all_paths:
-            data = torch.load(all_path, weights_only=False)
-            combined_all_seq_lens.extend(data["seq_lengths"].tolist())
-            combined_all_scores.extend(data["all_token_scores"])
-            combined_tids.extend(data["token_ids"])
-
-        all_payload = {
-            "metadata": final_metadata,
-            "record_ids": combined_rids,
-            "record_names": combined_rnames,
-            "image_paths": combined_ipaths,
-            "seq_lengths": torch.tensor(combined_all_seq_lens, dtype=torch.int64),
-            "all_token_scores": combined_all_scores,
-            "token_ids": combined_tids,
-        }
-        torch.save(all_payload, entry["all_scores_path"])
+            data = np.load(all_path)
+            for key in data.files:
+                combined_all_dict[key] = data[key].astype(np.float32, copy=False)
+            data.close()
+        np.savez_compressed(entry["all_scores_path"], **combined_all_dict)
 
         # Combine CSVs
         fieldnames = [

@@ -8,7 +8,7 @@ set -euo pipefail
 #
 # Override defaults via environment variables:
 #   DATASETS="congress news"   (subset of dataset names to run)
-#   PROBE_SPECS="combined_ideology:headwise_linear combined_ideology:layerwise_linear combined_ideology:layerwise_rfm" \
+#   PROBE_SPECS="combined_ideology:headwise_linear textual_ideology:headwise_linear" \
 #   TOP_K=16 \
 #   DTYPE=auto \
 #   DEVICE_MAP=auto \
@@ -32,7 +32,7 @@ HAS_IMAGES="${HAS_IMAGES:-1}"
 OVERWRITE="${OVERWRITE:-0}"
 
 # Probe selection
-PROBE_SPECS="${PROBE_SPECS:-combined_ideology:headwise_linear combined_ideology:layerwise_linear combined_ideology:layerwise_rfm}"
+PROBE_SPECS="${PROBE_SPECS:-combined_ideology:headwise_linear combined_ideology:layerwise_linear combined_ideology:layerwise_rfm textual_ideology:headwise_linear textual_ideology:layerwise_linear textual_ideology:layerwise_rfm}"
 
 # Model registry
 QWEN_MODEL_PATH="${QWEN_MODEL_PATH:-/home/tzhang3/jevans/models/Qwen3-VL-8B-Instruct}"
@@ -46,14 +46,16 @@ declare -A DATASET_PATHS=(
   [unsplash]="data/probes/unsplash25k_score_data.jsonl"
   [red_blue]="data/probes/red_blue_score_data.jsonl"
   [maga_hat]="data/probes/maga_hat_score_data.jsonl"
+  [easyportrait]="data/probes/easyportrait_score_data.jsonl"
   [lvis]="data/probes/lvis_score_data.jsonl"
+  [protest_sign]="data/probes/protest_sign_score_data.jsonl"
 )
 
 # Allow caller to restrict which datasets to run (space-separated names)
 if [[ -n "${DATASETS:-}" ]]; then
   read -ra DATASET_NAMES <<< "$DATASETS"
 else
-  DATASET_NAMES=(congress news twitter unsplash red_blue maga_hat)
+  DATASET_NAMES=(congress news twitter unsplash red_blue maga_hat easyportrait)
 fi
 
 EXTRA_ARGS=("$@")
