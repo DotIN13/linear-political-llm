@@ -20,6 +20,7 @@ from app.state import AppState, MODEL_REGISTRY
 from app.tabs.probe import _build_probe_tab, AVAILABLE_PROBES
 from app.tabs.gallery import _build_gallery_tab
 from app.tabs.feature_masks import _build_feature_masks_tab
+from app.tabs.travel import _build_travel_tab
 from app.common import RESULTS_DIR
 
 DEFAULT_DATA_DIR = "results/probes"
@@ -58,6 +59,8 @@ def main():
                 _build_gallery_tab()
             with gr.TabItem("Feature Masks"):
                 _build_feature_masks_tab()
+            with gr.TabItem("Travel Recommendations"):
+                _build_travel_tab()
 
     print(f"\nLaunching webapp on http://{args.server_name}:{args.port}")
     demo.launch(server_name=args.server_name, server_port=args.port, share=args.share)
