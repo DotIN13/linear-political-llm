@@ -13,4 +13,5 @@ data/twitter_images
 datasets
 
 .gradio
-app/results*.bak
+app/results
+*.bak
