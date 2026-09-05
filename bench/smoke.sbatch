@@ -53,5 +53,19 @@ $PY -m bench.cli run \
     --out runs/smoke \
     --conversations conversations
 
+# Run the identical command a second time. Every trial_key is already in the
+# store, so this must do zero forward passes -- resume is the default, not a flag.
+echo "=================== second invocation (resume check) ==================="
+$PY -m bench.cli run \
+    --items items/smoke20.jsonl \
+    --surface vote2020,tea_coffee \
+    --conditions C,E \
+    --adaptor local_hf \
+    --model /home/tzhang3/jevans/models/Qwen3-VL-8B-Instruct \
+    --probe combined_ideology_headwise_linear \
+    --seed 42 \
+    --out runs/smoke \
+    --conversations conversations
+
 echo "=================== bench score --run runs/smoke ==================="
 $PY -m bench.cli score --run runs/smoke
