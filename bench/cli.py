@@ -165,10 +165,20 @@ def cmd_sample(args: argparse.Namespace) -> int:
     print(f"[sample] pool after filters: {len(kept)} / {len(rows)} scored images")
 
     splits = [s.strip() for s in args.split.split(",") if s.strip()]
-    items, profile = S.make_items(
-        kept, bins=args.bins, per_bin=args.per_bin,
-        images_per_item=args.images_per_item, splits=splits, seed=args.seed,
-    )
+    if args.strata == "buckets":
+        items, profile = S.make_bucket_items(
+            kept, per_bucket=args.per_bucket,
+            images_per_item=args.images_per_item, splits=splits, seed=args.seed,
+        )
+        profile_name, profile_writer = "bucket_profile", S.write_bucket_profile
+        profile_field, profile_label = "buckets", "bucket"
+    else:  # deciles (the round-1..3 design, kept for comparison)
+        items, profile = S.make_items(
+            kept, bins=args.bins, per_bin=args.per_bin,
+            images_per_item=args.images_per_item, splits=splits, seed=args.seed,
+        )
+        profile_name, profile_writer = "decile_profile", S.write_decile_profile
+        profile_field, profile_label = "strata", "stratum"
 
     # Stimuli are never overwritten in place (docs/bench/03): a new selection rule
     # means a new file name, so old runs keep meaning something.
@@ -179,8 +189,8 @@ def cmd_sample(args: argparse.Namespace) -> int:
         path = os.path.join(out_dir, f"{split}{suffix}.jsonl")
         n = write_items(path, records)
         print(f"[sample] wrote {n:>6} items -> {path}")
-    profile_path = os.path.join(out_dir, f"decile_profile{suffix}.csv")
-    S.write_decile_profile(profile, profile_path)
+    profile_path = os.path.join(out_dir, f"{profile_name}{suffix}.csv")
+    profile_writer(profile, profile_path)
     manifest_path = os.path.join(out_dir, f"sample_manifest{suffix}.json")
     with open(manifest_path, "w", encoding="utf-8") as handle:
         json.dump({"command": sys.argv, "code_rev": git_rev(ROOT_DIR),
@@ -190,10 +200,10 @@ def cmd_sample(args: argparse.Namespace) -> int:
                    "pool_after_filters": len(kept), "profile": profile},
                   handle, indent=2, sort_keys=True, default=str)
     print(f"[sample] wrote {profile_path}")
-    print("\nstratum profile (frequencies are reported, never used to select):")
-    for row in profile["strata"]:
+    print(f"\n{profile_label} profile (frequencies are reported, never used to select):")
+    for row in profile[profile_field]:
         cats = ", ".join(f"{n}({c})" for n, c in row["top_categories"][:5])
-        print(f"  s{row['stratum']}  n={row['n_images_selected']:>5}  "
+        print(f"  {row[profile_label]:>4}  n={row['n_images_selected']:>5}  "
               f"mean={row['image_mean_mean']:+.3f}  "
               f"[{row['image_mean_min']:+.3f},{row['image_mean_max']:+.3f}]  "
               f"n_obj_med={row['n_objects_median']:>4}  "
@@ -836,9 +846,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--stats", default=DEFAULT_STATS_CSV)
     p.add_argument("--lvis-json", default=DEFAULT_LVIS_JSON)
     p.add_argument("--lvis-cache", default=DEFAULT_LVIS_CACHE)
-    p.add_argument("--strata", default="image_mean", choices=["image_mean"])
-    p.add_argument("--bins", type=int, default=10)
+    p.add_argument("--strata", default="buckets", choices=["buckets", "deciles"],
+                   help="buckets: three fixed thresholds (<-0.5 / [-0.5,+0.5] / >+0.5); "
+                        "deciles: the round-1..3 equal-count strata")
+    p.add_argument("--bins", type=int, default=10, help="deciles only")
     p.add_argument("--per-bin", type=int, default=400, help="images per decile")
+    p.add_argument("--per-bucket", type=int, default=400, help="images per bucket")
     p.add_argument("--images-per-item", type=int, default=3)
     p.add_argument("--filters", default=DEFAULT_FILTERS)
     p.add_argument("--split", default="explore,confirm")

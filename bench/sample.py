@@ -26,7 +26,7 @@ import os
 import random
 import sys
 from collections import Counter, defaultdict
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -243,6 +243,41 @@ def assign_strata(rows: Sequence[Dict[str, Any]], bins: int = 10) -> List[Dict[s
 assign_deciles = assign_strata   # v1 name, kept so old imports still resolve
 
 
+# --------------------------------------------------------------------------- #
+# buckets (round 4): three fixed thresholds on image_mean, not equal-count bins
+# --------------------------------------------------------------------------- #
+# Thresholds sit on the probe's zero point (±0.5), not on the corpus quantiles
+# (board-buckets): 0 is the DW-NOMINATE midpoint, so the bucket boundaries mean
+# the same thing regardless of how the corpus happens to be distributed.
+BUCKETS = ("low", "mid", "high")
+BUCKET_ORDINAL = {"low": -1, "mid": 0, "high": 1}
+BUCKET_ABBREV = {"low": "lo", "mid": "mid", "high": "hi"}
+BUCKET_LO = -0.5
+BUCKET_HI = 0.5
+
+
+def bucket_of(image_mean: float) -> str:
+    if image_mean < BUCKET_LO:
+        return "low"
+    if image_mean <= BUCKET_HI:
+        return "mid"
+    return "high"
+
+
+def assign_buckets(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Tag every row with its bucket name and the ordinal (-1/0/+1) that carries
+    the row's `stratum` slot. `image_mean` itself is untouched: the bucket only
+    guarantees the two tails are covered; the main analysis stays continuous."""
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        row = dict(row)
+        bucket = bucket_of(row["image_mean"])
+        row["bucket"] = bucket
+        row["stratum"] = BUCKET_ORDINAL[bucket]
+        out.append(row)
+    return out
+
+
 def _objects_bucket(n_objects: int) -> str:
     if n_objects <= 4:
         return "3-4"
@@ -253,16 +288,32 @@ def _objects_bucket(n_objects: int) -> str:
     return "11-15"
 
 
+def _category_count(row: Dict[str, Any]) -> int:
+    """The board's ``n_objects`` (board-buckets: 3.9 / 3.7 / 2.7 across buckets) is
+    the number of *distinct* LVIS categories, not the cache's ``n_objects`` field
+    (which is the instance count, ~13.7 / 13.0 / 10.2). Scene complexity here is
+    "how many different kinds of thing are in the frame", so that is what the
+    balance targets."""
+    return len(row.get("categories") or [])
+
+
 def balanced_pick(
     candidates: Sequence[Dict[str, Any]],
     n: int,
     target_shares: Dict[str, float],
     rng: random.Random,
+    key: Optional[Callable[[Dict[str, Any]], str]] = None,
 ) -> List[Dict[str, Any]]:
-    """Pick n rows matching the pool-wide n_objects mix as closely as possible."""
+    """Pick n rows matching the pool-wide n_objects mix as closely as possible.
+
+    ``key`` maps a row to its balancing bucket. The decile path (``key=None``)
+    balances the cache's ``n_objects`` field exactly as before; the bucket path
+    passes ``_category_count`` so it balances distinct-category count instead.
+    """
+    key = key or (lambda row: _objects_bucket(row["n_objects"]))
     by_bucket: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for row in candidates:
-        by_bucket[_objects_bucket(row["n_objects"])].append(row)
+        by_bucket[key(row)].append(row)
     for bucket in by_bucket.values():
         rng.shuffle(bucket)
 
@@ -385,6 +436,121 @@ def make_items(
     return out, profile
 
 
+def make_bucket_items(
+    rows: Sequence[Dict[str, Any]],
+    per_bucket: int = 400,
+    images_per_item: int = 3,
+    splits: Sequence[str] = ("explore", "confirm"),
+    seed: int = 42,
+) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, Any]]:
+    """Return {split: [item, ...]} plus a profile, stratified by bucket (round 4).
+
+    Three images per item, all from the same bucket. ``per_bucket`` counts images
+    per bucket; ``n_objects`` (distinct LVIS category count, board-buckets 3.9/3.7/2.7)
+    is balanced *within* the bucket exactly as the decile path balances within a
+    stratum, so ``bucket`` cannot collapse into ``scene complexity``. The item_id
+    carries the bucket name (``lvis3_lo_00000`` / ``lvis3_mid_...`` / ``lvis3_hi_...``)
+    and ``primary_iv`` is ``bucket`` (ordinal -1/0/+1); ``image_mean`` stays on the
+    record as the continuous quantity for the main analysis.
+    """
+    rng = random.Random(seed)
+    rows = assign_buckets(rows)
+
+    global_counts = Counter(_objects_bucket(_category_count(r)) for r in rows)
+    total = sum(global_counts.values()) or 1
+    target_shares = {b: c / total for b, c in global_counts.items()}
+
+    by_bucket: Dict[str, List[Dict[str, Any]]] = {b: [] for b in BUCKETS}
+    for row in rows:
+        by_bucket[row["bucket"]].append(row)
+
+    items_per_bucket = per_bucket // images_per_item
+    per_split = items_per_bucket // len(splits)
+    if per_split == 0:
+        raise ValueError(
+            f"per_bucket={per_bucket} with images_per_item={images_per_item} and {len(splits)} "
+            f"splits gives 0 items per split; raise --per-bucket"
+        )
+
+    out: Dict[str, List[Dict[str, Any]]] = {split: [] for split in splits}
+    profile_rows: List[Dict[str, Any]] = []
+    counters: Dict[str, int] = {b: 0 for b in BUCKETS}
+
+    for bucket in BUCKETS:
+        pool = by_bucket.get(bucket, [])
+        need = per_split * len(splits) * images_per_item
+        chosen = balanced_pick(pool, min(need, len(pool)), target_shares, rng,
+                               key=_category_count)
+        rng.shuffle(chosen)
+
+        groups = [chosen[i: i + images_per_item]
+                  for i in range(0, len(chosen) - images_per_item + 1, images_per_item)]
+        groups = groups[: per_split * len(splits)]
+
+        for group_index, group in enumerate(groups):
+            split = splits[group_index % len(splits)]
+            scores = [row["image_mean"] for row in group]
+            cats = sorted({c for row in group for c in row["categories"]})
+            n_objects = [row["n_objects"] for row in group]
+            n_categories = [len(row["categories"]) for row in group]
+            item = {
+                "item_id": f"lvis3_{BUCKET_ABBREV[bucket]}_{counters[bucket]:05d}",
+                "images": [row["record_name"] for row in group],
+                "image_paths": [row["image_path"] for row in group],
+                "image_scores": scores,
+                "stratum": BUCKET_ORDINAL[bucket],
+                "bucket": bucket,
+                "primary_iv": "bucket",
+                "split": split,
+                "covariates": {
+                    "bucket": bucket,
+                    "coco_ids": [row["coco_id"] for row in group],
+                    "n_objects": n_objects,
+                    "n_objects_mean": sum(n_objects) / len(n_objects),
+                    "n_categories": n_categories,
+                    "n_categories_mean": sum(n_categories) / len(n_categories),
+                    "n_persons": [row["n_persons"] for row in group],
+                    "n_persons_total": sum(row["n_persons"] for row in group),
+                    "has_text_cat": [row["has_text_cat"] for row in group],
+                    "has_text_cat_any": any(row["has_text_cat"] for row in group),
+                    "text_cats": sorted({c for row in group for c in row["text_cats"]}),
+                    "num_image_tokens": [row["num_image_tokens"] for row in group],
+                    "aspect": [round(row["aspect"], 4) for row in group],
+                    "categories": cats,
+                    "image_mean_mean": sum(scores) / len(scores),
+                },
+            }
+            out[split].append(item)
+            counters[bucket] += 1
+
+        if chosen:
+            top_cats = Counter(c for row in chosen for c in row["categories"]).most_common(10)
+            profile_rows.append({
+                "bucket": bucket,
+                "n_images_available": len(pool),
+                "n_images_selected": len(chosen),
+                "image_mean_min": min(r["image_mean"] for r in chosen),
+                "image_mean_max": max(r["image_mean"] for r in chosen),
+                "image_mean_mean": sum(r["image_mean"] for r in chosen) / len(chosen),
+                "n_objects_median": _median([r["n_objects"] for r in chosen]),
+                "n_categories_mean": sum(_category_count(r) for r in chosen) / len(chosen),
+                "n_persons_mean": sum(r["n_persons"] for r in chosen) / len(chosen),
+                "share_with_person": sum(1 for r in chosen if r["n_persons"] > 0) / len(chosen),
+                "share_with_text_cat": sum(1 for r in chosen if r["has_text_cat"]) / len(chosen),
+                "top_categories": top_cats,
+            })
+
+    profile = {
+        "stratification": "buckets", "per_bucket": per_bucket,
+        "images_per_item": images_per_item, "seed": seed,
+        "splits": list(splits), "primary_iv": "bucket",
+        "n_items": {split: len(items) for split, items in out.items()},
+        "objects_target_shares": target_shares,
+        "buckets": profile_rows,
+    }
+    return out, profile
+
+
 def _median(values: Sequence[float]) -> float:
     ordered = sorted(values)
     n = len(ordered)
@@ -413,6 +579,33 @@ def write_decile_profile(profile: Dict[str, Any], path: str) -> str:
                 row["stratum"], row["n_images_selected"],
                 f"{row['image_mean_min']:.4f}", f"{row['image_mean_mean']:.4f}",
                 f"{row['image_mean_max']:.4f}", row["n_objects_median"],
+                f"{row['n_persons_mean']:.3f}", f"{row['share_with_person']:.3f}",
+                f"{row['share_with_text_cat']:.3f}",
+                ";".join(f"{name}:{count}" for name, count in row["top_categories"]),
+            ])
+    return path
+
+
+def write_bucket_profile(profile: Dict[str, Any], path: str) -> str:
+    """Per-bucket frequent categories + annotation shares (round 4).
+
+    Same reporting-only semantics as ``write_decile_profile``: the category
+    frequencies are printed, never used to select. ``n_categories_mean`` is the
+    post-balance number the board's 3.9/3.7/2.7 self-check is about.
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["bucket", "n_images_available", "n_images_selected",
+                         "image_mean_min", "image_mean_mean", "image_mean_max",
+                         "n_objects_median", "n_categories_mean", "n_persons_mean",
+                         "share_with_person", "share_with_text_cat", "top_categories"])
+        for row in profile["buckets"]:
+            writer.writerow([
+                row["bucket"], row["n_images_available"], row["n_images_selected"],
+                f"{row['image_mean_min']:.4f}", f"{row['image_mean_mean']:.4f}",
+                f"{row['image_mean_max']:.4f}", row["n_objects_median"],
+                f"{row['n_categories_mean']:.4f}",
                 f"{row['n_persons_mean']:.3f}", f"{row['share_with_person']:.3f}",
                 f"{row['share_with_text_cat']:.3f}",
                 ";".join(f"{name}:{count}" for name, count in row["top_categories"]),
