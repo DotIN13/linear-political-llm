@@ -85,6 +85,11 @@ def validate_variant_space(surface: Any) -> List[str]:
 
     Cheap, but it is the difference between "this surface has no phrasing 2" and
     a silently mistyped key that would have produced a second, parallel key space.
+
+    The per-variant rules are the surface's own: choice surfaces validate
+    ``{phrasing, order}`` (``BaseSurface.validate_variant``), generation surfaces
+    validate ``{scheme}``. Shared here are only the structural checks (non-empty,
+    dicts, canonical form, no duplicates).
     """
     problems: List[str] = []
     variants = surface.variants()
@@ -101,17 +106,31 @@ def validate_variant_space(surface: Any) -> List[str]:
         seen.add(canonical)
         if canonical != canonical_variant(json.loads(canonical)):
             problems.append(f"variant {canonical} is not in canonical form")
-        unknown = set(variant) - {"phrasing", "order"}
-        if unknown:
-            problems.append(f"variant {canonical} has unknown keys {sorted(unknown)}")
-        if variant.get("order") not in ORDERS:
-            problems.append(f"variant {canonical} has order not in {ORDERS}")
-        index = variant.get("phrasing")
-        if not isinstance(index, int) or not 0 <= index < len(getattr(surface, "phrasings", [])):
-            problems.append(f"variant {canonical} points at a phrasing this surface does not have")
-    orders = {str(v.get("order")) for v in variants if isinstance(v, dict)}
-    if orders != set(ORDERS):
-        problems.append(f"both A/B orders are mandatory (task A2); declared: {sorted(orders)}")
+        validator = getattr(surface, "validate_variant", None)
+        if callable(validator):
+            problems.extend(validator(variant))
+        else:
+            problems.extend(_choice_variant_problems(surface, variant))
+    if getattr(surface, "requires_orders", False):
+        orders = {str(v.get("order")) for v in variants if isinstance(v, dict)}
+        if orders != set(ORDERS):
+            problems.append(f"both A/B orders are mandatory (task A2); declared: {sorted(orders)}")
+    return problems
+
+
+def _choice_variant_problems(surface: Any, variant: Dict[str, Any]) -> List[str]:
+    """The choice-surface variant rules, kept here for any surface without a
+    ``validate_variant`` method of its own."""
+    problems: List[str] = []
+    canonical = canonical_variant(variant)
+    unknown = set(variant) - {"phrasing", "order"}
+    if unknown:
+        problems.append(f"variant {canonical} has unknown keys {sorted(unknown)}")
+    if variant.get("order") not in ORDERS:
+        problems.append(f"variant {canonical} has order not in {ORDERS}")
+    index = variant.get("phrasing")
+    if not isinstance(index, int) or not 0 <= index < len(getattr(surface, "phrasings", [])):
+        problems.append(f"variant {canonical} points at a phrasing this surface does not have")
     return problems
 
 
@@ -182,8 +201,13 @@ class BaseSurface:
     active_phrasings: List[int] = [0]
     options: List[str] = []            # two semantic options, canonical order
     candidates: List[str] = list(LETTERS)   # what the logprob is actually taken on
+    requires_orders: bool = True       # A/B order balancing is mandatory for choice
 
     # -- variants ------------------------------------------------------------
+    def validate_variant(self, variant: Dict[str, Any]) -> List[str]:
+        """Choice-surface variant rules (delegated to by validate_variant_space)."""
+        return _choice_variant_problems(self, variant)
+
     def variants(self) -> List[Dict[str, Any]]:
         """Every legal variant of this surface -- the surface declares it, not the caller.
 

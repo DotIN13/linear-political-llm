@@ -59,6 +59,7 @@ def measurement_rev(
     root: Optional[str] = None,
     extra_files: Sequence[str] = (),
     length: int = 12,
+    note: str = "",
 ) -> str:
     """Hash of everything that determines the measurement itself (task D).
 
@@ -66,6 +67,9 @@ def measurement_rev(
     forward passes, while a dirty tree marks *every* edit the same way. So the
     dedup key hashes file contents of the adaptors, the surfaces, the value types
     and the store, plus the probe weight files handed in via ``extra_files``.
+
+    ``note`` carries measurement-relevant *runtime* values that live nowhere on
+    disk -- currently the probe ``top_k`` (docs/bench/08: k must be recorded).
     ``code_rev`` is still recorded -- it just no longer decides identity.
 
     Missing files are hashed as the literal ``"absent"`` so that deleting one is
@@ -83,6 +87,8 @@ def measurement_rev(
         parts.append(f"{rel}:{_sha256_file(path)}")
     for path in sorted(set(os.path.abspath(p) for p in extra_files if p)):
         parts.append(f"{os.path.basename(path)}:{_sha256_file(path)}")
+    if note:
+        parts.append(f"note:{note}")
 
     digest = hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
     return digest[:length]

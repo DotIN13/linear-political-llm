@@ -13,10 +13,12 @@ from bench.cli import build_parser, dotted_get, main, matches, parse_constraints
 def test_surfaces_lists_eight(capsys):
     assert main(["surfaces"]) == 0
     out = capsys.readouterr().out
-    assert "8 surfaces" in out
+    assert "14 surfaces" in out                       # 8 choice + 6 generation
     assert "Answer with a single letter." in out       # options surface, not word candidates
     for name in ["vote2020", "guns", "healthcare", "border",
                  "tea_coffee", "cat_dog", "beach_mountain", "morning_night"]:
+        assert name in out
+    for name in ["s1_speech", "s2_proposal", "s3_digest", "s4_bonus", "s5_letter", "s6_describe"]:
         assert name in out
     assert "requires" in out
 
@@ -82,6 +84,10 @@ def test_dotted_path_filter():
 
 
 def test_stubs_do_not_crash(capsys):
-    assert main(["judge", "--run", "runs/x"]) == 0
     assert main(["report", "--run", "runs/x"]) == 0
     assert "not implemented yet" in capsys.readouterr().out
+
+
+def test_judge_on_missing_run_reports_cleanly(capsys):
+    assert main(["judge", "--run", "runs/x"]) == 1
+    assert "no trials" in capsys.readouterr().err

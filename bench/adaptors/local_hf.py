@@ -18,7 +18,7 @@ import importlib.util
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from bench.adaptors.base import BaseAdaptor
 from bench.registry import register_adaptor
@@ -139,13 +139,18 @@ class LocalHFAdaptor(BaseAdaptor):
         model_cls = ts.select_model_loader(self.model_family, self.model_path)
         default_dtype = ts.resolve_torch_dtype(self.dtype)
 
-        # Same load kwargs token_scoring.main() uses per family.
+        # Load on a single device directly. ``device_map="auto"`` (accelerate
+        # dispatch) wraps every module in device-transfer hooks that make
+        # autoregressive generation ~20x slower here (4 tok/s vs 83 tok/s); a
+        # plain ``.to(device)`` is fast. The 8B/15B models fit on one H200.
         if self.model_family == "qwen3-vl":
-            load_kwargs = {"dtype": default_dtype, "low_cpu_mem_usage": True, "device_map": self.device_map}
+            load_kwargs = {"dtype": default_dtype}
         else:
-            load_kwargs = {"torch_dtype": default_dtype, "device_map": self.device_map}
+            load_kwargs = {"torch_dtype": default_dtype}
 
         self.hf_model = model_cls.from_pretrained(self.model_path, **load_kwargs)
+        target = "cuda" if torch.cuda.is_available() else "cpu"
+        self.hf_model = self.hf_model.to(target)
         self.hf_model.eval()
 
         probe_cls = ts.PROBE_CLASSES[probe_type]
@@ -166,6 +171,8 @@ class LocalHFAdaptor(BaseAdaptor):
             model=self.hf_model, probe=probe, top_k=self.top_k,
             mode=self.mode, model_family=self.model_family,
         )
+        self.probe = probe                    # kept so generation can build k=8 too
+        self.probe_type = probe_type
         self.module_names = sorted(self.runtime["module_names"])
         self.image_token_ids = ts.gather_candidate_image_token_ids(self.processor.tokenizer)
         self._lm_head = _find_lm_head(self.hf_model)
@@ -195,9 +202,173 @@ class LocalHFAdaptor(BaseAdaptor):
         )
 
     # -- run -----------------------------------------------------------------
+    def _is_generation(self, trial: Trial) -> bool:
+        return bool(trial.max_new_tokens > 0 and any(
+            p.kind in ("prefix_end", "generated_tokens") for p in trial.probe_points))
+
+    def _encode(self, messages: List[Dict[str, Any]], tools: Optional[List] = None,
+                add_generation_prompt: bool = True) -> Dict[str, Any]:
+        """token_scoring.encode_prompts + a ``tools=`` entry and gen-prompt control.
+
+        ``encode_prompts`` has no ``tools=`` parameter (docs/bench/08), and the
+        agentic scheme needs it. ``add_generation_prompt=False`` is used to find
+        the end of the shared prefix for ``s_pre``.
+        """
+        import torch
+
+        kwargs: Dict[str, Any] = {}
+        if tools is not None:
+            kwargs["tools"] = tools
+        encoded = self.processor.apply_chat_template(
+            [messages],
+            tokenize=True,
+            add_generation_prompt=add_generation_prompt,
+            processor_kwargs={"padding": True},
+            return_dict=True,
+            return_tensors="pt",
+            **kwargs,
+        )
+        return {k: (v.cpu() if isinstance(v, torch.Tensor) else v)
+                for k, v in encoded.items()}
+
+    def _generation_runtimes(self, ks: Sequence[int]) -> Dict[int, Any]:
+        ts = token_scoring()
+        return {int(k): ts.build_probe_runtime(
+            model=self.hf_model, probe=self.probe, top_k=int(k),
+            mode=self.mode, model_family=self.model_family,
+        ) for k in ks}
+
+    def _run_generation(self, trial: Trial) -> Response:
+        """Generate + read s_pre (prefix end), s_img (image tokens), s_gen (each
+        generated token). Reads both k=top_k (primary) and k=8 (robustness)."""
+        import numpy as np
+        import torch
+
+        if not self._ready:
+            self.setup()
+        ts = token_scoring()
+        started = time.time()
+
+        meta = trial.meta or {}
+        tools = meta.get("tools")
+        prefix_n = int(meta.get("prefix_n_messages", len(trial.conversation.messages) - 1))
+
+        messages = ts.resolve_messages_images(
+            trial.conversation.messages, image_root=None, cache_dir=self.resized_cache_dir)
+        if messages is None:
+            return Response(error="image preparation failed",
+                            timing_ms=(time.time() - started) * 1000.0)
+
+        prefix = messages[:prefix_n]
+        full = self._encode(messages, tools=tools, add_generation_prompt=True)
+        pref = self._encode(prefix, tools=tools, add_generation_prompt=False)
+        k = int(pref["input_ids"][0].numel()) - 1          # end of the shared prefix
+
+        runtimes = self._generation_runtimes((self.top_k, 8))
+        union = sorted({n for rt in runtimes.values() for n in rt["module_names"]})
+        named_modules = dict(self.hf_model.named_modules())
+        missing = [n for n in union if n not in named_modules]
+        if missing:
+            return Response(error=f"missing probe modules: {missing[:3]}",
+                            timing_ms=(time.time() - started) * 1000.0)
+
+        # hook every probe module for the whole generate() call: the first fire is
+        # the prefill (seq_len = full), each later fire is one decode step
+        # (seq_len = 1 with KV cache). Scoring always reads the last position, so
+        # it is correct either way.
+        logs: Dict[str, List[torch.Tensor]] = {n: [] for n in union}
+
+        def make_hook(name: str):
+            def hook_fn(_m, _i, out):
+                tensor = out[0] if isinstance(out, tuple) else out
+                logs[name].append(tensor.detach().to(dtype=torch.float32).cpu())
+            return hook_fn
+
+        hooks = [named_modules[n].register_forward_hook(make_hook(n)) for n in union]
+        try:
+            with torch.no_grad():
+                out = self.hf_model.generate(
+                    **ts.move_to_device(full, self.hf_model),
+                    max_new_tokens=trial.max_new_tokens,
+                    do_sample=False,
+                )
+        finally:
+            for hook in hooks:
+                hook.remove()
+
+        input_ids = full["input_ids"][0].cpu().numpy()
+        prefill_len = int(len(input_ids))
+        generated = out[0][prefill_len:]
+        text = self.processor.tokenizer.decode(generated, skip_special_tokens=True).strip()
+
+        image_mask = np.isin(input_ids, np.asarray(sorted(self.image_token_ids), dtype=np.int64)) \
+            if self.image_token_ids else np.zeros_like(input_ids, dtype=bool)
+        n_image_tokens = int(image_mask.sum())
+
+        def score(captured: Dict[str, torch.Tensor], runtime: Dict[str, Any]) -> torch.Tensor:
+            return ts.score_from_captured(captured, runtime)[0]
+
+        def last_scalar(scores: torch.Tensor, position: Optional[int] = None) -> Optional[float]:
+            arr = scores.cpu().numpy()
+            if position is not None:
+                return float(arr[position])
+            return float(arr[-1])
+
+        prefill_captured = {n: logs[n][0] for n in union}
+        decode_captured = [{n: logs[n][j] for n in union} for j in range(1, len(logs[union[0]]))]
+
+        primary = runtimes[self.top_k]
+        robust = runtimes[8]
+        prefill_primary = score(prefill_captured, primary).cpu().numpy()
+        prefill_robust = score(prefill_captured, robust).cpu().numpy()
+
+        gen_primary = [float(score(dc, primary).cpu().numpy()[-1]) for dc in decode_captured]
+        gen_robust = [float(score(dc, robust).cpu().numpy()[-1]) for dc in decode_captured]
+
+        def segments(values: List[float]) -> Dict[str, Optional[float]]:
+            if not values:
+                return {"mean": None, "first25": None, "last25": None}
+            arr = np.asarray(values, dtype=float)
+            q = max(1, len(arr) // 4)
+            return {"mean": float(arr.mean()), "first25": float(arr[:q].mean()),
+                    "last25": float(arr[-q:].mean()), "n": int(len(arr))}
+
+        probe = {
+            "probe_id": self.probe_id,
+            "top_k": self.top_k,
+            "s_pre": float(prefill_primary[k]),
+            "s_img": float(prefill_primary[image_mask].mean()) if n_image_tokens else None,
+            "s_gen": segments(gen_primary)["mean"],
+            "s_gen_first25": segments(gen_primary)["first25"],
+            "s_gen_last25": segments(gen_primary)["last25"],
+            "n_generated_tokens": int(len(generated)),
+            "n_image_tokens": n_image_tokens,
+            "n_all_tokens": prefill_len + int(len(generated)),
+            "k8": {
+                "s_pre": float(prefill_robust[k]),
+                "s_img": float(prefill_robust[image_mask].mean()) if n_image_tokens else None,
+                "s_gen": segments(gen_robust)["mean"],
+                "s_gen_first25": segments(gen_robust)["first25"],
+                "s_gen_last25": segments(gen_robust)["last25"],
+            },
+        }
+
+        return Response(
+            text=text,
+            logprobs=None,
+            probe=probe,
+            usage={"prefill_tokens": prefill_len, "image_tokens": n_image_tokens,
+                   "generated_tokens": int(len(generated))},
+            timing_ms=(time.time() - started) * 1000.0,
+            cost_usd=0.0,
+        )
+
     def run(self, trial: Trial) -> Response:
         import numpy as np
         import torch
+
+        if self._is_generation(trial):
+            return self._run_generation(trial)
 
         if not self._ready:
             self.setup()

@@ -178,9 +178,12 @@ class CandidateReport:
     logprobs: Dict[str, float] = field(default_factory=dict)
     question: str = ""
     error: Optional[str] = None
+    applicable: bool = True              # False when the surface declares no candidates
 
     @property
     def ok(self) -> bool:
+        if not self.applicable:
+            return True                  # no candidates to gate
         return (self.error is None
                 and bool(self.single_token) and all(self.single_token.values())
                 and self.argmax_hits is True)
@@ -248,6 +251,9 @@ def check_candidates(
         variant=variant,
         question=trial.meta.get("question", ""),
     )
+    if not trial.candidates:
+        report.applicable = False        # generation surfaces: nothing to gate
+        return report
 
     tokenize = getattr(adaptor, "tokenize", None)
     if callable(tokenize):

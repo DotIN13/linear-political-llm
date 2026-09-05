@@ -1,0 +1,214 @@
+"""Generation surfaces: six open-ended tasks, schemes as variants, s_pre invariant.
+
+The invariant that matters most (task 3.3): within one scheme the shared prefix
+is byte-identical across all six surfaces, so ``s_pre`` -- read at the end of
+that prefix -- is identical across surfaces *by construction*.
+"""
+
+import pytest
+
+from bench import registry
+from bench.adaptors.base import check_capabilities
+from bench.store import trial_key
+from bench.surfaces.generation import (
+    SURFACE_IDS, detect_refusal, extract_mentions_politics, extract_slant,
+    extract_topic, word_count,
+)
+from bench.types import Item, Response, sha256_of
+
+registry.load_all()
+
+ITEM = Item(
+    item_id="lvis3_00001",
+    images=["train2017/000000000030.jpg", "train2017/000000000034.jpg", "train2017/000000000036.jpg"],
+    image_paths=["/tmp/a.jpg", "/tmp/b.jpg", "/tmp/c.jpg"],
+    image_scores=[0.51, 0.47, 0.55],
+    stratum=9,
+    covariates={"n_objects": [5, 6, 7]},
+    split="explore",
+)
+OTHER = Item(item_id="lvis3_09999", images=["x.jpg"], image_paths=["/tmp/x.jpg"],
+             image_scores=[-0.4], stratum=0)
+
+REV = "a1b2c3d4e5f6"
+
+
+def _prefix_sha(surface, item, scheme, condition="C"):
+    trial = surface.build(item, condition, {"scheme": scheme})
+    return sha256_of(trial.conversation.messages[:-1])
+
+
+def _question_sha(surface, item, scheme, condition="C"):
+    trial = surface.build(item, condition, {"scheme": scheme})
+    return sha256_of(trial.conversation.messages[-1])
+
+
+def test_six_generation_surfaces_registered():
+    assert set(SURFACE_IDS) <= set(registry.surface_names())
+
+
+@pytest.mark.parametrize("sid", SURFACE_IDS)
+def test_generation_surface_shape(sid):
+    surface = registry.get_surface(sid)()
+    assert surface.family == "generation"
+    assert {str(c) for c in surface.requires} == {"generate", "images", "activations"}
+    assert surface.variants() == [{"scheme": "chat"}, {"scheme": "agentic"}]
+    assert surface.max_new_tokens > 0
+    assert [p.name for p in surface.probe_points(None)] == ["s_pre", "s_gen", "s_img"]
+    assert surface.conditions == ["C", "E"]
+
+
+def test_requires_activations_so_opencode_is_blocked_not_degraded():
+    """Acceptance #5: no silent degradation -- activations is a hard requirement."""
+    for sid in SURFACE_IDS:
+        report = check_capabilities(registry.get_surface(sid)(), registry.get_adaptor("opencode"))
+        assert report.ok is False, f"{sid} must be blocked on opencode"
+        assert report.status == "BLOCKED"
+        assert "activations" in report.missing_required
+
+
+def test_local_hf_satisfies_the_surface():
+    for sid in SURFACE_IDS:
+        report = check_capabilities(registry.get_surface(sid)(), registry.get_adaptor("local_hf"))
+        assert report.ok is True
+        assert report.status == "OK"
+        assert report.missing_required == []
+
+
+@pytest.mark.parametrize("scheme", ["chat", "agentic"])
+def test_s_pre_invariant_same_prefix_across_surfaces(scheme):
+    """The prefix is identical across all six surfaces, so s_pre is too (task 3.3)."""
+    prefixes = {sid: _prefix_sha(registry.get_surface(sid)(), ITEM, scheme) for sid in SURFACE_IDS}
+    assert len(set(prefixes.values())) == 1, "the shared prefix must not depend on the surface"
+
+    # ... while the question differs per surface, so only the prefix is shared.
+    questions = {sid: _question_sha(registry.get_surface(sid)(), ITEM, scheme) for sid in SURFACE_IDS}
+    assert len(set(questions.values())) == 6
+
+
+@pytest.mark.parametrize("scheme", ["chat", "agentic"])
+def test_no_political_word_in_prompt_or_framing(scheme):
+    """board-tasks: the prompt and framing must carry no political word -- the
+    politics must come out in the answer. (s3's headline *data* is exempt: it is
+    the stimulus the model selects from, and its slant is the measurement.)"""
+    banned = ["democrat", "republican", "biden", "trump", "liberal", "conservative",
+              "gun", "abortion", "immigration", "border", "party", "election",
+              "vote", "politic", "policy", "values", "beliefs", "left-wing", "right-wing"]
+    for sid in SURFACE_IDS:
+        surface = registry.get_surface(sid)()
+        assert not any(w in surface.prompt.lower() for w in banned), f"{sid} prompt leaked a political word"
+        trial = surface.build(ITEM, "C", {"scheme": scheme})
+        prefix_text = " ".join(p["text"] for m in trial.conversation.messages[:-1]
+                               for p in m["content"] if p.get("type") == "text").lower()
+        for word in banned:
+            assert word not in prefix_text, f"{word!r} leaked into the {sid} framing"
+
+
+def test_scheme_changes_the_trial_key():
+    """Acceptance #3a: changing only the scheme must change the key."""
+    for sid in SURFACE_IDS:
+        k_chat = trial_key(sid, ITEM.item_id, "C", {"scheme": "chat"}, "local_hf", "m", 42, REV)
+        k_agent = trial_key(sid, ITEM.item_id, "C", {"scheme": "agentic"}, "local_hf", "m", 42, REV)
+        assert k_chat != k_agent
+
+
+def test_s3_headline_order_changes_the_trial_key():
+    """Acceptance #3b: changing only s3's headline order must change the key."""
+    order_a = list(range(12))
+    order_b = list(reversed(range(12)))
+    k_a = trial_key("s3_digest", ITEM.item_id, "C", {"scheme": "chat", "order": order_a},
+                    "local_hf", "m", 42, REV)
+    k_b = trial_key("s3_digest", ITEM.item_id, "C", {"scheme": "chat", "order": order_b},
+                    "local_hf", "m", 42, REV)
+    assert k_a != k_b
+
+
+def test_s3_order_is_deterministic_per_item_and_differs_across_items():
+    surface = registry.get_surface("s3_digest")()
+    a = surface.build(ITEM, "C", {"scheme": "chat"}).variant["order"]
+    a_again = surface.build(ITEM, "C", {"scheme": "chat"}).variant["order"]
+    b = surface.build(OTHER, "C", {"scheme": "chat"}).variant["order"]
+    assert a == a_again, "the order must be reproducible for resume/dedup"
+    assert a != b, "different items must get different orders"
+    assert sorted(a) == list(range(12))
+
+
+def test_s3_question_lists_twelve_headlines_in_the_variant_order():
+    surface = registry.get_surface("s3_digest")()
+    order = list(reversed(range(12)))
+    question = surface.question(order)
+    lines = question.splitlines()
+    assert lines[0] == surface.prompt
+    body = lines[2:]                       # skip the blank separator line
+    for i, idx in enumerate(order, start=1):
+        assert body[i - 1] == f"{i}. {surface.headlines[idx]['name']}"
+
+
+def test_condition_e_is_item_invariant_except_s3():
+    for sid in SURFACE_IDS:
+        surface = registry.get_surface(sid)()
+        expected = sid != "s3_digest"     # s3 shuffles headlines per item
+        assert surface.is_item_invariant("E") is expected
+        assert surface.is_item_invariant("C") is False
+
+
+def test_condition_e_drops_images_but_keeps_the_words():
+    surface = registry.get_surface("s1_speech")()
+    for scheme in ("chat", "agentic"):
+        c = surface.build(ITEM, "C", {"scheme": scheme}).conversation
+        e = surface.build(ITEM, "E", {"scheme": scheme}).conversation
+        assert c.images != [] and e.images == []
+        texts_c = [p["text"] for m in c.messages for p in m["content"] if p.get("type") == "text"]
+        texts_e = [p["text"] for m in e.messages for p in m["content"] if p.get("type") == "text"]
+        assert texts_c == texts_e, "no-image baseline keeps the identical text"
+
+
+def test_every_message_content_is_a_list():
+    """docs/bench/08: a str content crashes transformers' visual scan."""
+    for sid in SURFACE_IDS:
+        for scheme in ("chat", "agentic"):
+            trial = registry.get_surface(sid)().build(ITEM, "C", {"scheme": scheme})
+            for message in trial.conversation.messages:
+                assert isinstance(message["content"], list), (sid, scheme, message["role"])
+
+
+# --- deterministic extractors -------------------------------------------------
+def test_word_count_and_refusal():
+    assert word_count("one two three") == 3
+    assert detect_refusal("I'm sorry, but I can't help with that.")
+    assert detect_refusal("As an AI, I don't have enough information.")
+    assert not detect_refusal("Here is my stump speech. I would lead with my story.")
+
+
+def test_extract_slant_averages_the_picked_headlines():
+    headlines = [{"name": "MSN", "slant": -0.12},
+                 {"name": "Fox News (website)", "slant": 0.33},
+                 {"name": "Reuters", "slant": 0.0}]
+    result = extract_slant("I'd pick MSN and Fox News (website).", headlines)
+    assert result["n_picked"] == 2
+    assert result["mean_slant"] == pytest.approx((-0.12 + 0.33) / 2)
+    empty = extract_slant("I don't want any of these.", headlines)
+    assert empty["n_picked"] == 0 and empty["mean_slant"] is None
+
+
+def test_extract_topic_left_vs_right():
+    assert extract_topic("We must act on climate change and cut carbon emissions.")["topic_slug"] == "climate"
+    assert extract_topic("Lower taxes for small businesses now.")["topic_slug"] == "taxes"
+    assert extract_topic("The border needs stronger immigration enforcement.")["topic_slug"] == "border"
+    assert extract_topic("hello there friend")["topic_slug"] == "other"
+
+
+def test_extract_mentions_politics():
+    assert extract_mentions_politics("They seem civic-minded and politically engaged.")
+    assert extract_mentions_politics("She is a loyal Democrat.")
+    assert not extract_mentions_politics("She is outdoorsy and kind.")
+
+
+def test_extract_returns_an_outcome_with_deterministic_fields():
+    surface = registry.get_surface("s6_describe")()
+    outcome = surface.extract(Response(text="They are civic-minded and kind."),
+                              surface.build(ITEM, "C", {"scheme": "chat"}))
+    assert outcome.kind == "generation"
+    assert outcome.extra["word_count"] == 5
+    assert outcome.extra["refusal"] is False
+    assert outcome.extra["mentions_politics"] is True

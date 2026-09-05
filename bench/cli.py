@@ -43,8 +43,12 @@ def cmd_surfaces(args: argparse.Namespace) -> int:
         print(f"      prefers      : {{{', '.join(row['prefers'])}}}")
         print(f"      conditions   : {','.join(row['conditions'])} "
               f"(item-invariant: {','.join(row['item_invariant_conditions']) or '-'})")
-        print(f"      options      : {row['options']}  measured as {row['candidates']}")
-        print(f"      phrasings    : {row['n_phrasings']}  variants/item: {len(row['variants'])}")
+        if row.get("family") == "generation":
+            print(f"      schemes      : {','.join(row['schemes'])}  "
+                  f"judge={row.get('judge') or '-'}  max_new_tokens={row.get('max_new_tokens')}")
+        else:
+            print(f"      options      : {row['options']}  measured as {row['candidates']}")
+            print(f"      phrasings    : {row['n_phrasings']}  variants/item: {len(row['variants'])}")
         print(f"      probe_points : {row['probe_points']}")
         for line in row["example_question"].splitlines():
             print(f"        | {line}")
@@ -235,7 +239,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     # The dedup key is pinned to what can change a measurement, not to git HEAD:
     # editing the README must not invalidate 48k forward passes (task D).
     probe_weights = adaptor.describe().get("probe_weights")
-    rev = measurement_rev(ROOT_DIR, extra_files=[probe_weights] if probe_weights else [])
+    top_k = getattr(adaptor, "top_k", None)
+    note = f"top_k={top_k}" if top_k is not None else ""
+    rev = measurement_rev(ROOT_DIR, extra_files=[probe_weights] if probe_weights else [], note=note)
     print(f"[run] code_rev={code_rev}  measurement_rev={rev}  (the key uses measurement_rev)")
 
     # capability gate, before anything expensive happens
@@ -334,12 +340,15 @@ def cmd_run(args: argparse.Namespace) -> int:
     try:
         for name, condition, variant, item in plan:
             surface = surfaces[name]
-            key = trial_key(name, item.item_id, condition, variant, adaptor.name,
+            trial = surface.build(item, condition, variant)
+            # Build before keying: a surface may enrich the variant inside build()
+            # (s3_digest adds its per-item headline order), and that order must be
+            # part of the identity or two orders would collide on one key.
+            key = trial_key(name, item.item_id, condition, trial.variant, adaptor.name,
                             model_id, args.seed, rev)
             if store.has(key):
                 n_skip += 1
                 continue
-            trial = surface.build(item, condition, variant)
             conversation_sha = store.put_conversation(trial.conversation)
             response = adaptor.run(trial)
             if response.error:
@@ -362,7 +371,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "surface": name,
                 "surface_family": surface.family,
                 "condition": condition,
-                "variant": variant,
+                "variant": trial.variant,
                 "item_id": item.item_id,
                 "is_baseline": item.item_id == BASELINE_ITEM_ID,
                 "stratum": item.stratum,
@@ -633,9 +642,84 @@ def _ranks(values: Sequence[float]) -> List[float]:
 
 
 def cmd_judge(args: argparse.Namespace) -> int:
-    print("bench judge: not implemented yet "
-          "(planned: judges/speech_lean.py + judges/rewrite_bias.py, cached by judge_id)")
-    return 0
+    """The offline judge step: answer text in, labels out (board-judge).
+
+    Reads already-written ``runs/*.jsonl``, judges every answer whose surface has
+    a JudgeSpec, shuffles the order first (board step 2), caches on
+    ``(response_hash, judge_id)`` (board step 6), and appends results to a
+    separate ``judges.jsonl`` -- trials stay append-only.
+    """
+    import random
+
+    from bench.judges import JudgeCache, JudgeCaller, judge_specs, response_hash
+
+    registry.load_all()
+    specs = judge_specs()
+    run_dir = _abs(args.run)
+    store = RunStore(run_dir=run_dir, conversations_dir=_abs(args.conversations))
+    rows = list(store.read())
+    if not rows:
+        print(f"no trials in {store.trials_path}", file=sys.stderr)
+        return 1
+
+    surfaces = _split_list(args.surface) if args.surface else sorted(specs)
+    judged = [r for r in rows
+              if r.get("surface") in surfaces
+              and r["surface"] in specs
+              and (r.get("response") or {}).get("text")]
+    if not judged:
+        print("no generated answers to judge", file=sys.stderr)
+        return 1
+
+    rng = random.Random(args.seed)
+    order = list(judged)
+    rng.shuffle(order)
+    print(f"judging {len(order)} answers over surfaces {surfaces} (shuffled, seed={args.seed})")
+
+    cache_path = _abs(args.cache) if args.cache else os.path.join(_abs("judge_cache"), "judge.sqlite")
+    out_path = args.out if args.out else os.path.join(run_dir, "judges.jsonl")
+
+    seen: set = set()
+    n_new = n_cache = n_err = 0
+    with JudgeCache(cache_path) as cache:
+        with open(out_path, "a", encoding="utf-8") as handle:
+            for i, row in enumerate(order):
+                spec = specs[row["surface"]]
+                if args.model:
+                    spec = _with_model(spec, args.model)
+                text = row["response"]["text"]
+                rhash = response_hash(text)
+                cached = cache.get(rhash, spec.judge_id)
+                if cached is not None:
+                    result = {"cached": True, **cached}
+                    n_cache += 1
+                else:
+                    try:
+                        result = JudgeCaller(spec).call(text)
+                        cache.put(rhash, spec.judge_id, result)
+                        result = {"cached": False, **result}
+                        n_new += 1
+                    except Exception as exc:  # noqa: BLE001 - one bad call must not kill the run
+                        result = {"error": f"{type(exc).__name__}: {exc}", "cached": False}
+                        n_err += 1
+                result.update({"trial_key": row["trial_key"], "surface": row["surface"],
+                               "response_hash": rhash})
+                handle.write(json.dumps(result, ensure_ascii=False, sort_keys=True) + "\n")
+                if (i + 1) % 10 == 0:
+                    print(f"  [{i + 1}/{len(order)}] new={n_new} cache={n_cache} err={n_err}",
+                          flush=True)
+
+    print(f"[judge] new={n_new} cached={n_cache} errors={n_err} -> {out_path}")
+    return 0 if n_err == 0 else 1
+
+
+def _with_model(spec: Any, model: str) -> Any:
+    """Same judge, different model: judge_id changes by construction."""
+    return type(spec)(
+        id=spec.id, model=model, system_prompt=spec.system_prompt, schema=spec.schema,
+        label_map=spec.label_map, fields=spec.fields, temperature=spec.temperature,
+        seed=spec.seed, base_url=spec.base_url, api_key_env=spec.api_key_env,
+    )
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -796,11 +880,15 @@ def build_parser() -> argparse.ArgumentParser:
                         "variant: split them apart -- diagnostic, not the main analysis")
     p.set_defaults(func=cmd_score)
 
-    p = sub.add_parser("judge", help="(stub)")
-    p.add_argument("--run")
-    p.add_argument("--surface")
-    p.add_argument("--judge")
-    p.add_argument("--adaptor")
+    p = sub.add_parser("judge", help="offline judge over a run's generated answers")
+    p.add_argument("--run", required=True)
+    p.add_argument("--conversations", default="conversations")
+    p.add_argument("--surface", default=None,
+                   help="comma-separated subset (default: every judged surface present)")
+    p.add_argument("--model", default=None, help="override the judge model")
+    p.add_argument("--cache", default=None, help="sqlite cache path (default judge_cache/judge.sqlite)")
+    p.add_argument("--out", default=None, help="output jsonl (default <run>/judges.jsonl)")
+    p.add_argument("--seed", type=int, default=42, help="shuffle seed (board step 2)")
     p.set_defaults(func=cmd_judge)
 
     p = sub.add_parser("report", help="(stub)")
