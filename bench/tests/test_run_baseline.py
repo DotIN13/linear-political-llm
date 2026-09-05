@@ -230,6 +230,20 @@ def test_run_can_be_narrowed_to_one_variant(workspace, capsys):
     assert _run(workspace, "--variant", "phrasing=7") == 2
 
 
+def test_a_surface_that_lies_about_item_invariance_is_refused(workspace, capsys):
+    """Acting on the claim deletes trials, so the claim is verified against real items."""
+    liar = type("Liar", (registry.get_surface("vote2020"),),
+                {"name": "liar", "is_item_invariant": lambda self, condition: True})
+    registry.register_surface("liar")(liar)
+    try:
+        assert main(["run", "--items", workspace["items"], "--surface", "liar",
+                     "--conditions", "C", "--adaptor", "fake_logprob", "--model", "fake-1",
+                     "--out", workspace["run"], "--conversations", workspace["conv"]]) == 2
+        assert "item-invariant" in capsys.readouterr().err
+    finally:
+        registry._SURFACES.pop("liar", None)   # do not leak into the registry listing
+
+
 def test_manifest_records_both_revisions_and_the_variant_space(workspace, capsys):
     assert _run(workspace) == 0
     capsys.readouterr()

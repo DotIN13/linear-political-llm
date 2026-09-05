@@ -268,6 +268,23 @@ def cmd_run(args: argparse.Namespace) -> int:
                     n_baseline += 1
                 else:
                     plan.extend((name, condition, variant, item) for item in items)
+    # is_item_invariant() is a claim, and acting on it deletes trials -- so check
+    # it against real items instead of trusting it. A future surface that puts
+    # anything item-specific into the question would otherwise silently collapse
+    # every item onto one baseline record.
+    for name, surface in surfaces.items():
+        for condition in conditions:
+            if not surface.is_item_invariant(condition) or len(items) < 2:
+                continue
+            variant = variant_space[name][0]
+            probes = [items[0], items[-1], baseline_item()]
+            shas = {surface.build(i, condition, variant).conversation.sha for i in probes}
+            if len(shas) != 1:
+                print(f"refusing to run: {name} declares condition {condition} item-invariant, "
+                      f"but different items build different conversations ({len(shas)} shas)",
+                      file=sys.stderr)
+                return 2
+
     n_variants = {name: len(v) for name, v in variant_space.items()}
     print(f"[run] {len(items)} items x {len(surfaces)} surfaces x {len(conditions)} conditions "
           f"x variants {n_variants} -> {len(plan)} trials "
