@@ -15,3 +15,9 @@ datasets
 .gradio
 app/results
 *.bak
+
+# bench/ data products -- never committed (docs/bench/02)
+runs/
+items/
+conversations/
+judge_cache/
