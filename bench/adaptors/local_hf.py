@@ -120,10 +120,7 @@ class LocalHFAdaptor(BaseAdaptor):
             "top_k": self.top_k,
             "dtype": self.dtype,
             "device_map": self.device_map,
-            "probe_weights": os.path.join(
-                self.data_dir, os.path.basename(self.model_path).lower(),
-                f"{self.probe_id}_weights.pkl",
-            ),
+            "probe_weights": self.probe_weights_path(),
         })
         return base
 
@@ -182,6 +179,20 @@ class LocalHFAdaptor(BaseAdaptor):
         self.hf_model = None
         self.processor = None
         self._ready = False
+
+    # -- tokenizer access (used by the candidate gate) -----------------------
+    def tokenize(self, text: str) -> List[int]:
+        """Token ids for a literal string. Loads the processor only, not the model."""
+        if self.processor is None:
+            from transformers import AutoProcessor
+            self.processor = AutoProcessor.from_pretrained(self.model_path)
+        return [int(i) for i in self.processor.tokenizer.encode(text, add_special_tokens=False)]
+
+    def probe_weights_path(self) -> str:
+        return os.path.join(
+            self.data_dir, os.path.basename(self.model_path).lower(),
+            f"{self.probe_id}_weights.pkl",
+        )
 
     # -- run -----------------------------------------------------------------
     def run(self, trial: Trial) -> Response:
@@ -246,19 +257,26 @@ class LocalHFAdaptor(BaseAdaptor):
             logprob_vec = torch.log_softmax(last_logits, dim=-1)
             logprobs = {}
             token_ids: Dict[str, int] = {}
+            multi_token: List[str] = []
             for candidate in trial.candidates:
                 ids = self.processor.tokenizer.encode(candidate, add_special_tokens=False)
                 if not ids:
                     raise ValueError(f"Candidate {candidate!r} tokenized to nothing")
+                if len(ids) > 1:
+                    multi_token.append(candidate)
                 token_ids[candidate] = int(ids[0])
                 logprobs[candidate] = float(logprob_vec[ids[0]].item())
             if len(set(token_ids.values())) != len(token_ids):
                 raise ValueError(f"Candidates share a first token: {token_ids}")
             top_id = int(torch.argmax(logprob_vec).item())
+            top_lp, top_ids = torch.topk(logprob_vec, k=5)
             cand_meta = {
                 "candidate_first_token_ids": token_ids,
+                "candidates_multi_token": multi_token,
                 "argmax_token": self.processor.tokenizer.decode([top_id]),
                 "argmax_logprob": float(logprob_vec[top_id].item()),
+                "top_tokens": [[self.processor.tokenizer.decode([int(i)]), float(v)]
+                               for v, i in zip(top_lp.tolist(), top_ids.tolist())],
             }
 
         text = None

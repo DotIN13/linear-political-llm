@@ -39,6 +39,16 @@ def sha256_of(payload: Any) -> str:
     return "sha256:" + hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
 
+def canonical_variant(variant: Optional[Dict[str, Any]]) -> str:
+    """Canonical form of the within-item repeat dimensions (docs/bench, task B).
+
+    A dict rather than two fields so that later repeats -- image position, number
+    of images -- can be added without touching the signature again. The empty
+    dict has the determinate form ``{}``.
+    """
+    return _canonical_json(dict(variant or {}))
+
+
 @dataclass(frozen=True)
 class Item:
     """One stimulus. Produced by the sampler, then frozen on disk forever."""
@@ -47,21 +57,36 @@ class Item:
     images: List[str]              # record_name, e.g. "train2017/000000000030.jpg"
     image_paths: List[str]         # resolved on-disk paths (already resized to 800px)
     image_scores: List[float]      # per-image probe image_mean
-    decile: int                    # 0..9 over image_mean
+    stratum: int                   # 0..9 over image_mean -- THE primary independent variable
+    primary_iv: str = "stratum"    # explicit, so nobody quietly regresses on image_mean_mean
     covariates: Dict[str, Any] = field(default_factory=dict)
     split: str = "explore"
 
     @property
-    def image_mean(self) -> float:
-        return sum(self.image_scores) / len(self.image_scores) if self.image_scores else float("nan")
+    def image_mean(self) -> Optional[float]:
+        """Mean of the per-image scores. A *covariate* now, not the IV (task E)."""
+        return sum(self.image_scores) / len(self.image_scores) if self.image_scores else None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
     @staticmethod
     def from_dict(payload: Dict[str, Any]) -> "Item":
+        payload = dict(payload)
+        if "stratum" not in payload and "decile" in payload:
+            payload["stratum"] = payload["decile"]      # v1 items on disk say "decile"
         known = {f for f in Item.__dataclass_fields__}
         return Item(**{k: v for k, v in payload.items() if k in known})
+
+
+# The one record written for an item-invariant condition (task C). Its conversation
+# carries no image, so every item would otherwise produce a byte-identical trial.
+BASELINE_ITEM_ID = "__baseline__"
+
+
+def baseline_item(split: str = "explore") -> Item:
+    return Item(item_id=BASELINE_ITEM_ID, images=[], image_paths=[], image_scores=[],
+                stratum=-1, covariates={}, split=split)
 
 
 @dataclass(frozen=True)
@@ -119,10 +144,15 @@ class Trial:
     item_id: str
     condition: str
     conversation: Conversation
-    candidates: List[str] = field(default_factory=list)   # words to take logprob of
+    candidates: List[str] = field(default_factory=list)   # tokens to take logprob of ("A"/"B")
     probe_points: List[ProbePoint] = field(default_factory=list)
     max_new_tokens: int = 0                               # 0 == prefill only
+    variant: Dict[str, Any] = field(default_factory=dict)  # {"phrasing": 0, "order": "ab"}
     meta: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def variant_key(self) -> str:
+        return canonical_variant(self.variant)
 
 
 @dataclass

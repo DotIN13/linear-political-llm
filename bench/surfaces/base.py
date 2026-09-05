@@ -7,10 +7,12 @@ conversation* (docs/bench/01).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
+import json
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Union, runtime_checkable
 
 from bench.types import (
     Capability,
+    canonical_variant,
     Conversation,
     Item,
     NeedsJudge,
@@ -19,6 +21,14 @@ from bench.types import (
     Response,
     Trial,
 )
+
+# --- A/B answer surface (task A). The measured tokens are the letters, never the
+# --- option words: "Biden" tokenizes to ["B","iden"] while "Trump" is one token,
+# --- so a word-vs-word logprob difference was comparing a first-subtoken against
+# --- a whole word. Letters are single tokens and symmetric by construction.
+LETTERS = ["A", "B"]
+ORDERS = ["ab", "ba"]
+ANSWER_INSTRUCTION = "Answer with a single letter."
 
 # --- The dialogue template (docs/bench/03). Every assistant turn below is a
 # --- hard-coded constant that is inserted as an existing message. The model is
@@ -55,9 +65,63 @@ class Surface(Protocol):
     prefers: frozenset
     conditions: List[str]
 
-    def build(self, item: Item, condition: str) -> Trial: ...
+    def build(self, item: Item, condition: str, variant: Dict[str, Any]) -> Trial: ...
     def probe_points(self, trial: Optional[Trial]) -> List[ProbePoint]: ...
-    def extract(self, resp: Response) -> Union[Outcome, NeedsJudge]: ...
+    def extract(self, resp: Response, trial: Optional[Trial]) -> Union[Outcome, NeedsJudge]: ...
+    def is_item_invariant(self, condition: str) -> bool: ...
+    def variants(self) -> List[Dict[str, Any]]: ...
+
+
+def order_to_options(options: Sequence[str], order: str) -> List[str]:
+    """Map the semantic options onto the letters. ``ba`` swaps them."""
+    if order not in ORDERS:
+        raise ValueError(f"Unknown order {order!r}; expected one of {ORDERS}")
+    first, second = options
+    return [first, second] if order == "ab" else [second, first]
+
+
+def validate_variant_space(surface: Any) -> List[str]:
+    """Problems with a surface's declared variants. Empty list == fine.
+
+    Cheap, but it is the difference between "this surface has no phrasing 2" and
+    a silently mistyped key that would have produced a second, parallel key space.
+    """
+    problems: List[str] = []
+    variants = surface.variants()
+    if not variants:
+        problems.append("variants() is empty")
+    seen = set()
+    for variant in variants:
+        if not isinstance(variant, dict):
+            problems.append(f"variant {variant!r} is not a dict")
+            continue
+        canonical = canonical_variant(variant)
+        if canonical in seen:
+            problems.append(f"duplicate variant {canonical}")
+        seen.add(canonical)
+        if canonical != canonical_variant(json.loads(canonical)):
+            problems.append(f"variant {canonical} is not in canonical form")
+        unknown = set(variant) - {"phrasing", "order"}
+        if unknown:
+            problems.append(f"variant {canonical} has unknown keys {sorted(unknown)}")
+        if variant.get("order") not in ORDERS:
+            problems.append(f"variant {canonical} has order not in {ORDERS}")
+        index = variant.get("phrasing")
+        if not isinstance(index, int) or not 0 <= index < len(getattr(surface, "phrasings", [])):
+            problems.append(f"variant {canonical} points at a phrasing this surface does not have")
+    orders = {str(v.get("order")) for v in variants if isinstance(v, dict)}
+    if orders != set(ORDERS):
+        problems.append(f"both A/B orders are mandatory (task A2); declared: {sorted(orders)}")
+    return problems
+
+
+def render_question(stem: str, options_in_order: Sequence[str]) -> str:
+    """Question, then a labelled option list, then the single-letter instruction."""
+    lines = [stem]
+    for letter, option in zip(LETTERS, options_in_order):
+        lines.append(f"{letter}. {option}")
+    lines.append(ANSWER_INSTRUCTION)
+    return "\n".join(lines)
 
 
 def build_conversation(item: Item, condition: str, question: str) -> Conversation:
@@ -97,39 +161,97 @@ DEFAULT_PROBE_POINTS = [
 
 
 class BaseSurface:
-    """Shared plumbing. Subclasses supply name/question/candidates."""
+    """Shared plumbing. Subclasses supply name / phrasings / options."""
 
     name: str = "base"
     requires: frozenset = frozenset({Capability.GENERATE, Capability.IMAGES})
     prefers: frozenset = frozenset({Capability.LOGPROB, Capability.ACTIVATIONS})
     conditions: List[str] = list(CONDITIONS)
     uses_images: bool = True
+    # True when the item enters the conversation *only* through its images, which
+    # is what makes a zero-image condition item-invariant (task C).
+    item_enters_only_via_images: bool = True
     family: str = "base"
-    question: str = ""
-    candidates: List[str] = []
+    # The question strings live *on the surface*, so measurement_rev -- which
+    # hashes bench/surfaces/** -- already covers them: rewording a phrasing
+    # invalidates exactly the records measured with it, which is correct.
+    phrasings: List[str] = []          # question stems; index goes in variant["phrasing"]
+    # Which of those phrasings this surface currently declares as its variant
+    # space. One this round (the smoke budget); R2 sets [0, 1, 2] and every item
+    # then carries six repeated measures instead of two.
+    active_phrasings: List[int] = [0]
+    options: List[str] = []            # two semantic options, canonical order
+    candidates: List[str] = list(LETTERS)   # what the logprob is actually taken on
 
-    def build(self, item: Item, condition: str) -> Trial:
-        conversation = build_conversation(item, condition, self.question)
+    # -- variants ------------------------------------------------------------
+    def variants(self) -> List[Dict[str, Any]]:
+        """Every legal variant of this surface -- the surface declares it, not the caller.
+
+        A variant is a *repeated measure* of the same item, not a new observation:
+        different phrasings and the two A/B orders all estimate the same quantity.
+        `bench run` iterates this list, and `bench score` averages over it before
+        counting n. Declaring it here is what lets "all three phrasings ran" be
+        told apart from "somebody typed the variant wrong".
+        """
+        return [{"phrasing": int(p), "order": str(o)}
+                for p in self.active_phrasings for o in ORDERS]
+
+    def question(self, variant: Optional[Dict[str, Any]] = None) -> str:
+        variant = variant or {}
+        index = int(variant.get("phrasing", 0))
+        if not self.phrasings:
+            raise ValueError(f"surface {self.name} has no phrasings")
+        if not 0 <= index < len(self.phrasings):
+            raise ValueError(
+                f"surface {self.name} has {len(self.phrasings)} phrasings; got phrasing={index}"
+            )
+        order = str(variant.get("order", "ab"))
+        return render_question(self.phrasings[index], order_to_options(self.options, order))
+
+    # -- item invariance -----------------------------------------------------
+    def is_item_invariant(self, condition: str) -> bool:
+        """Does this (surface, condition) produce the same conversation for every item?
+
+        Condition E shows no image and the dialogue is hard-coded, so 300 items
+        would give 300 byte-identical trials. `bench run` runs it once and `bench
+        score` broadcasts it as a constant baseline.
+        """
+        if condition not in CONDITION_SPEC:
+            raise ValueError(f"Unknown condition {condition!r}. Known: {CONDITIONS}")
+        return self.item_enters_only_via_images and CONDITION_SPEC[condition]["n_images"] == 0
+
+    # -- build ---------------------------------------------------------------
+    def build(self, item: Item, condition: str, variant: Optional[Dict[str, Any]] = None) -> Trial:
+        variant = dict(variant or {"phrasing": 0, "order": "ab"})
+        order = str(variant.get("order", "ab"))
+        options_in_order = order_to_options(self.options, order)
+        question = self.question(variant)
+        conversation = build_conversation(item, condition, question)
         return Trial(
             surface=self.name,
             item_id=item.item_id,
             condition=condition,
             conversation=conversation,
-            candidates=list(self.candidates),
+            candidates=list(LETTERS),
             probe_points=self.probe_points(None),
             max_new_tokens=0,
+            variant=variant,
             meta={
                 "family": self.family,
-                "question": self.question,
+                "question": question,
+                "options": list(self.options),
+                "options_in_order": options_in_order,
+                "letter_to_option": dict(zip(LETTERS, options_in_order)),
                 "condition_desc": CONDITION_SPEC[condition]["desc"],
                 "n_images": len(conversation.images),
+                "item_invariant": self.is_item_invariant(condition),
             },
         )
 
     def probe_points(self, trial: Optional[Trial] = None) -> List[ProbePoint]:
         return list(DEFAULT_PROBE_POINTS)
 
-    def extract(self, resp: Response) -> Union[Outcome, NeedsJudge]:
+    def extract(self, resp: Response, trial: Optional[Trial] = None) -> Union[Outcome, NeedsJudge]:
         raise NotImplementedError
 
     def describe(self) -> Dict[str, Any]:
@@ -139,6 +261,11 @@ class BaseSurface:
             "requires": sorted(str(c) for c in self.requires),
             "prefers": sorted(str(c) for c in self.prefers),
             "conditions": list(self.conditions),
+            "options": list(self.options),
             "candidates": list(self.candidates),
+            "n_phrasings": len(self.phrasings),
+            "variants": self.variants(),
+            "item_invariant_conditions": [c for c in self.conditions if self.is_item_invariant(c)],
             "probe_points": [p.name for p in self.probe_points(None)],
+            "example_question": self.question({"phrasing": 0, "order": "ab"}),
         }

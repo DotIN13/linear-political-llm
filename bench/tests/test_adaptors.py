@@ -30,13 +30,22 @@ def test_local_hf_keeps_the_module_off_the_model_attribute():
     adaptor = registry.get_adaptor("local_hf")()
     assert adaptor.hf_model is None
     assert adaptor.model == adaptor.model_path
-    trial_key("vote2020", "i", "C", adaptor.name, adaptor.model, 42, "rev")  # must not raise
+    trial_key("vote2020", "i", "C", {"phrasing": 0, "order": "ab"},
+              adaptor.name, adaptor.model, 42, "rev")  # must not raise
 
 
 def test_trial_key_refuses_empty_fields():
     for bad in [None, ""]:
         with pytest.raises(ValueError):
-            trial_key("vote2020", "i", "C", "local_hf", bad, 42, "rev")
+            trial_key("vote2020", "i", "C", {"order": "ab"}, "local_hf", bad, 42, "rev")
+
+
+def test_local_hf_reports_where_its_probe_weights_live():
+    """measurement_rev hashes this file, so the path has to be exact."""
+    adaptor = registry.get_adaptor("local_hf")()
+    assert adaptor.describe()["probe_weights"] == adaptor.probe_weights_path()
+    assert adaptor.probe_weights_path().endswith(
+        "qwen3-vl-8b-instruct/combined_ideology_headwise_linear_weights.pkl")
 
 
 def test_split_probe_id():
@@ -52,8 +61,8 @@ def test_opencode_prompt_carries_the_same_words_as_the_local_arm():
     from bench.types import Item
 
     item = Item(item_id="i", images=["a"], image_paths=["/tmp/a.jpg"],
-                image_scores=[0.1], decile=5)
-    trial = registry.get_surface("vote2020")().build(item, "D")
+                image_scores=[0.1], stratum=5)
+    trial = registry.get_surface("vote2020")().build(item, "D", {"phrasing": 0, "order": "ab"})
     prompt = OpenCodeAdaptor._render_prompt(trial)
     assert SHARE_LINE in prompt and ASSISTANT_TURN_1 in prompt
     assert prompt.rstrip().endswith("ASSISTANT:")

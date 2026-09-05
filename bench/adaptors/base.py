@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
-from bench.types import Capability, Response, Trial
+from bench.types import Capability, Item, Response, Trial, baseline_item
 
 
 @runtime_checkable
@@ -157,3 +157,122 @@ def check_capabilities(surface: Any, adaptor: Any, item: Optional[Any] = None) -
         degradations=degradations,
         notes=notes,
     )
+
+
+# --------------------------------------------------------------------------- #
+# The candidate gate (task A3). Lives next to the capability gate because it is
+# the same kind of thing: a cheap pre-flight check that refuses a combination
+# *before* the queue, not after.
+# --------------------------------------------------------------------------- #
+@dataclass
+class CandidateReport:
+    surface: str
+    adaptor: str
+    condition: str
+    variant: Dict[str, Any]
+    single_token: Dict[str, bool] = field(default_factory=dict)
+    token_ids: Dict[str, List[int]] = field(default_factory=dict)
+    argmax_token: Optional[str] = None
+    argmax_hits: Optional[bool] = None
+    top_tokens: List[Any] = field(default_factory=list)
+    logprobs: Dict[str, float] = field(default_factory=dict)
+    question: str = ""
+    error: Optional[str] = None
+
+    @property
+    def ok(self) -> bool:
+        return (self.error is None
+                and bool(self.single_token) and all(self.single_token.values())
+                and self.argmax_hits is True)
+
+    def render(self) -> str:
+        lines = [f"{self.surface} x {self.adaptor}: candidates {'OK' if self.ok else 'FAILED'}"
+                 f"  (condition={self.condition}, variant={self.variant})"]
+        for candidate, single in sorted(self.single_token.items()):
+            ids = self.token_ids.get(candidate, [])
+            mark = "OK" if single else "x "
+            lines.append(f"  [{mark}] {candidate!r} -> token ids {ids} "
+                         f"({len(ids)} token{'' if len(ids) == 1 else 's'})")
+        if self.error:
+            lines.append(f"  [x ] forward pass failed: {self.error}")
+            return "\n".join(lines)
+        if self.argmax_hits is None:
+            lines.append("  [--] argmax not checked (adaptor cannot return logprobs)")
+            return "\n".join(lines)
+        mark = "OK" if self.argmax_hits else "x "
+        lines.append(f"  [{mark}] argmax at the answer position = {self.argmax_token!r} "
+                     f"({'in' if self.argmax_hits else 'NOT in'} {sorted(self.single_token)})")
+        if self.logprobs:
+            pretty = "  ".join(f"logP({k})={v:+.4f}" for k, v in sorted(self.logprobs.items()))
+            lines.append(f"       {pretty}")
+        if self.top_tokens:
+            pretty = ", ".join(f"{tok!r}:{lp:+.3f}" for tok, lp in self.top_tokens)
+            lines.append(f"       top-5 at that position: {pretty}")
+        if not self.argmax_hits:
+            lines.append("  -> the prompt does not put the model in single-letter mode; "
+                         "this surface is unusable as measured")
+        return "\n".join(lines)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "surface": self.surface, "adaptor": self.adaptor, "condition": self.condition,
+            "variant": self.variant, "ok": self.ok, "single_token": self.single_token,
+            "token_ids": self.token_ids, "argmax_token": self.argmax_token,
+            "argmax_hits": self.argmax_hits, "top_tokens": self.top_tokens,
+            "logprobs": self.logprobs, "question": self.question, "error": self.error,
+        }
+
+
+def check_candidates(
+    surface: Any,
+    adaptor: Any,
+    item: Optional[Item] = None,
+    condition: str = "E",
+    variant: Optional[Dict[str, Any]] = None,
+) -> CandidateReport:
+    """Are the candidate tokens single tokens, and does the model actually answer with one?
+
+    Two failures this catches, both of which silently produce numbers that look
+    fine: a candidate that tokenizes to more than one token (then the logprob is
+    a first-sub-token logprob, not the option's), and a prompt the model does not
+    read as "reply with a letter" (then the difference of two letter logprobs is
+    measured off in the tail of the distribution).
+    """
+    variant = dict(variant or {"phrasing": 0, "order": "ab"})
+    item = item or baseline_item()
+    trial = surface.build(item, condition, variant)
+    report = CandidateReport(
+        surface=getattr(surface, "name", str(surface)),
+        adaptor=getattr(adaptor, "name", str(adaptor)),
+        condition=condition,
+        variant=variant,
+        question=trial.meta.get("question", ""),
+    )
+
+    tokenize = getattr(adaptor, "tokenize", None)
+    if callable(tokenize):
+        for candidate in trial.candidates:
+            ids = list(tokenize(candidate))
+            report.token_ids[candidate] = ids
+            report.single_token[candidate] = len(ids) == 1
+    else:
+        report.error = "adaptor exposes no tokenizer"
+        return report
+
+    if Capability.LOGPROB not in frozenset(adaptor.capabilities):
+        return report                      # argmax_hits stays None: not checkable here
+
+    try:
+        response = adaptor.run(trial)
+    except Exception as exc:               # a failed pre-flight must not look like a pass
+        report.error = f"{type(exc).__name__}: {exc}"
+        return report
+    if response.error:
+        report.error = response.error
+        return report
+
+    report.logprobs = dict(response.logprobs or {})
+    report.argmax_token = response.usage.get("argmax_token")
+    report.top_tokens = list(response.usage.get("top_tokens") or [])
+    report.argmax_hits = report.argmax_token in trial.candidates
+    return report
