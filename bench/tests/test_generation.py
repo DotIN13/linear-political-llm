@@ -11,8 +11,9 @@ from bench import registry
 from bench.adaptors.base import check_capabilities
 from bench.store import trial_key
 from bench.surfaces.generation import (
-    SURFACE_IDS, detect_refusal, extract_mentions_politics, extract_slant,
-    extract_topic, word_count,
+    SURFACE_IDS, detect_refusal, extract_mentions_politics, extract_picks,
+    extract_topic, load_s3_headlines, shuffled_order, token_set_similarity,
+    word_count,
 )
 from bench.types import Item, Response, sha256_of
 
@@ -133,6 +134,17 @@ def test_s3_order_is_deterministic_per_item_and_differs_across_items():
     assert sorted(a) == list(range(12))
 
 
+def test_s3_order_depends_on_item_and_seed():
+    surface = registry.get_surface("s3_digest")()
+    a = surface.build(ITEM, "C", {"scheme": "chat"}, seed=42).variant["order"]
+    a_same = surface.build(ITEM, "C", {"scheme": "chat"}, seed=42).variant["order"]
+    a_diff = surface.build(ITEM, "C", {"scheme": "chat"}, seed=43).variant["order"]
+    b = surface.build(OTHER, "C", {"scheme": "chat"}, seed=42).variant["order"]
+    assert a == a_same
+    assert a != a_diff, "same item + different seed must give a different order"
+    assert a != b
+
+
 def test_s3_question_lists_twelve_headlines_in_the_variant_order():
     surface = registry.get_surface("s3_digest")()
     order = list(reversed(range(12)))
@@ -141,7 +153,20 @@ def test_s3_question_lists_twelve_headlines_in_the_variant_order():
     assert lines[0] == surface.prompt
     body = lines[2:]                       # skip the blank separator line
     for i, idx in enumerate(order, start=1):
-        assert body[i - 1] == f"{i}. {surface.headlines[idx]['name']}"
+        h = surface.headlines[idx]
+        assert body[i - 1] == f"{i}. {h['outlet']} — {h['headline']}"
+
+
+def test_s3_attribution_hidden_drops_the_outlet():
+    surface = registry.get_surface("s3_digest")()
+    order = list(range(12))
+    shown = surface.question(order, "shown")
+    hidden = surface.question(order, "hidden")
+    for i, idx in enumerate(order, start=1):
+        h = surface.headlines[idx]
+        assert f"{i}. {h['outlet']} — {h['headline']}" in shown
+        assert f"{i}. {h['outlet']} — {h['headline']}" not in hidden
+        assert f"{i}. {h['headline']}" in hidden
 
 
 def test_condition_e_is_item_invariant_except_s3():
@@ -180,15 +205,32 @@ def test_word_count_and_refusal():
     assert not detect_refusal("Here is my stump speech. I would lead with my story.")
 
 
-def test_extract_slant_averages_the_picked_headlines():
-    headlines = [{"name": "MSN", "slant": -0.12},
-                 {"name": "Fox News (website)", "slant": 0.33},
-                 {"name": "Reuters", "slant": 0.0}]
-    result = extract_slant("I'd pick MSN and Fox News (website).", headlines)
-    assert result["n_picked"] == 2
-    assert result["mean_slant"] == pytest.approx((-0.12 + 0.33) / 2)
-    empty = extract_slant("I don't want any of these.", headlines)
-    assert empty["n_picked"] == 0 and empty["mean_slant"] is None
+def test_extract_picks_matches_numbered_headlines_and_never_guesses():
+    headlines = load_s3_headlines()
+    order = shuffled_order(headlines, "lvis3_00001", 42)
+    picks = [1, 4, 7, 10, 11]
+    text = "\n".join(
+        f"{p}. {headlines[order[p - 1]]['outlet']} — {headlines[order[p - 1]]['headline']}"
+        for p in picks
+    )
+    result = extract_picks(text, headlines, order)
+    assert result["parse_ok"] is True
+    assert result["match_method"] == "index"
+    assert result["n_picked"] == 5
+    assert result["picked_positions"] == sorted(picks)
+    assert isinstance(result["slant_c_mean"], float)
+    assert 0 <= result["n_right"] <= 5
+    # only four picked -> parse_ok False, kept but excluded from the DV stats
+    short = extract_picks(text.splitlines()[0], headlines, order)
+    assert short["parse_ok"] is False
+    assert short["slant_c_mean"] is None
+
+
+def test_token_set_similarity_is_containment():
+    assert token_set_similarity(
+        "US forces target 3 Iranian oil tankers in response to IRGC missile attack",
+        "US forces target 3 Iranian oil tankers",
+    ) == pytest.approx(1.0)
 
 
 def test_extract_topic_left_vs_right():
