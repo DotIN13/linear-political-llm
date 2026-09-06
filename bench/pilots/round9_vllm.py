@@ -407,7 +407,9 @@ def phase_export(trials_path: str = TRIALS_PATH, out_dir: str = UPLOADS) -> Dict
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase", default="plan", choices=("plan", "run", "export", "smoke"))
-    parser.add_argument("--limit", type=int, default=0, help="cap the number of trials")
+    parser.add_argument("--limit", type=int, default=0,
+                        help="cap the number of trials; 0 = no cap (and, for "
+                             "--phase smoke, one trial per surface/scheme/arm)")
     args = parser.parse_args()
     if args.phase == "plan":
         plan = build_plan(load_items())
@@ -418,7 +420,11 @@ def main() -> None:
     elif args.phase == "run":
         phase_run(limit=args.limit)
     elif args.phase == "smoke":
-        phase_run(limit=args.limit or 4, smoke=True)
+        # `or 4` here defeated `--limit 0`, which _smoke_slice reads as "one per
+        # (surface, scheme, arm)" -- so `smoke 0` quietly ran 4 s1-only trials, the
+        # exact prefix behaviour 7d90b52 was meant to remove. The default lives in
+        # the flag, not here.
+        phase_run(limit=args.limit, smoke=True)
     else:
         phase_export()
 

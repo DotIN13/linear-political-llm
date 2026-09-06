@@ -211,3 +211,19 @@ def test_no_surface_is_left_at_the_inherited_400_token_cap():
     caps = {sid: r9.registry.get_surface(sid)().max_new_tokens for sid in r9.SURFACE_IDS}
     assert caps == {"s1_speech": 1400, "s2_proposal": 1200, "s5_letter": 800,
                     "s3_digest": 900, "s6_describe": 600, "s4_bonus": 1000}, caps
+
+
+def test_smoke_phase_passes_limit_zero_through(monkeypatch):
+    """`--limit 0` must reach `_smoke_slice` as 0, not become 4.
+
+    `phase_run(limit=args.limit or 4, smoke=True)` made `smoke 0` run four
+    s1-only trials -- the prefix behaviour the surface-keyed slice exists to
+    remove -- while the unit test called `_smoke_slice(plan, 0)` directly and
+    stayed green. Round 11 had to run `smoke 28` to work around it.
+    """
+    seen = {}
+    monkeypatch.setattr(r9, "phase_run",
+                        lambda **kw: seen.update(kw) or 0)
+    monkeypatch.setattr("sys.argv", ["round9_vllm", "--phase", "smoke", "--limit", "0"])
+    r9.main()
+    assert seen == {"limit": 0, "smoke": True}, seen
