@@ -132,7 +132,13 @@ def build_payload(trial: Trial, model: str, *, seed: int,
                   logprobs: int = 0, image_loader=data_uri) -> Dict[str, Any]:
     """The request body. Greedy by construction: ``temperature=0``."""
     messages = to_openai_messages(trial.conversation.messages, image_loader=image_loader)
-    prefill = (trial.meta or {}).get("prefill_text")
+    # `meta["prefill"]` is the prefill *text* or None -- the key the surface
+    # actually writes (generation.py) and the HF path actually reads
+    # (local_hf.py). This read "prefill_text" for one round and so silently
+    # sent no prefill at all: the smoke's prefill-on and prefill-off chat
+    # trials came back with identical prompt_tokens (962) and
+    # conversation_sha.
+    prefill = (trial.meta or {}).get("prefill")
     if prefill:
         # The prefill is a partial assistant turn the model must continue. vLLM
         # honours this via continue_final_message; without it the server would
@@ -248,6 +254,10 @@ class VLLMServerAdaptor(BaseAdaptor):
         usage = dict(body.get("usage") or {})
         usage["finish_reason"] = choice.get("finish_reason")
         usage["transcript_shape"] = "openai_folded"
+        # Whether the prefill was actually sent, recorded per trial. The first
+        # smoke run sent none at all and nothing in the data said so -- it took
+        # rebuilding the payload by hand to see it. Now the record says.
+        usage["prefill_applied"] = bool(payload.get("continue_final_message"))
         return Response(
             text=text,
             logprobs=self._flatten_logprobs(choice),

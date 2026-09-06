@@ -208,6 +208,17 @@ def phase_run(adaptor: Any = None, limit: int = 0, smoke: bool = False) -> int:
             if key in done:
                 continue
             resp = adaptor.run(trial)
+            # A prefill-on trial whose prefill never reached the server is not a
+            # warning, it is the run being inert: the P arm *is* the prefill, and
+            # so is the agentic refusal mitigation. Stop on the first one rather
+            # than write 318 records that look fine. `is False` on purpose -- an
+            # adaptor that does not report the flag is not being accused.
+            if entry["prefill"] == "on" and not resp.error \
+                    and (resp.usage or {}).get("prefill_applied") is False:
+                raise RuntimeError(
+                    f"prefill=on but the backend did not apply it "
+                    f"({entry['surface']}/{entry['scheme']}); stopping before "
+                    f"writing inert trials")
             outcome = surfaces[entry["surface"]].extract(resp, trial)
             record = {
                 "trial_key": key, "run_id": "pilot_round9v",

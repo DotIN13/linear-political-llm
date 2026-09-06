@@ -8,9 +8,13 @@ from bench import registry
 from bench.adaptors.base import check_capabilities
 from bench.adaptors.vllm_server import (VLLMServerAdaptor, build_payload,
                                         to_openai_messages)
-from bench.types import Capability, Conversation, Trial
+from bench.types import Capability, Conversation, Item, Trial
 
 registry.load_all()
+
+_ITEM = Item(item_id="lvis3_lo_00058", images=["a.jpg", "b.jpg", "c.jpg"],
+             image_paths=["/tmp/a.jpg", "/tmp/b.jpg", "/tmp/c.jpg"],
+             image_scores=[-0.6, -0.5, -0.7], stratum=0)
 
 
 def _fake_loader(path):
@@ -98,13 +102,31 @@ def test_payload_is_greedy_and_carries_max_tokens():
 
 
 def test_prefill_becomes_a_continued_assistant_turn():
-    t = _trial([{"role": "user", "content": [{"type": "text", "text": "q"}]}],
-               max_new_tokens=400,
-               meta={"prefill_text": "Here's an outline:\n\n"})
+    """The trial comes from the *real* surface, not a hand-written meta dict.
+
+    The first version of this test wrote ``meta={"prefill_text": ...}`` to match
+    what the adaptor read, and the adaptor read a key no surface ever writes --
+    so the test passed against a shape that never occurs and the smoke run sent
+    no prefill at all. Building the trial through ``surface.build`` is what makes
+    the key a contract instead of a coincidence.
+    """
+    surface = registry.get_surface("s1_speech")()
+    t = surface.build(_ITEM, "C", {"scheme": "chat", "prefill": "on"}, seed=42)
+    assert t.meta["prefill"] == surface.prefill_text          # the contract
     p = build_payload(t, "m", seed=42, image_loader=_fake_loader)
-    assert p["messages"][-1] == {"role": "assistant", "content": "Here's an outline:\n\n"}
+    assert p["messages"][-1] == {"role": "assistant", "content": surface.prefill_text}
     assert p["continue_final_message"] is True
     assert p["add_generation_prompt"] is False
+
+
+def test_prefill_off_sends_no_continuation():
+    surface = registry.get_surface("s1_speech")()
+    t = surface.build(_ITEM, "C", {"scheme": "chat", "prefill": "off"}, seed=42)
+    assert t.meta["prefill"] is None
+    p = build_payload(t, "m", seed=42, image_loader=_fake_loader)
+    assert p["messages"][-1]["role"] == "user"
+    assert "continue_final_message" not in p
+    assert "add_generation_prompt" not in p
 
 
 def test_logprobs_are_off_unless_asked():

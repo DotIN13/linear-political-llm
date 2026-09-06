@@ -26,8 +26,15 @@ PY=/home/tzhang3/envs/linear-probe/bin/python
 # Override with SIF=... ; otherwise take the newest vllm-openai-*.sif there is.
 SIF=${SIF:-$(ls -t /project/jevans/tzhang3/containers/vllm-openai-*.sif 2>/dev/null | head -1)}
 [ -n "${SIF:-}" ] && [ -f "$SIF" ] || { echo "[sbatch] no vllm SIF found" >&2; exit 1; }
-MODELS=/home/tzhang3/jevans/models
+# /home/tzhang3/jevans is a *symlink* to /project/jevans/tzhang3, so binding
+# "$MODELS:$MODELS" mounts a symlink onto its own path and leaves the target
+# unbound: the model is then invisible inside the container, os.path.exists is
+# False, and vLLM falls through to snapshot_download and calls the absolute path
+# a repo id (HFValidationError, job 57894656). Resolve first, bind the real
+# path, and hand vLLM the real path too.
+MODELS=$(readlink -f /home/tzhang3/jevans/models 2>/dev/null || echo /home/tzhang3/jevans/models)
 MODEL_DIR="$MODELS/Qwen3-VL-8B-Instruct"
+[ -d "$MODEL_DIR" ] || { echo "[sbatch] no model dir at $MODEL_DIR" >&2; exit 1; }
 SERVED=qwen3-vl-8b-instruct
 PORT=${PORT:-8073}
 OUT="$REPO/runs/pilot_round9v"
@@ -86,4 +93,9 @@ PHASE="${1:-run}"
 LIMIT="${2:-0}"
 echo "[sbatch] SIF=$SIF  phase=$PHASE  limit=$LIMIT" >&2
 "$PY" -m bench.pilots.round9_vllm --phase "$PHASE" --limit "$LIMIT" || exit 1
-[ "$PHASE" = run ] && "$PY" -m bench.pilots.round9_vllm --phase export
+# `[ "$PHASE" = run ] && ...` as the last line makes the *job* exit 1 for every
+# other phase, so a clean smoke reported FAILED. Be explicit and exit 0.
+if [ "$PHASE" = run ]; then
+  "$PY" -m bench.pilots.round9_vllm --phase export || exit 1
+fi
+exit 0
