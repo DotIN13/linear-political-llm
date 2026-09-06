@@ -118,3 +118,23 @@ def test_rerun_is_idempotent(tmp_path, monkeypatch):
     first = r9.phase_run(adaptor=_Fake())
     second = r9.phase_run(adaptor=_Fake())
     assert first > 0 and second == 0        # nothing re-done
+
+
+def test_smoke_slice_covers_agentic_and_the_order_arms():
+    """A prefix of the plan is one surface on chat -- useless as a smoke test."""
+    plan = r9.build_plan(_items())
+    picked = r9._smoke_slice(plan, 4)
+    assert len(picked) == 4
+    assert {p["scheme"] for p in picked} == {"chat", "agentic"}
+    # the hand-written piece of this backend is the agentic fold, so it must be in
+    assert any(p["scheme"] == "agentic" for p in picked)
+    # and at most one trial per (scheme, arm, order_arm)
+    keys = [(p["scheme"], p["arm"], p["order_arm"]) for p in picked]
+    assert len(set(keys)) == len(keys)
+
+
+def test_limit_caps_the_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(r9, "load_items", lambda: _items(n_per_bucket=1))
+    monkeypatch.setattr(r9, "TRIALS_PATH", str(tmp_path / "t.jsonl"))
+    monkeypatch.setattr(r9, "OUT_DIR", str(tmp_path))
+    assert r9.phase_run(adaptor=_Fake(), limit=3) == 3

@@ -136,6 +136,21 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return plan
 
 
+def _smoke_slice(plan: List[Dict[str, Any]], n: int) -> List[Dict[str, Any]]:
+    """One trial per (scheme, arm) combination, up to ``n`` -- agentic included."""
+    picked: List[Dict[str, Any]] = []
+    seen = set()
+    for entry in plan:
+        key = (entry["scheme"], entry["arm"], entry["order_arm"])
+        if key in seen:
+            continue
+        seen.add(key)
+        picked.append(entry)
+        if len(picked) >= n:
+            break
+    return picked
+
+
 def _entry(trial: Trial, sid: str, arm: str, condition: str, scheme: str, prefill: str,
            row: Dict[str, Any], item: Item, order_arm: Optional[str] = None) -> Dict[str, Any]:
     return {"trial": trial, "surface": sid, "arm": arm, "condition": condition,
@@ -148,10 +163,20 @@ def _entry(trial: Trial, sid: str, arm: str, condition: str, scheme: str, prefil
 # --------------------------------------------------------------------------- #
 # run
 # --------------------------------------------------------------------------- #
-def phase_run(adaptor: Any = None) -> int:
+def phase_run(adaptor: Any = None, limit: int = 0, smoke: bool = False) -> int:
+    """``limit`` caps the number of trials; ``smoke`` picks a spread instead of a prefix.
+
+    A prefix of the plan is all one surface and one scheme, which is the wrong
+    thing to smoke-test: the risk is the *agentic* transcript, because folding
+    tool turns into user turns is this backend's one hand-written step.
+    """
     registry.load_all()
     items = load_items()
     plan = build_plan(items)
+    if smoke:
+        plan = _smoke_slice(plan, limit or 4)
+    elif limit:
+        plan = plan[:limit]
 
     if adaptor is None:
         from bench.adaptors.vllm_server import VLLMServerAdaptor
@@ -322,7 +347,8 @@ def phase_export(trials_path: str = TRIALS_PATH, out_dir: str = UPLOADS) -> Dict
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--phase", default="plan", choices=("plan", "run", "export"))
+    parser.add_argument("--phase", default="plan", choices=("plan", "run", "export", "smoke"))
+    parser.add_argument("--limit", type=int, default=0, help="cap the number of trials")
     args = parser.parse_args()
     if args.phase == "plan":
         plan = build_plan(load_items())
@@ -331,7 +357,9 @@ def main() -> None:
             print(f"  {key[0]:14} {key[1]:8} {key[2]}  {by[key]:3d}")
         print(f"total {len(plan)}")
     elif args.phase == "run":
-        phase_run()
+        phase_run(limit=args.limit)
+    elif args.phase == "smoke":
+        phase_run(limit=args.limit or 4, smoke=True)
     else:
         phase_export()
 

@@ -21,7 +21,11 @@ set -uo pipefail
 
 REPO=/project/jevans/tzhang3/dotty-project/linear-political-llm
 PY=/home/tzhang3/envs/linear-probe/bin/python
-SIF=/project/jevans/tzhang3/containers/vllm-openai.sif
+# The image name carries its tag: `latest` failed to unpack unprivileged (the
+# nsight-compute layer trips umoci's chmod), so a pinned tag is what is on disk.
+# Override with SIF=... ; otherwise take the newest vllm-openai-*.sif there is.
+SIF=${SIF:-$(ls -t /project/jevans/tzhang3/containers/vllm-openai-*.sif 2>/dev/null | head -1)}
+[ -n "${SIF:-}" ] && [ -f "$SIF" ] || { echo "[sbatch] no vllm SIF found" >&2; exit 1; }
 MODELS=/home/tzhang3/jevans/models
 MODEL_DIR="$MODELS/Qwen3-VL-8B-Instruct"
 SERVED=qwen3-vl-8b-instruct
@@ -62,5 +66,8 @@ done
 
 export VLLM_BASE_URL="http://127.0.0.1:$PORT/v1"
 export VLLM_SERVED_MODEL="$SERVED"
-"$PY" -m bench.pilots.round9_vllm --phase run   || exit 1
-"$PY" -m bench.pilots.round9_vllm --phase export
+PHASE="${1:-run}"
+LIMIT="${2:-0}"
+echo "[sbatch] SIF=$SIF  phase=$PHASE  limit=$LIMIT" >&2
+"$PY" -m bench.pilots.round9_vllm --phase "$PHASE" --limit "$LIMIT" || exit 1
+[ "$PHASE" = run ] && "$PY" -m bench.pilots.round9_vllm --phase export
