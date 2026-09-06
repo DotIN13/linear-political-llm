@@ -40,10 +40,34 @@ BASELINE_SEEDS = (42, 43, 44, 45)
 A_SEED = 42
 BASELINE_ITEM_ID = "__baseline__"
 
-# chat runs bare; agentic needs the prefill or it refuses outright (docs/bench/11:
-# 9/9 refusals). Round 8 measured the cost of the prefill on chat: the three-bucket
-# span fell from 0.943 to 0.53.
+# chat runs bare; agentic asked for the prefill because docs/bench/11 measured 9/9
+# refusals without it. But **only s1_speech was ever given a `prefill_text`** --
+# the other five surfaces default to None, so `prefill="on"` there produced
+# `meta["prefill"] = None` and a silently inert trial (and, since the guard
+# landed, a crash instead: run 57894892 died on s2_proposal's first agentic
+# trial, 80 records in).
+#
+# The honest fix is not to invent five prefill strings. It is to notice that the
+# prefill is an expensive intervention -- round 8: it cut s1's three-bucket span
+# from 0.943 to 0.53, so 44% of the effect -- justified by a refusal problem that
+# has only ever been measured on s1, and that the round-9 smoke's single
+# no-prefill agentic trial did *not* reproduce. So: agentic runs with the prefill
+# where a prefill exists, bare where it does not, and the refusal rate is the
+# finding rather than the thing we paper over.
 PREFILL_BY_SCHEME = {"chat": "off", "agentic": "on"}
+
+
+def prefill_for(surface: Any, scheme: str) -> str:
+    """The prefill key this (surface, scheme) can actually honour.
+
+    ``PREFILL_BY_SCHEME`` says what the scheme *wants*; a surface with no
+    ``prefill_text`` cannot give it, and asking anyway is how 5/6 of the agentic
+    data came to be inert.
+    """
+    want = PREFILL_BY_SCHEME[scheme]
+    if want == "on" and not getattr(surface, "prefill_text", None):
+        return "off"
+    return want
 
 
 def load_items() -> List[Dict[str, Any]]:
@@ -78,7 +102,7 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for sid in SURFACE_IDS:
         surface = registry.get_surface(sid)()
         for scheme in ("chat", "agentic"):
-            prefill = PREFILL_BY_SCHEME[scheme]
+            prefill = prefill_for(surface, scheme)
             for row in items:
                 item = Item.from_dict(row)
                 base = {"scheme": scheme, "prefill": prefill}
@@ -104,9 +128,21 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 t = surface.build(item, "C", {"scheme": "chat", "prefill": "on"}, seed=A_SEED)
                 plan.append(_entry(t, sid, "P", "C", "chat", "on", row, item))
 
+        # R arm: s1 agentic *without* the prefill. This is the one claim the whole
+        # prefill apparatus rests on -- docs/bench/11's 9/9 agentic refusals -- and
+        # the round-9 smoke's single no-prefill agentic trial did not refuse. 18
+        # trials is about a minute of H200 and it either confirms the 9/9 or takes
+        # 44% of the effect size back.
+        if sid == "s1_speech":
+            for row in items:
+                item = Item.from_dict(row)
+                t = surface.build(item, "C", {"scheme": "agentic", "prefill": "off"},
+                                  seed=A_SEED)
+                plan.append(_entry(t, sid, "R", "C", "agentic", "off", row, item))
+
         # C arm: no image, both schemes, four seeds.
         for scheme in ("chat", "agentic"):
-            prefill = PREFILL_BY_SCHEME[scheme]
+            prefill = prefill_for(surface, scheme)
             question = surface.question(None, "shown", "v0")
             for seed in BASELINE_SEEDS:
                 if scheme == "chat":

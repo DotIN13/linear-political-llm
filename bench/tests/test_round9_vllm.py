@@ -48,20 +48,33 @@ class _Fake:
                                            "transcript_shape": "openai_folded"})
 
 
-def test_plan_is_318_trials_shaped_as_the_design_says():
+def test_plan_is_336_trials_shaped_as_the_design_says():
     plan = r9.build_plan(_items())
-    assert len(plan) == 318, {k: v for k, v in
+    assert len(plan) == 336, {k: v for k, v in
                               __import__("collections").Counter(
                                   (p["surface"], p["scheme"], p["arm"]) for p in plan).items()}
     arms = __import__("collections").Counter(p["arm"] for p in plan)
-    assert arms["A"] == 252 and arms["P"] == 18 and arms["C"] == 48
+    # 318 + the 18-trial R arm: s1 agentic without the prefill, which is the one
+    # test of the 9/9-refusal claim the prefill exists to answer.
+    assert arms["A"] == 252 and arms["P"] == 18 and arms["R"] == 18 and arms["C"] == 48
 
 
-def test_chat_runs_bare_and_agentic_runs_with_the_prefill():
+def test_chat_runs_bare_and_agentic_carries_the_prefill_where_one_exists():
+    """Was `agentic => prefill on`, flatly. It cannot be: only s1 has a prefill.
+
+    The original form of this test asserted the *intent* of
+    ``PREFILL_BY_SCHEME`` rather than what the surfaces can honour, which is
+    exactly the gap that made 5/6 of the agentic plan ask for a prefill that did
+    not exist. The intent it was protecting -- chat runs bare, and the P arm is
+    the one place chat carries a prefill -- is kept.
+    """
     plan = r9.build_plan(_items())
     for p in plan:
-        if p["arm"] == "A":
-            assert p["prefill"] == ("off" if p["scheme"] == "chat" else "on")
+        if p["arm"] == "A" and p["scheme"] == "chat":
+            assert p["prefill"] == "off"
+        if p["arm"] == "A" and p["scheme"] == "agentic":
+            has_text = bool(r9.registry.get_surface(p["surface"])().prefill_text)
+            assert p["prefill"] == ("on" if has_text else "off")
     # the P arm is the one place chat carries the prefill
     assert {p["prefill"] for p in plan if p["arm"] == "P"} == {"on"}
 
@@ -138,3 +151,43 @@ def test_limit_caps_the_run(tmp_path, monkeypatch):
     monkeypatch.setattr(r9, "TRIALS_PATH", str(tmp_path / "t.jsonl"))
     monkeypatch.setattr(r9, "OUT_DIR", str(tmp_path))
     assert r9.phase_run(adaptor=_Fake(), limit=3) == 3
+
+
+def test_no_trial_asks_for_a_prefill_the_surface_cannot_give():
+    """The bug that killed run 57894892, as an invariant.
+
+    ``PREFILL_BY_SCHEME`` says agentic wants the prefill, but only ``s1_speech``
+    was ever given a ``prefill_text``. Asking anyway used to yield
+    ``meta["prefill"] = None`` -- a trial recorded as prefill=on that carried no
+    prefill, indistinguishable in the data from one that did.
+    """
+    plan = r9.build_plan(_items())
+    for entry in plan:
+        text = entry["trial"].meta.get("prefill")
+        if entry["prefill"] == "on":
+            assert text, f"{entry['surface']}/{entry['scheme']}/{entry['arm']} " \
+                         f"says prefill=on but carries no prefill text"
+        else:
+            assert text is None, f"{entry['surface']}/{entry['scheme']} " \
+                                 f"says prefill=off but carries {text!r}"
+
+
+def test_only_s1_runs_agentic_with_a_prefill():
+    plan = r9.build_plan(_items())
+    on = {e["surface"] for e in plan if e["prefill"] == "on"}
+    assert on == {"s1_speech"}, on
+    agentic_off = {e["surface"] for e in plan
+                   if e["scheme"] == "agentic" and e["prefill"] == "off"}
+    # the five with no prefill text, plus s1's deliberate no-prefill R arm
+    assert agentic_off == {"s1_speech", "s2_proposal", "s3_digest",
+                           "s5_letter", "s6_describe", "s4_bonus"}, agentic_off
+
+
+def test_s1_gets_a_no_prefill_agentic_arm_to_test_the_9_of_9_refusal_claim():
+    plan = r9.build_plan(_items())
+    r = [e for e in plan if e["arm"] == "R"]
+    assert len(r) == 18
+    assert {e["surface"] for e in r} == {"s1_speech"}
+    assert {e["scheme"] for e in r} == {"agentic"}
+    assert {e["prefill"] for e in r} == {"off"}
+    assert all(e["trial"].meta.get("prefill") is None for e in r)
