@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from bench import registry
 from bench.store import git_rev, measurement_rev, trial_key
+from bench.judges.specs import LEAN_MAP, judge_specs
 from bench.surfaces.generation import SURFACE_IDS, build_scheme_messages
 from bench.types import Conversation, Item, Trial
 
@@ -313,6 +314,71 @@ def _pearson(xs: Sequence[float], ys: Sequence[float]) -> Optional[float]:
     return None if den == 0 else num / den
 
 
+JUDGES_PATH = os.path.join(OUT_DIR, "judges.jsonl")
+
+
+def load_judges(path: str = JUDGES_PATH) -> Dict[str, Dict[str, Any]]:
+    """``trial_key -> judge labels``, last write winning.
+
+    ``judges.jsonl`` is appended to, so a re-judge leaves both rows; taking the
+    last one means a re-run corrects rather than duplicates. Rows carrying an
+    ``error`` are kept -- a judge that failed is not the same as one that was
+    never asked, and the export says which.
+    """
+    out: Dict[str, Dict[str, Any]] = {}
+    if not os.path.exists(path):
+        return out
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                row = json.loads(line)
+                if row.get("trial_key"):
+                    out[row["trial_key"]] = row
+    return out
+
+
+def judge_payload(surface: str, row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """One record's judge block: every label, its value on the spec's own map,
+    and a single ``political`` score.
+
+    ``political`` is the mean of the fields the spec scores on the seven-point
+    left/right map -- so s1's five political axes, s2/s5's three, s4's one --
+    and it is deliberately *not* the style controls (formality / optimism /
+    concreteness), which are there to show that something did *not* move.
+    Averaging gives every surface one number on the same -1..+1 scale, which is
+    the only way six tasks go on one chart.
+    """
+    if not row:
+        return None
+    if row.get("error"):
+        return {"error": row["error"]}
+    labels = row.get("labels") or row.get("parsed") or {}
+    if not labels:
+        return {"error": "judge row carried no labels"}
+    spec = judge_specs().get(surface)
+    if spec is None:
+        return {"labels": labels}
+    values: Dict[str, Optional[float]] = {}
+    political: List[float] = []
+    for field in spec.fields:
+        label = labels.get(field)
+        mapping = spec.label_map.get(field)
+        value = mapping.get(label) if (mapping and isinstance(label, str)) else None
+        values[field] = value
+        if mapping is LEAN_MAP and value is not None:
+            political.append(value)
+    return {
+        "labels": {f: labels.get(f) for f in spec.fields},
+        "values": values,
+        "political": statistics.fmean(political) if political else None,
+        "political_fields": [f for f in spec.fields if spec.label_map.get(f) is LEAN_MAP],
+        "political_content_present": labels.get("political_content_present"),
+        "refusal": labels.get("refusal"),
+        "rationale": labels.get("rationale"),
+        "cached": row.get("cached"),
+    }
+
+
 def phase_export(trials_path: str = TRIALS_PATH, out_dir: str = UPLOADS) -> Dict[str, Any]:
     rows = []
     with open(trials_path, encoding="utf-8") as handle:
@@ -320,6 +386,7 @@ def phase_export(trials_path: str = TRIALS_PATH, out_dir: str = UPLOADS) -> Dict
             if line.strip():
                 rows.append(json.loads(line))
 
+    judges = load_judges()
     records = []
     for r in rows:
         extra = (r.get("outcome") or {}).get("extra") or {}
@@ -332,7 +399,7 @@ def phase_export(trials_path: str = TRIALS_PATH, out_dir: str = UPLOADS) -> Dict
             "n_objects": (r.get("covariates") or {}).get("n_objects"),
             "s_pre": None, "s_gen": None, "s_gen_first25": None, "s_gen_last25": None,
             "deterministic": {"primary": (r.get("outcome") or {}).get("value"), **extra},
-            "judge": r.get("judge"),
+            "judge": judge_payload(r["surface"], judges.get(r["trial_key"])),
             "refusal": extra.get("refusal"), "refusal_match": extra.get("refusal_match"),
             "word_count": extra.get("word_count"),
             "truncated": (r.get("usage") or {}).get("finish_reason") == "length",

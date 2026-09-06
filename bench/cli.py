@@ -651,6 +651,21 @@ def _ranks(values: Sequence[float]) -> List[float]:
     return ranks
 
 
+def _answer_text(row: Dict[str, Any]) -> Optional[str]:
+    """The generated answer, from either record shape.
+
+    ``bench run`` nests the model reply under ``response``; a hand-built pilot
+    record (round 9's vLLM run) writes it flat as ``text``. A judge that knew
+    only the nested shape reported "no generated answers to judge" on 336 real
+    records, which reads exactly like "there is nothing to do".
+    """
+    nested = (row.get("response") or {}).get("text")
+    if isinstance(nested, str) and nested:
+        return nested
+    flat = row.get("text")
+    return flat if isinstance(flat, str) and flat else None
+
+
 def cmd_judge(args: argparse.Namespace) -> int:
     """The offline judge step: answer text in, labels out (board-judge).
 
@@ -676,7 +691,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
     judged = [r for r in rows
               if r.get("surface") in surfaces
               and r["surface"] in specs
-              and (r.get("response") or {}).get("text")]
+              and _answer_text(r)]
     if not judged:
         print("no generated answers to judge", file=sys.stderr)
         return 1
@@ -697,7 +712,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
                 spec = specs[row["surface"]]
                 if args.model:
                     spec = _with_model(spec, args.model)
-                text = row["response"]["text"]
+                text = _answer_text(row)
                 rhash = response_hash(text)
                 cached = cache.get(rhash, spec.judge_id)
                 if cached is not None:

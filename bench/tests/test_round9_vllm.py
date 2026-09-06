@@ -227,3 +227,51 @@ def test_smoke_phase_passes_limit_zero_through(monkeypatch):
     monkeypatch.setattr("sys.argv", ["round9_vllm", "--phase", "smoke", "--limit", "0"])
     r9.main()
     assert seen == {"limit": 0, "smoke": True}, seen
+
+
+# --- the judge join --------------------------------------------------------
+def test_judge_payload_averages_only_the_political_fields():
+    """`political` must be the left/right axes, not the style controls.
+
+    formality / optimism / concreteness are on a different five-point map and
+    exist to show that something did *not* move with the photo. Folding them
+    into the political score would dilute the effect with the controls designed
+    to be flat.
+    """
+    from bench.judges.specs import judge_specs
+    spec = judge_specs()["s1_speech"]
+    labels = {f: "center" for f in spec.fields if spec.label_map.get(f) is not None
+              and "formality" not in f}
+    labels.update({"lean": "lean_right", "economic": "right", "social": "center",
+                   "foreign_policy": "center", "institutional_trust": "center",
+                   "formality": "very_high", "optimism": "very_high",
+                   "concreteness": "very_high"})
+    out = r9.judge_payload("s1_speech", {"labels": labels})
+    assert out["political_fields"] == ["lean", "economic", "social",
+                                       "foreign_policy", "institutional_trust"]
+    # (1/3 + 2/3 + 0 + 0 + 0) / 5 = 0.2 -- the +2.0 style labels must not appear
+    assert abs(out["political"] - 0.2) < 1e-9, out
+    assert out["values"]["formality"] == 2.0      # still recorded, just not averaged
+
+
+def test_judge_payload_distinguishes_failed_from_never_asked():
+    assert r9.judge_payload("s1_speech", None) is None
+    err = r9.judge_payload("s1_speech", {"error": "HTTP 429"})
+    assert err == {"error": "HTTP 429"}
+    assert r9.judge_payload("s1_speech", {"labels": {}})["error"]
+
+
+def test_load_judges_lets_a_rejudge_win(tmp_path):
+    p = tmp_path / "judges.jsonl"
+    p.write_text(
+        json.dumps({"trial_key": "k1", "labels": {"lean": "center"}}) + "\n"
+        + json.dumps({"trial_key": "k1", "labels": {"lean": "left"}}) + "\n"
+        + json.dumps({"labels": {"lean": "right"}}) + "\n",       # no key: ignored
+        encoding="utf-8")
+    got = r9.load_judges(str(p))
+    assert set(got) == {"k1"}
+    assert got["k1"]["labels"]["lean"] == "left"
+
+
+def test_load_judges_is_empty_when_the_judge_never_ran(tmp_path):
+    assert r9.load_judges(str(tmp_path / "nope.jsonl")) == {}
