@@ -1,0 +1,66 @@
+#!/bin/bash
+#SBATCH --job-name=r9-vllm
+#SBATCH --partition=jevans-gpu
+#SBATCH --account=pi-jevans
+#SBATCH --constraint=H200
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=128G
+#SBATCH --time=04:00:00
+#SBATCH --output=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/pilot_round9v/slurm-%j.out
+#SBATCH --error=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/pilot_round9v/slurm-%j.err
+#
+# Round 9, vLLM path. One job: start the server in apptainer, wait for /health,
+# run every trial against it, export, stop the server.
+#
+# Why one long job rather than the 28-minute chain the HF path needed: the whole
+# point of vLLM is that the run is short, and the server takes minutes to load
+# weights -- paying that once beats paying it per chunk. If the 4h walltime is
+# refused by the queue, lower it; the run itself is expected to be well under it.
+set -uo pipefail
+
+REPO=/project/jevans/tzhang3/dotty-project/linear-political-llm
+PY=/home/tzhang3/envs/linear-probe/bin/python
+SIF=/project/jevans/tzhang3/containers/vllm-openai.sif
+MODELS=/home/tzhang3/jevans/models
+MODEL_DIR="$MODELS/Qwen3-VL-8B-Instruct"
+SERVED=qwen3-vl-8b-instruct
+PORT=${PORT:-8073}
+OUT="$REPO/runs/pilot_round9v"
+
+mkdir -p "$OUT"
+cd "$REPO"
+command -v apptainer >/dev/null || module load apptainer
+
+echo "[sbatch] starting vLLM server on :$PORT" >&2
+apptainer exec --nv \
+  --bind "$MODELS:$MODELS:ro" \
+  --bind "$REPO:$REPO" \
+  --env HF_HUB_OFFLINE=1 \
+  "$SIF" \
+  python3 -m vllm.entrypoints.openai.api_server \
+    --model "$MODEL_DIR" \
+    --served-model-name "$SERVED" \
+    --host 127.0.0.1 --port "$PORT" \
+    --max-model-len 8192 \
+    --limit-mm-per-prompt '{"image":4}' \
+    --gpu-memory-utilization 0.90 \
+    --disable-log-requests \
+  > "$OUT/vllm-server-$SLURM_JOB_ID.log" 2>&1 &
+SERVER_PID=$!
+trap 'kill -TERM "$SERVER_PID" 2>/dev/null || true' EXIT
+
+echo "[sbatch] waiting for /health" >&2
+for i in $(seq 1 180); do
+  if curl -sf "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+    echo "[sbatch] server ready after ${i}0s" >&2; READY=1; break
+  fi
+  kill -0 "$SERVER_PID" 2>/dev/null || { echo "[sbatch] server died; see the log" >&2; exit 1; }
+  sleep 10
+done
+[ "${READY:-0}" = 1 ] || { echo "[sbatch] server never became ready" >&2; exit 1; }
+
+export VLLM_BASE_URL="http://127.0.0.1:$PORT/v1"
+export VLLM_SERVED_MODEL="$SERVED"
+"$PY" -m bench.pilots.round9_vllm --phase run   || exit 1
+"$PY" -m bench.pilots.round9_vllm --phase export

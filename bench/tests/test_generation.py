@@ -329,3 +329,37 @@ def test_extract_picks_recovers_a_paraphrase_via_outlet():
     assert out["picked_hids"] == ["h00", "h01", "h02", "h03", "h04"]
     assert set(out["pick_methods"]) == {"outlet"}
     assert out["match_method"] == "outlet"
+
+
+# --- s3 order balancing (round 9) -------------------------------------------
+def test_a_pinned_order_wins_over_the_seeded_shuffle():
+    """Order balancing needs the caller to be able to pin the order exactly."""
+    from bench.types import Item
+    s3 = registry.get_surface("s3_digest")()
+    item = Item(item_id="lvis3_lo_00058", images=["x.jpg", "y.jpg", "z.jpg"],
+                image_paths=["a.jpg", "b.jpg", "c.jpg"],
+                image_scores=[-0.5, -0.5, -0.6], stratum=0)
+
+    fwd = s3.build(item, "C", {"scheme": "chat"}, seed=42)
+    order = list(fwd.variant["order"])
+    assert sorted(order) == list(range(12))
+
+    rev = s3.build(item, "C", {"scheme": "chat", "order": list(reversed(order)),
+                               "order_arm": "rev"}, seed=42)
+    assert rev.variant["order"] == list(reversed(order))
+    # the headline at position 1 in fwd is at position 12 in rev -- that is the
+    # whole point of the balance
+    assert rev.variant["order"][-1] == order[0]
+    # and the two are different trials, so they cannot collide on trial_key
+    assert trial_key("s3_digest", item.item_id, "C", fwd.variant, "vllm", "m", 42, "rev") != \
+           trial_key("s3_digest", item.item_id, "C", rev.variant, "vllm", "m", 42, "rev")
+
+
+def test_a_surface_without_headlines_ignores_a_pinned_order():
+    from bench.types import Item
+    s1 = registry.get_surface("s1_speech")()
+    item = Item(item_id="i", images=["x.jpg"], image_paths=["a.jpg"],
+                image_scores=[0.1], stratum=5)
+    t = s1.build(item, "C", {"scheme": "chat", "order": [3, 2, 1]})
+    assert t.variant["order"] == [3, 2, 1]      # carried, but unused by the prompt
+    assert "3" not in t.meta["question"]

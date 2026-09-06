@@ -644,7 +644,13 @@ class GenerationSurface:
         prefill = str(variant.get("prefill", "off"))
         attribution = str(variant.get("attribution", "shown"))
         variant["attribution"] = attribution
-        order = self._item_order(item, seed)
+        # A caller-supplied order wins over the seeded shuffle. That is what makes
+        # order an explicit, enumerable factor instead of a hidden per-item random
+        # draw -- which s3 needs, because the position-1 selection rate measured
+        # 1.000 against a 0.417 expectation (docs/bench/13 §3) and only balancing
+        # can average it out.
+        pinned = variant.get("order")
+        order = [int(x) for x in pinned] if pinned is not None else self._item_order(item, seed)
         if order is not None:
             variant["order"] = order
 
