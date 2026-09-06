@@ -173,16 +173,28 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _smoke_slice(plan: List[Dict[str, Any]], n: int) -> List[Dict[str, Any]]:
-    """One trial per (scheme, arm) combination, up to ``n`` -- agentic included."""
+    """One trial per (surface, scheme, arm, order_arm), up to ``n``.
+
+    **Surface is in the key on purpose.** This keyed on (scheme, arm, order_arm)
+    alone, and since ``build_plan`` walks surface-by-surface every one of those
+    keys is first satisfied by ``s1_speech`` -- so a 4-trial smoke was four
+    s1 trials, and a per-surface configuration problem was invisible to it. That
+    is exactly how the missing ``prefill_text`` on the other five surfaces got
+    past a green smoke and killed the full run 80 records in.
+
+    A full sweep is 26 keys; ``n=0`` means all of them, and any smaller ``n``
+    takes them in plan order, which is still surface-major -- so pass 0, or at
+    least enough to reach the last surface.
+    """
     picked: List[Dict[str, Any]] = []
     seen = set()
     for entry in plan:
-        key = (entry["scheme"], entry["arm"], entry["order_arm"])
+        key = (entry["surface"], entry["scheme"], entry["arm"], entry["order_arm"])
         if key in seen:
             continue
         seen.add(key)
         picked.append(entry)
-        if len(picked) >= n:
+        if n and len(picked) >= n:
             break
     return picked
 
@@ -210,7 +222,7 @@ def phase_run(adaptor: Any = None, limit: int = 0, smoke: bool = False) -> int:
     items = load_items()
     plan = build_plan(items)
     if smoke:
-        plan = _smoke_slice(plan, limit or 4)
+        plan = _smoke_slice(plan, limit)      # limit 0 = one per (surface, scheme, arm)
     elif limit:
         plan = plan[:limit]
 

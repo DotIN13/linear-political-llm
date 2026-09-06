@@ -754,7 +754,9 @@ class _S3Surface(GenerationSurface):
     family = "generation"
     prompt = TASK_PROMPTS["s3_digest"]
     randomizes_per_item = True
-    max_new_tokens = 600
+    # five picks with a sentence each, and the model tends to restate the
+    # headline before commenting on it.
+    max_new_tokens = 900
 
     def __init__(self) -> None:
         self.headlines = load_s3_headlines()
@@ -771,6 +773,7 @@ class _S5Surface(GenerationSurface):
     family = "generation"
     prompt = TASK_PROMPTS["s5_letter"]
     judge_spec = judge_specs().get("s5_letter")
+    max_new_tokens = 800          # "short letter", but 400 was inherited, not chosen
 
     def _deterministic(self, text: str, trial: Optional[Trial]) -> Dict[str, Any]:
         result = extract_topic(text)
@@ -782,6 +785,7 @@ class _S6Surface(GenerationSurface):
     family = "generation"
     prompt = TASK_PROMPTS["s6_describe"]
     judge_spec = judge_specs().get("s6_describe")
+    max_new_tokens = 600          # "a short paragraph", plus whatever preamble
 
     def _deterministic(self, text: str, trial: Optional[Trial]) -> Dict[str, Any]:
         mentions = extract_mentions_politics(text)
@@ -800,8 +804,14 @@ def register_all() -> None:
     _make("s1_speech", "generation", judge_id="s1_speech", max_new_tokens=1400,
           prompt_variants={"v0": TASK_PROMPTS["s1_speech"], "v1": S1_PROMPT_V1},
           prefill_variants=["off", "on"], prefill_text=S1_PREFILL)
-    _make("s2_proposal", "generation", judge_id="s2_proposal")
-    _make("s4_bonus", "generation", judge_id="s4_bonus")
+    # Round-9 measured s2 truncating 17/18 on chat at the 400 default: the prompt
+    # asks for a proposal *and* the case for it and puts no length cap on either,
+    # so 400 tokens is a cap on the task, not a safety rail. s4 asks an
+    # equally open "what should I say?". Raising a cap cannot change a generation
+    # that already ended in `stop` -- greedy decoding is prefix-deterministic --
+    # so this only affects the trials that were being cut off.
+    _make("s2_proposal", "generation", judge_id="s2_proposal", max_new_tokens=1200)
+    _make("s4_bonus", "generation", judge_id="s4_bonus", max_new_tokens=1000)
     register_surface("s3_digest")(_S3Surface)
     register_surface("s5_letter")(_S5Surface)
     register_surface("s6_describe")(_S6Surface)

@@ -191,3 +191,23 @@ def test_s1_gets_a_no_prefill_agentic_arm_to_test_the_9_of_9_refusal_claim():
     assert {e["scheme"] for e in r} == {"agentic"}
     assert {e["prefill"] for e in r} == {"off"}
     assert all(e["trial"].meta.get("prefill") is None for e in r)
+
+
+def test_the_smoke_slice_reaches_every_surface():
+    """A prefix-keyed smoke was all s1, which is how the missing prefill_text got
+    past a green smoke and killed the full run 80 records in."""
+    plan = r9.build_plan(_items())
+    sl = r9._smoke_slice(plan, 0)
+    assert {e["surface"] for e in sl} == set(r9.SURFACE_IDS)
+    # and one per (surface, scheme, arm, order_arm), no duplicates
+    keys = [(e["surface"], e["scheme"], e["arm"], e["order_arm"]) for e in sl]
+    assert len(keys) == len(set(keys))
+    assert len(sl) == 28
+
+
+def test_no_surface_is_left_at_the_inherited_400_token_cap():
+    """s2 truncated 17/18 at 400. The cap is a design choice per task, so it has
+    to be *chosen* per task rather than inherited from `_make`'s default."""
+    caps = {sid: r9.registry.get_surface(sid)().max_new_tokens for sid in r9.SURFACE_IDS}
+    assert caps == {"s1_speech": 1400, "s2_proposal": 1200, "s5_letter": 800,
+                    "s3_digest": 900, "s6_describe": 600, "s4_bonus": 1000}, caps
