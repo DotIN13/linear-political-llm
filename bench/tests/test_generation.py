@@ -52,7 +52,11 @@ def test_six_generation_surfaces_registered():
 def test_generation_surface_shape(sid):
     surface = registry.get_surface(sid)()
     assert surface.family == "generation"
-    assert {str(c) for c in surface.requires} == {"generate", "images", "activations"}
+    # round-9: activations moved to `prefers` so the vLLM path is DEGRADED rather
+    # than BLOCKED -- the IV (image_mean) is precomputed, so behavioural outcomes
+    # survive without the probe. See GenerationSurface's docstring.
+    assert {str(c) for c in surface.requires} == {"generate", "images"}
+    assert {str(c) for c in surface.prefers} == {"activations", "logprob"}
     if sid == "s1_speech":
         # round-8: prompt (v0/v1) and prefill (on/off) are first-class variant
         # dimensions on top of scheme.
@@ -69,13 +73,31 @@ def test_generation_surface_shape(sid):
     assert surface.conditions == ["C", "E"]
 
 
-def test_requires_activations_so_opencode_is_blocked_not_degraded():
-    """Acceptance #5: no silent degradation -- activations is a hard requirement."""
+def test_no_silent_degradation_on_a_probe_less_backend():
+    """Acceptance #5, restated for round-9.
+
+    The criterion was never "block"; it was **never drop a column silently**.
+    Activations is now a preference, so a probe-less backend runs -- but the gate
+    has to say DEGRADED *and name the columns that go missing*, so nobody reads a
+    vLLM record as if it had s_gen in it.
+    """
     for sid in SURFACE_IDS:
-        report = check_capabilities(registry.get_surface(sid)(), registry.get_adaptor("opencode"))
-        assert report.ok is False, f"{sid} must be blocked on opencode"
-        assert report.status == "BLOCKED"
-        assert "activations" in report.missing_required
+        for adaptor in ("opencode", "vllm"):
+            report = check_capabilities(registry.get_surface(sid)(),
+                                        registry.get_adaptor(adaptor))
+            assert report.ok is True, f"{sid} x {adaptor}: {report.render()}"
+            assert report.status == "DEGRADED", f"{sid} x {adaptor}: {report.render()}"
+            assert not report.missing_required, report.render()
+            blob = " ".join(report.degradations).lower()
+            for column in ("s_pre", "s_gen", "s_img"):
+                assert column in blob, f"{sid} x {adaptor} must name {column}: {report.render()}"
+
+
+def test_local_hf_is_the_only_full_fidelity_backend():
+    for sid in SURFACE_IDS:
+        report = check_capabilities(registry.get_surface(sid)(),
+                                    registry.get_adaptor("local_hf"))
+        assert report.status == "OK", f"{sid}: {report.render()}"
 
 
 def test_local_hf_satisfies_the_surface():

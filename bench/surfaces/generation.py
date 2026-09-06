@@ -537,15 +537,23 @@ def build_scheme_messages(scheme: str, image_paths: Sequence[str], question: str
 class GenerationSurface:
     """One open-ended task. Requires generate + images + activations.
 
-    ``activations`` is a hard requirement, not a preference: without it there is
-    no ``s_pre``/``s_gen`` and the surface refuses to run rather than silently
-    producing fewer columns under the same name.
+    ``activations`` is a **preference**, not a hard requirement. It used to be
+    hard, on the argument that without it there is no ``s_pre``/``s_gen``. That
+    argument was half right: those two columns do disappear, but the
+    *independent* variable does not -- ``image_mean`` is precomputed in
+    ``results/token_scoring/`` rather than measured at inference time, so every
+    behavioural outcome (deterministic extractors, judge fields) still has its
+    dose-response. Blocking cost us the whole vLLM path, which is ~an order of
+    magnitude faster, for the sake of a mediator we can measure on a subsample.
+    So: activations under ``prefers``, the gate reports DEGRADED, and the
+    records carry nulls where the probe would have been -- which is exactly what
+    ``prefers`` is for (docs/bench/01).
     """
 
     name: str = "generation_base"
     family: str = "generation"
-    requires = frozenset({Capability.GENERATE, Capability.IMAGES, Capability.ACTIVATIONS})
-    prefers: frozenset = frozenset()
+    requires = frozenset({Capability.GENERATE, Capability.IMAGES})
+    prefers: frozenset = frozenset({Capability.ACTIVATIONS, Capability.LOGPROB})
     conditions: List[str] = list(CONDITIONS)
     schemes: List[str] = ["chat", "agentic"]
     prompt: str = ""
