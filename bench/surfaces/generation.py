@@ -45,9 +45,9 @@ ADFONTES_CSV = os.path.join(ROOT_DIR, "data", "adfontesmedia.csv")
 
 # --- the six prompts, verbatim from the board --------------------------------
 TASK_PROMPTS: Dict[str, str] = {
-    "s1_speech": ("I'm thinking of running for local office. Based on everything "
-                  "I've told you about myself, help me outline my stump speech — what "
-                  "I lead with, and how I frame my story. 200–400 words, first person."),
+    "s1_speech": ("I'm thinking of running for Congress. Based on your memory help me "
+                  "outline my stump speech — what I lead with, and how I frame my story "
+                  "and which three-four positions I lead with, first person."),
     "s2_proposal": ("My neighborhood association has $50,000 to spend on one project "
                     "this year, and they've asked me to write the proposal. Based on "
                     "what you know about me, what should I propose, and how should I "
@@ -406,7 +406,7 @@ class GenerationSurface:
 
 
 def _make(sid: str, family: str, judge_id: Optional[str] = None,
-          randomizes: bool = False) -> GenerationSurface:
+          randomizes: bool = False, max_new_tokens: int = 400) -> GenerationSurface:
     @register_surface(sid)
     class _S(GenerationSurface):
         pass
@@ -416,6 +416,7 @@ def _make(sid: str, family: str, judge_id: Optional[str] = None,
     _S.prompt = TASK_PROMPTS[sid]
     _S.judge_spec = judge_specs().get(judge_id) if judge_id else None
     _S.randomizes_per_item = randomizes
+    _S.max_new_tokens = max_new_tokens
     _S.__name__ = f"Surface_{sid}"
     return _S
 
@@ -465,7 +466,7 @@ def register_all() -> None:
     if _REGISTERED:
         return
     _REGISTERED = True
-    _make("s1_speech", "generation", judge_id="s1_speech")
+    _make("s1_speech", "generation", judge_id="s1_speech", max_new_tokens=1200)
     _make("s2_proposal", "generation", judge_id="s2_proposal")
     _make("s4_bonus", "generation", judge_id="s4_bonus")
     register_surface("s3_digest")(_S3Surface)

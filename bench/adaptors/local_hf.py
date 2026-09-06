@@ -451,6 +451,8 @@ class LocalHFAdaptor(BaseAdaptor):
             }
 
         text = None
+        n_generated_tokens = 0
+        truncated = False
         if trial.max_new_tokens > 0:
             with torch.no_grad():
                 out = self.hf_model.generate(
@@ -459,6 +461,11 @@ class LocalHFAdaptor(BaseAdaptor):
                     do_sample=False,
                 )
             new_tokens = out[0][encoded["input_ids"].shape[1]:]
+            n_generated_tokens = int(len(new_tokens))
+            # Greedy decode with no EOS emitted inside the budget == the model was
+            # cut off at max_new_tokens. Recorded so the round-5 report can state
+            # the truncation rate under the 1200-token cap honestly.
+            truncated = n_generated_tokens >= trial.max_new_tokens
             text = self.processor.tokenizer.decode(new_tokens, skip_special_tokens=True)
 
         return Response(
@@ -467,6 +474,8 @@ class LocalHFAdaptor(BaseAdaptor):
             probe=probe,
             usage={"prefill_tokens": int(len(input_ids)),
                    "image_tokens": n_image_tokens,
+                   "n_generated_tokens": n_generated_tokens,
+                   "truncated": truncated,
                    **cand_meta},
             timing_ms=(time.time() - started) * 1000.0,
             cost_usd=0.0,
