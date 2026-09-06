@@ -59,6 +59,6 @@ def judge_names() -> List[str]:
 
 def load_all() -> None:
     """Import every module that registers something. Explicit, no discovery."""
-    from bench.surfaces import choice, generation, groupchat  # noqa: F401
+    from bench.surfaces import choice, generation, groupchat, letter  # noqa: F401
     from bench.adaptors import local_hf, opencode  # noqa: F401
     generation.register_all()
