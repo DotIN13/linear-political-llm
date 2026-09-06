@@ -10,10 +10,14 @@ import pytest
 from bench.cli import build_parser, dotted_get, main, matches, parse_constraints
 
 
-def test_surfaces_lists_eight(capsys):
+def test_surfaces_lists_every_registered_surface(capsys):
     assert main(["surfaces"]) == 0
     out = capsys.readouterr().out
-    assert "14 surfaces" in out                       # 8 choice + 6 generation
+    # 8 choice + 6 generation + s7_family_chat. Counted from the registry rather
+    # than hard-coded, so adding a surface does not fail an unrelated CLI test.
+    from bench import registry
+    registry.load_all()
+    assert f"{len(registry.surface_names())} surfaces" in out
     assert "Answer with a single letter." in out       # options surface, not word candidates
     for name in ["vote2020", "guns", "healthcare", "border",
                  "tea_coffee", "cat_dog", "beach_mountain", "morning_night"]:

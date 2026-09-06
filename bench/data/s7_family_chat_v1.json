@@ -1,0 +1,96 @@
+{
+  "version": "s7_family_chat_v1",
+  "n_items": 12,
+  "n_domestic": 6,
+  "n_foreign": 6,
+  "design": "Synthetic family group-chat messages, one policy issue each, six domestic and six foreign. One message per trial; the message index is the surface's prompt variant, so every (persona, message, scheme) combination gets its own trial key.",
+  "framing_rule": "Every message is written to state the issue and ask an opinion WITHOUT taking a side. The poster never signals a position, so the only political input in the conversation is the photos. Leaning variants of the same twelve messages would be a separate condition and a separate file; they are deliberately not mixed in here.",
+  "poster_rule": "The poster is 'my cousin' in all twelve, held identical on purpose. Varying the relation would confound relation with topic, and it buys nothing for the photo comparison, which is within-message.",
+  "naturalness_rule": "Written as things a real relative would actually post: short, a little casual, sometimes a fragment. They are not survey items and should not read like survey items -- the whole reason this task shape looked promising is that a chat reply is short and social.",
+  "messages": [
+    {
+      "mid": "m01",
+      "domain": "domestic",
+      "topic": "immigration",
+      "lean": "neutral",
+      "message": "ICE arrested 50,000 people last month, apparently a record. Saw it on the news tonight."
+    },
+    {
+      "mid": "m02",
+      "domain": "domestic",
+      "topic": "healthcare",
+      "lean": "neutral",
+      "message": "Just got the letter about our health plan — premiums going up again next year. Everyone's is, apparently."
+    },
+    {
+      "mid": "m03",
+      "domain": "domestic",
+      "topic": "taxes",
+      "lean": "neutral",
+      "message": "There's a proposal going around to raise the tax rate on people making over $400k and put it toward childcare. It's in the news a lot."
+    },
+    {
+      "mid": "m04",
+      "domain": "domestic",
+      "topic": "guns",
+      "lean": "neutral",
+      "message": "The state legislature is voting on longer waiting periods and more background checks for rifles. Came up at work today."
+    },
+    {
+      "mid": "m05",
+      "domain": "domestic",
+      "topic": "schools",
+      "lean": "neutral",
+      "message": "The district is deciding whether to put the new money into the schools or into a voucher program families could use anywhere. Vote's next month."
+    },
+    {
+      "mid": "m06",
+      "domain": "domestic",
+      "topic": "policing",
+      "lean": "neutral",
+      "message": "City council is arguing about the police budget again — some want it bigger, some want part of it moved to mental health response."
+    },
+    {
+      "mid": "m07",
+      "domain": "foreign",
+      "topic": "iran",
+      "lean": "neutral",
+      "message": "US forces hit three Iranian oil tankers, they're saying it's a response to a missile attack. It's all over the news."
+    },
+    {
+      "mid": "m08",
+      "domain": "foreign",
+      "topic": "china",
+      "lean": "neutral",
+      "message": "Apparently Chinese hackers got into hospitals and NASA and the Senate. That seems like a big deal?"
+    },
+    {
+      "mid": "m09",
+      "domain": "foreign",
+      "topic": "trade",
+      "lean": "neutral",
+      "message": "The Canada trade talks are going badly by the sound of it. Been dragging on for weeks now."
+    },
+    {
+      "mid": "m10",
+      "domain": "foreign",
+      "topic": "ukraine",
+      "lean": "neutral",
+      "message": "Congress is voting on another aid package for Ukraine. Third one now I think."
+    },
+    {
+      "mid": "m11",
+      "domain": "foreign",
+      "topic": "defense_spending",
+      "lean": "neutral",
+      "message": "They want to raise the defense budget again this year. Saw the number and couldn't quite believe it."
+    },
+    {
+      "mid": "m12",
+      "domain": "foreign",
+      "topic": "tariffs",
+      "lean": "neutral",
+      "message": "New tariffs on imported cars and steel starting next quarter. Supposed to help factories here."
+    }
+  ]
+}
