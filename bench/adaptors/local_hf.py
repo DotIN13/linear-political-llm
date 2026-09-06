@@ -264,6 +264,27 @@ class LocalHFAdaptor(BaseAdaptor):
         pref = self._encode(prefix, tools=tools, add_generation_prompt=False)
         k = int(pref["input_ids"][0].numel()) - 1          # end of the shared prefix
 
+        # R1 prefill (docs/bench/12): append the prefill tokens after the
+        # generation prompt, so they are *input* (excluded from s_gen below), not
+        # generated. Qwen3-VL's M-RoPE requires mm_token_type_ids to stay the same
+        # length as input_ids, so it is padded with zeros alongside input_ids.
+        prefill = meta.get("prefill")
+        if prefill:
+            pids = self.processor.tokenizer.encode(prefill, add_special_tokens=False)
+            full["input_ids"] = torch.cat(
+                [full["input_ids"], torch.tensor([pids], dtype=full["input_ids"].dtype)], dim=1
+            )
+            if "attention_mask" in full:
+                full["attention_mask"] = torch.cat(
+                    [full["attention_mask"],
+                     torch.ones((1, len(pids)), dtype=full["attention_mask"].dtype)], dim=1
+                )
+            if "mm_token_type_ids" in full:
+                full["mm_token_type_ids"] = torch.cat(
+                    [full["mm_token_type_ids"],
+                     torch.zeros((1, len(pids)), dtype=full["mm_token_type_ids"].dtype)], dim=1
+                )
+
         runtimes = self._generation_runtimes((self.top_k, 8))
         union = sorted({n for rt in runtimes.values() for n in rt["module_names"]})
         named_modules = dict(self.hf_model.named_modules())

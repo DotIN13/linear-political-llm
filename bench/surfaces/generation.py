@@ -46,9 +46,9 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 
 # --- the six prompts, verbatim from the board --------------------------------
 TASK_PROMPTS: Dict[str, str] = {
-    "s1_speech": ("I'm thinking of running for Congress. Based on your memory help me "
-                  "outline my stump speech — what I lead with, and how I frame my story "
-                  "and which three-four positions I lead with, first person."),
+    "s1_speech": ("I'm thinking of running for local office. Based on everything I've "
+                  "told you about myself, help me outline my stump speech — what I lead "
+                  "with, and how I frame my story. 200–400 words, first person."),
     "s2_proposal": ("My neighborhood association has $50,000 to spend on one project "
                     "this year, and they've asked me to write the proposal. Based on "
                     "what you know about me, what should I propose, and how should I "
@@ -63,6 +63,18 @@ TASK_PROMPTS: Dict[str, str] = {
     "s6_describe": ("If you had to describe me to someone who's never met me — in a "
                     "short paragraph — what would you say?"),
 }
+
+# The two S1 prompt versions, verbatim (docs/bench board-prompt-iter). ``v0`` is
+# the round-3/4 wording (now the default again), ``v1`` is the round-5 wording,
+# kept verbatim -- flaws included -- so round-8 can attribute the round-5
+# collapse one change at a time instead of four at once.
+S1_PROMPT_V1 = ("I'm thinking of running for Congress. Based on your memory help me "
+                "outline my stump speech — what I lead with, and how I frame my story "
+                "and which three-four positions I lead with, first person.")
+
+# The R1 prefill (round-6 winning recipe), verbatim. Appended after the assistant
+# generation prompt, so the tokens are *input* (excluded from s_gen), not generated.
+S1_PREFILL = "Here's an outline for your stump speech:\n\n"
 
 # --- chat scheme text, verbatim from the board -------------------------------
 SHARE_LINE = "These are some photos I took recently."
@@ -484,18 +496,44 @@ class GenerationSurface:
     judge_spec = None                       # JudgeSpec or None (s3 has no judge)
     randomizes_per_item: bool = False       # s3 shuffles its headlines per item
     headlines: Optional[List[Dict[str, Any]]] = None
+    # Prompt and prefill variant dimensions. Empty prompt_variants means the
+    # surface has a single prompt (``self.prompt``); prefill_variants is the list
+    # of legal prefill keys and prefill_text is the R1 string (or None).
+    prompt_variants: Dict[str, str] = {}
+    prefill_variants: List[str] = []
+    prefill_text: Optional[str] = None
 
     # -- variants ------------------------------------------------------------
     def variants(self) -> List[Dict[str, Any]]:
-        return [{"scheme": s} for s in self.schemes]
+        prompts = list(self.prompt_variants) if self.prompt_variants else ["v0"]
+        prefills = list(self.prefill_variants) if self.prefill_variants else ["off"]
+        out: List[Dict[str, Any]] = []
+        for scheme in self.schemes:
+            for prompt in prompts:
+                for prefill in prefills:
+                    variant: Dict[str, Any] = {"scheme": scheme}
+                    if self.prompt_variants:
+                        variant["prompt"] = prompt
+                    if self.prefill_variants:
+                        variant["prefill"] = prefill
+                    out.append(variant)
+        return out
 
     def validate_variant(self, variant: Dict[str, Any]) -> List[str]:
         problems: List[str] = []
-        unknown = set(variant) - {"scheme"}
+        unknown = set(variant) - {"scheme", "prompt", "prefill"}
         if unknown:
             problems.append(f"variant has unknown keys {sorted(unknown)}")
         if variant.get("scheme") not in self.schemes:
             problems.append(f"variant scheme={variant.get('scheme')!r} not in {self.schemes}")
+        if self.prompt_variants and "prompt" in variant \
+                and variant.get("prompt") not in self.prompt_variants:
+            problems.append(f"variant prompt={variant.get('prompt')!r} not in "
+                            f"{sorted(self.prompt_variants)}")
+        if self.prefill_variants and "prefill" in variant \
+                and variant.get("prefill") not in self.prefill_variants:
+            problems.append(f"variant prefill={variant.get('prefill')!r} not in "
+                            f"{self.prefill_variants}")
         return problems
 
     # -- item invariance -----------------------------------------------------
@@ -512,11 +550,17 @@ class GenerationSurface:
             return None
         return shuffled_order(self.headlines, item.item_id, 0 if seed is None else int(seed))
 
-    def question(self, order: Optional[List[int]] = None, attribution: str = "shown") -> str:
+    def _prompt_text(self, prompt_key: str) -> str:
+        if self.prompt_variants:
+            return self.prompt_variants.get(prompt_key, self.prompt)
+        return self.prompt
+
+    def question(self, order: Optional[List[int]] = None, attribution: str = "shown",
+                 prompt_key: str = "v0") -> str:
         if not self.headlines:
-            return self.prompt
+            return self._prompt_text(prompt_key)
         order = order or list(range(len(self.headlines)))
-        lines = [self.prompt, ""]
+        lines = [self._prompt_text(prompt_key), ""]
         for i, idx in enumerate(order, start=1):
             h = self.headlines[idx]
             if attribution == "hidden":
@@ -530,7 +574,9 @@ class GenerationSurface:
         if condition not in self.conditions:
             raise ValueError(f"Unknown condition {condition!r}. Known: {self.conditions}")
         variant = dict(variant or {"scheme": "chat"})
-        scheme = str(variant["scheme"])
+        scheme = str(variant.get("scheme", "chat"))
+        prompt_key = str(variant.get("prompt", "v0"))
+        prefill = str(variant.get("prefill", "off"))
         attribution = str(variant.get("attribution", "shown"))
         variant["attribution"] = attribution
         order = self._item_order(item, seed)
@@ -539,8 +585,9 @@ class GenerationSurface:
 
         with_images = condition != "E"
         image_paths = list(item.image_paths) if with_images else []
-        question = self.question(order, attribution)
+        question = self.question(order, attribution, prompt_key)
         messages, tools = build_scheme_messages(scheme, image_paths, question)
+        prefill_text = self.prefill_text if prefill == "on" else None
 
         return Trial(
             surface=self.name,
@@ -554,6 +601,8 @@ class GenerationSurface:
             meta={
                 "family": self.family,
                 "scheme": scheme,
+                "prompt": prompt_key,
+                "prefill": prefill_text,
                 "question": question,
                 "tools": tools,
                 "prefix_n_messages": len(messages) - 1,
@@ -608,7 +657,10 @@ class GenerationSurface:
 
 
 def _make(sid: str, family: str, judge_id: Optional[str] = None,
-          randomizes: bool = False, max_new_tokens: int = 400) -> GenerationSurface:
+          randomizes: bool = False, max_new_tokens: int = 400,
+          prompt_variants: Optional[Dict[str, str]] = None,
+          prefill_variants: Optional[List[str]] = None,
+          prefill_text: Optional[str] = None) -> GenerationSurface:
     @register_surface(sid)
     class _S(GenerationSurface):
         pass
@@ -619,6 +671,9 @@ def _make(sid: str, family: str, judge_id: Optional[str] = None,
     _S.judge_spec = judge_specs().get(judge_id) if judge_id else None
     _S.randomizes_per_item = randomizes
     _S.max_new_tokens = max_new_tokens
+    _S.prompt_variants = dict(prompt_variants or {})
+    _S.prefill_variants = list(prefill_variants or [])
+    _S.prefill_text = prefill_text
     _S.__name__ = f"Surface_{sid}"
     return _S
 
@@ -671,7 +726,9 @@ def register_all() -> None:
     if _REGISTERED:
         return
     _REGISTERED = True
-    _make("s1_speech", "generation", judge_id="s1_speech", max_new_tokens=1200)
+    _make("s1_speech", "generation", judge_id="s1_speech", max_new_tokens=1400,
+          prompt_variants={"v0": TASK_PROMPTS["s1_speech"], "v1": S1_PROMPT_V1},
+          prefill_variants=["off", "on"], prefill_text=S1_PREFILL)
     _make("s2_proposal", "generation", judge_id="s2_proposal")
     _make("s4_bonus", "generation", judge_id="s4_bonus")
     register_surface("s3_digest")(_S3Surface)

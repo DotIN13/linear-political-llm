@@ -53,7 +53,17 @@ def test_generation_surface_shape(sid):
     surface = registry.get_surface(sid)()
     assert surface.family == "generation"
     assert {str(c) for c in surface.requires} == {"generate", "images", "activations"}
-    assert surface.variants() == [{"scheme": "chat"}, {"scheme": "agentic"}]
+    if sid == "s1_speech":
+        # round-8: prompt (v0/v1) and prefill (on/off) are first-class variant
+        # dimensions on top of scheme.
+        variants = surface.variants()
+        assert len(variants) == 8
+        assert all(set(v) == {"prompt", "scheme", "prefill"} for v in variants)
+        assert {v["prompt"] for v in variants} == {"v0", "v1"}
+        assert {v["prefill"] for v in variants} == {"on", "off"}
+        assert {v["scheme"] for v in variants} == {"chat", "agentic"}
+    else:
+        assert surface.variants() == [{"scheme": "chat"}, {"scheme": "agentic"}]
     assert surface.max_new_tokens > 0
     assert [p.name for p in surface.probe_points(None)] == ["s_pre", "s_gen", "s_img"]
     assert surface.conditions == ["C", "E"]
