@@ -56,6 +56,7 @@ import os
 from dataclasses import replace
 from typing import Any, Dict, List, Optional
 
+from bench.judges.specs import judge_specs
 from bench.registry import register_surface
 from bench.surfaces.generation import TASK_PROMPTS, GenerationSurface
 
@@ -123,7 +124,10 @@ class AnsweredLetterSurface(GenerationSurface):
     # clarifying questions, not letters; a real letter is longer, so the headroom
     # is wanted and a letter that overruns it shows up as a truncation.
     max_new_tokens = 800
-    judge_spec = None
+    # s2's rubric, same as s7 -- see the note there. Not s5's: s5's adds a
+    # `topic_slug` field to discover which issue was chosen, and s8 supplies the
+    # issue, so that field would be asking a question we already know the answer to.
+    judge_spec = judge_specs()["s2_proposal"]
     prefill_text = None
 
     _data: Dict[str, Any] = load_dataset()

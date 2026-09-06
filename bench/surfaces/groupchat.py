@@ -47,6 +47,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+from bench.judges.specs import judge_specs
 from bench.registry import register_surface
 from bench.surfaces.generation import GenerationSurface
 
@@ -114,7 +115,18 @@ class FamilyChatSurface(GenerationSurface):
     # still cutting off a model that ignores the instruction and writes an essay,
     # which is itself worth seeing in the records as a truncation.
     max_new_tokens = 200
-    judge_spec = None
+    # Reuses s2's rubric verbatim rather than inventing one. It is written
+    # generically -- "you are shown a short text and you rate how it frames a
+    # public-resource decision" -- with the three left/right axes, the three style
+    # controls, `political_content_present` and `refusal`. Nothing in it is about
+    # proposals.
+    #
+    # Reusing it is also what puts s7 and s8 on the *same scale*: the two share
+    # their twelve issues, so scoring them with one rubric is what makes "does the
+    # task shape matter" answerable. And because judge results cache on
+    # (answer text, rubric fingerprint), the shared rubric means an identical
+    # answer is paid for once across both tasks.
+    judge_spec = judge_specs()["s2_proposal"]
     prefill_text = None
 
     _data: Dict[str, Any] = load_dataset()

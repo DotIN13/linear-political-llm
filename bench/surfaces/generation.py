@@ -604,7 +604,12 @@ class GenerationSurface:
     def validate_variant(self, variant: Dict[str, Any]) -> List[str]:
         problems: List[str] = []
         # ``order``/``attribution`` are s3's, set by build() rather than declared.
-        unknown = set(variant) - {"scheme", "question", "order", "attribution", "order_arm"}
+        # ``rep`` is the repeat index: the same cell measured again. It has to be in
+        # the variant because ``trial_key`` dedups on it -- without it a second
+        # reading of an identical cell is silently dropped as already-done, which
+        # is why no round before this one could measure its own repeatability.
+        unknown = set(variant) - {"scheme", "question", "order", "attribution",
+                                  "order_arm", "rep"}
         if unknown:
             problems.append(f"variant has unknown keys {sorted(unknown)}")
         if variant.get("scheme") not in self.schemes:
@@ -664,6 +669,9 @@ class GenerationSurface:
                 f"prefill_text (applied always) or it does not. Drop it from the variant.")
         qid = str(variant.get("question", self.question_ids()[0]))
         variant["question"] = qid
+        # rep changes the key and nothing else: byte-identical conversation.
+        if "rep" in variant:
+            variant["rep"] = int(variant["rep"])
         attribution = str(variant.get("attribution", "shown"))
         variant["attribution"] = attribution
         # A caller-supplied order wins over the seeded shuffle. That is what makes
