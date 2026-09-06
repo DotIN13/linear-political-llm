@@ -34,10 +34,26 @@ OUT="$REPO/runs/pilot_round9v"
 
 mkdir -p "$OUT"
 cd "$REPO"
-command -v apptainer >/dev/null || module load apptainer
+# apptainer is not on PATH by default; it comes from a module, and the module
+# name is not stable across versions (singularity/3.9.0, apptainer/1.1.4,
+# 1.2.4 and 1.4.1 all exist here). The Aug-3 pull that produced the SIF used
+# the absolute path, so prefer that and fall back to the module.
+APPTAINER_BIN=${APPTAINER_BIN:-}
+if [ -z "$APPTAINER_BIN" ]; then
+  for cand in /software/apptainer-1.4.1-el8-x86_64/bin/apptainer \
+              /software/apptainer-*/bin/apptainer; do
+    [ -x "$cand" ] && { APPTAINER_BIN=$cand; break; }
+  done
+fi
+if [ -z "$APPTAINER_BIN" ]; then
+  command -v apptainer >/dev/null 2>&1 || module load apptainer 2>/dev/null || true
+  APPTAINER_BIN=$(command -v apptainer || true)
+fi
+[ -n "$APPTAINER_BIN" ] || { echo "[sbatch] no apptainer binary found" >&2; exit 1; }
+echo "[sbatch] apptainer: $APPTAINER_BIN ($("$APPTAINER_BIN" --version 2>&1))" >&2
 
 echo "[sbatch] starting vLLM server on :$PORT" >&2
-apptainer exec --nv \
+"$APPTAINER_BIN" exec --nv \
   --bind "$MODELS:$MODELS:ro" \
   --bind "$REPO:$REPO" \
   --env HF_HUB_OFFLINE=1 \
