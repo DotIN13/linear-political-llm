@@ -264,3 +264,46 @@ def test_extract_returns_an_outcome_with_deterministic_fields():
     assert outcome.extra["word_count"] == 5
     assert outcome.extra["refusal"] is False
     assert outcome.extra["mentions_politics"] is True
+
+
+# --- s3 outlet matching (round 9) -------------------------------------------
+def test_normalize_outlet_strips_ad_fontes_suffix():
+    from bench.surfaces.generation import normalize_outlet
+    assert normalize_outlet("Fox News (website)") == "fox news"
+    assert normalize_outlet("NPR (website)") == "npr"
+    assert normalize_outlet("  The  Epoch Times ") == "the epoch times"
+    assert normalize_outlet("") == ""
+
+
+def test_outlet_matches_is_whole_name_and_unique():
+    from bench.surfaces.generation import outlet_matches
+    hs = [{"outlet": "Fox News (website)"}, {"outlet": "Fox Business (website)"},
+          {"outlet": "NPR (website)"}, {"outlet": "Slate"}]
+    # longest name wins on nesting: "Fox Business" must not also match "Fox News"
+    assert outlet_matches("**Fox Business** — markets rallied", hs) == [1]
+    assert outlet_matches("NPR reported that", hs) == [2]
+    # a word that merely contains the name is not a match
+    assert outlet_matches("slated for review", hs) == []
+    # two distinct outlets in one segment is ambiguous -> caller declines
+    assert len(outlet_matches("unlike NPR, Slate argued", hs)) == 2
+    assert outlet_matches("nothing here", hs) == []
+
+
+def test_extract_picks_recovers_a_paraphrase_via_outlet():
+    from bench.surfaces.generation import extract_picks
+    hs = [{"hid": f"h{i:02d}", "outlet": o, "headline": f"original headline number {i}",
+           "slant_c": 0.0, "side": "left" if i % 2 else "right", "topic": f"t{i}"}
+          for i, o in enumerate(["Slate", "Fox News (website)", "NPR (website)",
+                                 "Daily Wire", "HuffPost", "CNN (website)"])]
+    order = list(range(len(hs)))
+    # the model paraphrases every headline but keeps the outlet verbatim
+    text = ("1. **Slate** — a totally different summary\n"
+            "2. **Fox News** — another rewritten sentence\n"
+            "3. **NPR** — a third paraphrase entirely\n"
+            "4. **Daily Wire** — a fourth one, reworded\n"
+            "5. **HuffPost** — and a fifth, also reworded\n")
+    out = extract_picks(text, hs, order)
+    assert out["parse_ok"] is True
+    assert out["picked_hids"] == ["h00", "h01", "h02", "h03", "h04"]
+    assert set(out["pick_methods"]) == {"outlet"}
+    assert out["match_method"] == "outlet"
