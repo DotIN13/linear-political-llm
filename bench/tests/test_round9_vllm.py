@@ -7,9 +7,11 @@ cluster adds is the model's actual words.
 
 import json
 
+import pytest
+
 from bench import registry
 from bench.pilots import round9_vllm as r9
-from bench.types import Capability, Response
+from bench.types import Capability, Item, Response
 
 registry.load_all()
 
@@ -48,35 +50,38 @@ class _Fake:
                                            "transcript_shape": "openai_folded"})
 
 
-def test_plan_is_336_trials_shaped_as_the_design_says():
+def test_plan_is_300_trials_shaped_as_the_design_says():
+    """336 -> 300: the P and R arms are gone with the prefill handle.
+
+    Both were prefill contrasts on s1 (P was chat *with*, R was agentic
+    *without*), 18 trials each. Prefill is now a property of the surface, applied
+    always, so neither is expressible -- and R had already returned 0/18 on the
+    9/9-refusal claim it was built to test, which is why the handle went away.
+    """
     plan = r9.build_plan(_items())
-    assert len(plan) == 336, {k: v for k, v in
+    assert len(plan) == 300, {k: v for k, v in
                               __import__("collections").Counter(
                                   (p["surface"], p["scheme"], p["arm"]) for p in plan).items()}
     arms = __import__("collections").Counter(p["arm"] for p in plan)
-    # 318 + the 18-trial R arm: s1 agentic without the prefill, which is the one
-    # test of the 9/9-refusal claim the prefill exists to answer.
-    assert arms["A"] == 252 and arms["P"] == 18 and arms["R"] == 18 and arms["C"] == 48
+    assert arms["A"] == 252 and arms["C"] == 48
+    assert arms["P"] == 0 and arms["R"] == 0
 
 
-def test_chat_runs_bare_and_agentic_carries_the_prefill_where_one_exists():
-    """Was `agentic => prefill on`, flatly. It cannot be: only s1 has a prefill.
-
-    The original form of this test asserted the *intent* of
-    ``PREFILL_BY_SCHEME`` rather than what the surfaces can honour, which is
-    exactly the gap that made 5/6 of the agentic plan ask for a prefill that did
-    not exist. The intent it was protecting -- chat runs bare, and the P arm is
-    the one place chat carries a prefill -- is kept.
+def test_prefill_follows_the_surface_not_the_scheme():
+    """It used to be scheme-driven: chat bare, agentic prefilled. It is not any
+    more -- a surface either has prefill_text and always uses it, on both schemes,
+    or it has none. So s1 now prefills on chat too, which is a real change to what
+    s1's chat numbers mean and not just bookkeeping.
     """
     plan = r9.build_plan(_items())
     for p in plan:
-        if p["arm"] == "A" and p["scheme"] == "chat":
-            assert p["prefill"] == "off"
-        if p["arm"] == "A" and p["scheme"] == "agentic":
-            has_text = bool(r9.registry.get_surface(p["surface"])().prefill_text)
-            assert p["prefill"] == ("on" if has_text else "off")
-    # the P arm is the one place chat carries the prefill
-    assert {p["prefill"] for p in plan if p["arm"] == "P"} == {"on"}
+        has_text = bool(r9.registry.get_surface(p["surface"])().prefill_text)
+        assert p["prefill"] == ("on" if has_text else "off"), (p["surface"], p["scheme"])
+    # and it does not vary within a surface any more
+    by_surface = {}
+    for p in plan:
+        by_surface.setdefault(p["surface"], set()).add(p["prefill"])
+    assert all(len(v) == 1 for v in by_surface.values()), by_surface
 
 
 def test_only_s3_gets_a_reversed_order_arm_and_the_reverse_is_exact():
@@ -172,25 +177,25 @@ def test_no_trial_asks_for_a_prefill_the_surface_cannot_give():
                                  f"says prefill=off but carries {text!r}"
 
 
-def test_only_s1_runs_agentic_with_a_prefill():
+def test_only_s1_prefills_and_it_does_so_on_both_schemes():
     plan = r9.build_plan(_items())
     on = {e["surface"] for e in plan if e["prefill"] == "on"}
     assert on == {"s1_speech"}, on
-    agentic_off = {e["surface"] for e in plan
-                   if e["scheme"] == "agentic" and e["prefill"] == "off"}
-    # the five with no prefill text, plus s1's deliberate no-prefill R arm
-    assert agentic_off == {"s1_speech", "s2_proposal", "s3_digest",
-                           "s5_letter", "s6_describe", "s4_bonus"}, agentic_off
+    assert {e["scheme"] for e in plan if e["prefill"] == "on"} == {"chat", "agentic"}
+    off = {e["surface"] for e in plan if e["prefill"] == "off"}
+    assert off == {"s2_proposal", "s3_digest", "s4_bonus",
+                   "s5_letter", "s6_describe"}, off
 
 
-def test_s1_gets_a_no_prefill_agentic_arm_to_test_the_9_of_9_refusal_claim():
+def test_the_prefill_contrast_arms_are_gone():
+    """Nothing should be able to ask for prefill on a per-trial basis again --
+    that is what let five of six agentic surfaces request a prefill that did not
+    exist and run inert for a whole round."""
     plan = r9.build_plan(_items())
-    r = [e for e in plan if e["arm"] == "R"]
-    assert len(r) == 18
-    assert {e["surface"] for e in r} == {"s1_speech"}
-    assert {e["scheme"] for e in r} == {"agentic"}
-    assert {e["prefill"] for e in r} == {"off"}
-    assert all(e["trial"].meta.get("prefill") is None for e in r)
+    assert not [e for e in plan if e["arm"] in ("P", "R")]
+    surface = r9.registry.get_surface("s1_speech")()
+    with pytest.raises(ValueError, match="no longer a handle"):
+        surface.build(Item.from_dict(_items()[0]), "C", {"scheme": "chat", "prefill": "off"})
 
 
 def test_the_smoke_slice_reaches_every_surface():
@@ -202,7 +207,8 @@ def test_the_smoke_slice_reaches_every_surface():
     # and one per (surface, scheme, arm, order_arm), no duplicates
     keys = [(e["surface"], e["scheme"], e["arm"], e["order_arm"]) for e in sl]
     assert len(keys) == len(set(keys))
-    assert len(sl) == 28
+    # 28 -> 26: the two s1 prefill-contrast arms no longer contribute a cell.
+    assert len(sl) == 26
 
 
 def test_no_surface_is_left_at_the_inherited_400_token_cap():

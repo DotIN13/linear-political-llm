@@ -124,14 +124,13 @@ class AnsweredLetterSurface(GenerationSurface):
     # is wanted and a letter that overruns it shows up as a truncation.
     max_new_tokens = 800
     judge_spec = None
-    prefill_variants: List[str] = []
     prefill_text = None
 
     _data: Dict[str, Any] = load_dataset()
     _by_cid: Dict[str, Dict[str, Any]] = {r["cid"]: r for r in _data["concerns"]}
-    # The concern is the `prompt` variant, so the parent's variants() already
-    # crosses it with the two schemes: 12 x 2 = 24 per persona.
-    prompt_variants: Dict[str, str] = {r["cid"]: r["concern"] for r in _data["concerns"]}
+    # The surface's twelve questions. **Not a factorial handle** -- see the note
+    # on GenerationSurface.questions. Crossed with the two schemes: 24 per persona.
+    questions: Dict[str, str] = {r["cid"]: r["concern"] for r in _data["concerns"]}
     prompt = OPENING_ASK
     dataset_version: str = str(_data.get("version", "unknown"))
     dataset_hash: str = dataset_fingerprint(_data)
@@ -149,19 +148,19 @@ class AnsweredLetterSurface(GenerationSurface):
         return [r["cid"] for r in cls._data["concerns"] if r["domain"] == domain]
 
     # -- build ---------------------------------------------------------------
-    def _prompt_text(self, prompt_key: str) -> str:
+    def question_text(self, qid: str) -> str:
         """The *first* user turn is always s5's opening ask.
 
-        The parent uses ``_prompt_text`` to fill the last user turn from
-        ``prompt_variants``; here the variant supplies the concern, which belongs
-        two turns later. So this returns the opening ask regardless of the key,
-        and ``build`` appends the exchange.
+        The parent fills the last user turn from ``questions``; here the question
+        supplies the concern, which belongs two turns later. So this returns the
+        opening ask whichever concern is selected, and ``build`` appends the
+        exchange. The concern is still validated -- via ``_by_cid`` in ``build``.
         """
         return OPENING_ASK
 
     def build(self, item, condition, variant=None, seed=None):
         trial = super().build(item, condition, variant, seed)
-        cid = str(trial.variant.get("prompt", ""))
+        cid = str(trial.variant.get("question", ""))
         row = self._by_cid.get(cid)
         if row is None:
             raise ValueError(f"{self.name}: unknown concern {cid!r}; "

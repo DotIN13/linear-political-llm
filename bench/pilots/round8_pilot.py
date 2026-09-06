@@ -261,7 +261,7 @@ def _plan(s1, items: Sequence[Dict[str, Any]], chunk: int) -> List[Dict[str, Any
             })
 
     for prompt, scheme in cell["c"]:
-        question = s1.prompt_variants[prompt]
+        question = s1.questions[prompt]     # renamed from prompt_variants
         for seed in BASELINE_SEEDS:
             if scheme == "chat":
                 messages = _baseline_chat_messages(question)

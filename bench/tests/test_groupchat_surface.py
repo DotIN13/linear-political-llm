@@ -100,21 +100,21 @@ def test_one_variant_per_message_per_scheme():
     assert len(variants) == 24, len(variants)
     assert {v["scheme"] for v in variants} == {"chat", "agentic"}
     for scheme in ("chat", "agentic"):
-        mids = {v["prompt"] for v in variants if v["scheme"] == scheme}
+        mids = {v["question"] for v in variants if v["scheme"] == scheme}
         assert mids == set(s.mids())
 
 
 def test_the_message_reaches_the_last_turn_verbatim():
     s = _surface()
     row = next(r for r in s.messages() if r["mid"] == "m03")
-    trial = s.build(_item(), "C", {"scheme": "chat", "prompt": "m03"})
+    trial = s.build(_item(), "C", {"scheme": "chat", "question": "m03"})
     last = trial.conversation.messages[-1]["content"][0]["text"]
     assert row["message"] in last
     assert "one or two" in last.lower()
 
 
 def test_trial_records_which_message_it_was():
-    trial = _surface().build(_item(), "C", {"scheme": "chat", "prompt": "m08"})
+    trial = _surface().build(_item(), "C", {"scheme": "chat", "question": "m08"})
     ds = trial.meta["dataset"]
     assert ds["mid"] == "m08"
     assert ds["domain"] == "foreign"
@@ -127,14 +127,14 @@ def test_both_schemes_ask_the_same_question():
     """Only the surrounding conversation differs between chat and agentic. If the
     question text itself drifted, the two schemes would not be comparable."""
     s = _surface()
-    chat = s.build(_item(), "C", {"scheme": "chat", "prompt": "m05"})
-    agentic = s.build(_item(), "C", {"scheme": "agentic", "prompt": "m05"})
+    chat = s.build(_item(), "C", {"scheme": "chat", "question": "m05"})
+    agentic = s.build(_item(), "C", {"scheme": "agentic", "question": "m05"})
     assert chat.meta["question"] == agentic.meta["question"]
     assert len(agentic.conversation.messages) > len(chat.conversation.messages)
 
 
 def test_no_image_control_drops_the_pixels_and_is_item_invariant():
-    trial = _surface().build(_item(), "E", {"scheme": "chat", "prompt": "m01"})
+    trial = _surface().build(_item(), "E", {"scheme": "chat", "question": "m01"})
     assert trial.conversation.images == []
     assert trial.meta["item_invariant"] is True
 
@@ -144,7 +144,6 @@ def test_no_prefill_on_this_surface():
     answering a refusal problem that measured 0 out of 144. It has no business
     on a new surface."""
     s = _surface()
-    assert s.prefill_variants == []
     assert s.prefill_text is None
     assert all("prefill" not in v for v in s.variants())
 

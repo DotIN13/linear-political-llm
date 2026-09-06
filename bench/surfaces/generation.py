@@ -561,44 +561,60 @@ class GenerationSurface:
     judge_spec = None                       # JudgeSpec or None (s3 has no judge)
     randomizes_per_item: bool = False       # s3 shuffles its headlines per item
     headlines: Optional[List[Dict[str, Any]]] = None
-    # Prompt and prefill variant dimensions. Empty prompt_variants means the
-    # surface has a single prompt (``self.prompt``); prefill_variants is the list
-    # of legal prefill keys and prefill_text is the R1 string (or None).
-    prompt_variants: Dict[str, str] = {}
-    prefill_variants: List[str] = []
+    # A surface's own questions, keyed. **This is not a factorial handle.** Two
+    # questions of the same surface are two runs of that surface, not two levels
+    # of a factor crossed with everything else -- so nothing should report "n
+    # questions" alongside the real handles (photo band, photos present,
+    # conversation style). It lives in ``variant`` only because ``trial_key``
+    # takes the variant dict, and two runs of one item need distinct keys.
+    #
+    # Universal: every generation surface has at least one, and a surface that
+    # declares none gets ``{"q0": self.prompt}`` from ``question_ids``. That is
+    # what lets any surface grow a question set later without a special case.
+    questions: Dict[str, str] = {}
+    # The opening we write into the assistant turn, applied **whenever it is set**.
+    # It used to be an on/off handle; it is not one any more -- a surface either
+    # has an opening or it does not.
     prefill_text: Optional[str] = None
+
+    # -- questions (not a handle -- see the class docstring on ``questions``) --
+    @classmethod
+    def question_ids(cls) -> List[str]:
+        """Every question this surface asks, in declaration order. Never empty."""
+        return list(cls.questions) if cls.questions else ["q0"]
+
+    def question_text(self, qid: str) -> str:
+        if not self.questions:
+            return self.prompt
+        if qid not in self.questions:
+            raise ValueError(f"surface {self.name} has no question {qid!r}; "
+                             f"known: {sorted(self.questions)}")
+        return self.questions[qid]
 
     # -- variants ------------------------------------------------------------
     def variants(self) -> List[Dict[str, Any]]:
-        prompts = list(self.prompt_variants) if self.prompt_variants else ["v0"]
-        prefills = list(self.prefill_variants) if self.prefill_variants else ["off"]
-        out: List[Dict[str, Any]] = []
-        for scheme in self.schemes:
-            for prompt in prompts:
-                for prefill in prefills:
-                    variant: Dict[str, Any] = {"scheme": scheme}
-                    if self.prompt_variants:
-                        variant["prompt"] = prompt
-                    if self.prefill_variants:
-                        variant["prefill"] = prefill
-                    out.append(variant)
-        return out
+        """The conversation style, crossed with the surface's own questions.
+
+        Only ``scheme`` is a handle here. ``question`` is in the dict because the
+        dedup key is built from it, not because it is a factor.
+        """
+        return [{"scheme": scheme, "question": qid}
+                for scheme in self.schemes for qid in self.question_ids()]
 
     def validate_variant(self, variant: Dict[str, Any]) -> List[str]:
         problems: List[str] = []
-        unknown = set(variant) - {"scheme", "prompt", "prefill"}
+        # ``order``/``attribution`` are s3's, set by build() rather than declared.
+        unknown = set(variant) - {"scheme", "question", "order", "attribution", "order_arm"}
         if unknown:
             problems.append(f"variant has unknown keys {sorted(unknown)}")
         if variant.get("scheme") not in self.schemes:
             problems.append(f"variant scheme={variant.get('scheme')!r} not in {self.schemes}")
-        if self.prompt_variants and "prompt" in variant \
-                and variant.get("prompt") not in self.prompt_variants:
-            problems.append(f"variant prompt={variant.get('prompt')!r} not in "
-                            f"{sorted(self.prompt_variants)}")
-        if self.prefill_variants and "prefill" in variant \
-                and variant.get("prefill") not in self.prefill_variants:
-            problems.append(f"variant prefill={variant.get('prefill')!r} not in "
-                            f"{self.prefill_variants}")
+        if "question" in variant and variant.get("question") not in self.question_ids():
+            problems.append(f"variant question={variant.get('question')!r} not in "
+                            f"{self.question_ids()}")
+        if "prefill" in variant:
+            problems.append("prefill is no longer a handle; a surface either has "
+                            "prefill_text or it does not")
         return problems
 
     # -- item invariance -----------------------------------------------------
@@ -615,17 +631,19 @@ class GenerationSurface:
             return None
         return shuffled_order(self.headlines, item.item_id, 0 if seed is None else int(seed))
 
-    def _prompt_text(self, prompt_key: str) -> str:
-        if self.prompt_variants:
-            return self.prompt_variants.get(prompt_key, self.prompt)
-        return self.prompt
-
     def question(self, order: Optional[List[int]] = None, attribution: str = "shown",
-                 prompt_key: str = "v0") -> str:
+                 qid: Optional[str] = None) -> str:
+        """``qid=None`` means the surface's first question.
+
+        Not a literal ``"q0"``: a surface that declares its own keys (s1's v0/v1,
+        s7's m01.., s8's c01..) has no ``q0``, and defaulting to one raised on
+        every ``describe()``.
+        """
+        qid = self.question_ids()[0] if qid is None else qid
         if not self.headlines:
-            return self._prompt_text(prompt_key)
+            return self.question_text(qid)
         order = order or list(range(len(self.headlines)))
-        lines = [self._prompt_text(prompt_key), ""]
+        lines = [self.question_text(qid), ""]
         for i, idx in enumerate(order, start=1):
             h = self.headlines[idx]
             if attribution == "hidden":
@@ -640,8 +658,12 @@ class GenerationSurface:
             raise ValueError(f"Unknown condition {condition!r}. Known: {self.conditions}")
         variant = dict(variant or {"scheme": "chat"})
         scheme = str(variant.get("scheme", "chat"))
-        prompt_key = str(variant.get("prompt", "v0"))
-        prefill = str(variant.get("prefill", "off"))
+        if "prefill" in variant:
+            raise ValueError(
+                f"{self.name}: prefill is no longer a handle. A surface either has "
+                f"prefill_text (applied always) or it does not. Drop it from the variant.")
+        qid = str(variant.get("question", self.question_ids()[0]))
+        variant["question"] = qid
         attribution = str(variant.get("attribution", "shown"))
         variant["attribution"] = attribution
         # A caller-supplied order wins over the seeded shuffle. That is what makes
@@ -656,9 +678,10 @@ class GenerationSurface:
 
         with_images = condition != "E"
         image_paths = list(item.image_paths) if with_images else []
-        question = self.question(order, attribution, prompt_key)
+        question = self.question(order, attribution, qid)
         messages, tools = build_scheme_messages(scheme, image_paths, question)
-        prefill_text = self.prefill_text if prefill == "on" else None
+        # Applied whenever the surface has one. No handle, no on/off.
+        prefill_text = self.prefill_text
 
         return Trial(
             surface=self.name,
@@ -672,7 +695,7 @@ class GenerationSurface:
             meta={
                 "family": self.family,
                 "scheme": scheme,
-                "prompt": prompt_key,
+                "question_id": qid,
                 "prefill": prefill_text,
                 "question": question,
                 "tools": tools,
@@ -717,6 +740,8 @@ class GenerationSurface:
             "options": [],
             "candidates": [],
             "n_phrasings": 0,
+            "questions": self.question_ids(),      # the surface's own questions, not a handle
+            "prefill": self.prefill_text,
             "variants": self.variants(),
             "item_invariant_conditions": [c for c in self.conditions if self.is_item_invariant(c)],
             "probe_points": [p.name for p in self.probe_points(None)],
@@ -729,8 +754,7 @@ class GenerationSurface:
 
 def _make(sid: str, family: str, judge_id: Optional[str] = None,
           randomizes: bool = False, max_new_tokens: int = 400,
-          prompt_variants: Optional[Dict[str, str]] = None,
-          prefill_variants: Optional[List[str]] = None,
+          questions: Optional[Dict[str, str]] = None,
           prefill_text: Optional[str] = None) -> GenerationSurface:
     @register_surface(sid)
     class _S(GenerationSurface):
@@ -742,8 +766,7 @@ def _make(sid: str, family: str, judge_id: Optional[str] = None,
     _S.judge_spec = judge_specs().get(judge_id) if judge_id else None
     _S.randomizes_per_item = randomizes
     _S.max_new_tokens = max_new_tokens
-    _S.prompt_variants = dict(prompt_variants or {})
-    _S.prefill_variants = list(prefill_variants or [])
+    _S.questions = dict(questions or {})
     _S.prefill_text = prefill_text
     _S.__name__ = f"Surface_{sid}"
     return _S
@@ -802,8 +825,8 @@ def register_all() -> None:
         return
     _REGISTERED = True
     _make("s1_speech", "generation", judge_id="s1_speech", max_new_tokens=1400,
-          prompt_variants={"v0": TASK_PROMPTS["s1_speech"], "v1": S1_PROMPT_V1},
-          prefill_variants=["off", "on"], prefill_text=S1_PREFILL)
+          questions={"v0": TASK_PROMPTS["s1_speech"], "v1": S1_PROMPT_V1},
+          prefill_text=S1_PREFILL)
     # Round-9 measured s2 truncating 17/18 on chat at the 400 default: the prompt
     # asks for a proposal *and* the case for it and puts no length cap on either,
     # so 400 tokens is a cap on the task, not a safety rail. s4 asks an

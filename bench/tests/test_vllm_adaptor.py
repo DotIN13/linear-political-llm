@@ -111,7 +111,7 @@ def test_prefill_becomes_a_continued_assistant_turn():
     the key a contract instead of a coincidence.
     """
     surface = registry.get_surface("s1_speech")()
-    t = surface.build(_ITEM, "C", {"scheme": "chat", "prefill": "on"}, seed=42)
+    t = surface.build(_ITEM, "C", {"scheme": "chat"}, seed=42)
     assert t.meta["prefill"] == surface.prefill_text          # the contract
     p = build_payload(t, "m", seed=42, image_loader=_fake_loader)
     assert p["messages"][-1] == {"role": "assistant", "content": surface.prefill_text}
@@ -119,9 +119,12 @@ def test_prefill_becomes_a_continued_assistant_turn():
     assert p["add_generation_prompt"] is False
 
 
-def test_prefill_off_sends_no_continuation():
-    surface = registry.get_surface("s1_speech")()
-    t = surface.build(_ITEM, "C", {"scheme": "chat", "prefill": "off"}, seed=42)
+def test_a_surface_without_a_prefill_sends_no_continuation():
+    """Prefill is a property of the surface, not a per-trial switch, so "off" is
+    now expressed by a surface that has no prefill_text -- s1 always prefills."""
+    surface = registry.get_surface("s2_proposal")()
+    assert surface.prefill_text is None
+    t = surface.build(_ITEM, "C", {"scheme": "chat"}, seed=42)
     assert t.meta["prefill"] is None
     p = build_payload(t, "m", seed=42, image_loader=_fake_loader)
     assert p["messages"][-1]["role"] == "user"

@@ -115,19 +115,18 @@ class FamilyChatSurface(GenerationSurface):
     # which is itself worth seeing in the records as a truncation.
     max_new_tokens = 200
     judge_spec = None
-    prefill_variants: List[str] = []
     prefill_text = None
 
     _data: Dict[str, Any] = load_dataset()
     _by_mid: Dict[str, Dict[str, Any]] = {r["mid"]: r for r in _data["messages"]}
-    # This is what makes the message an enumerable factor: `variants()` on the
-    # parent already crosses schemes x prompts, so declaring the messages here
-    # gives 12 x 2 = 24 variants per persona and `bench score` can group by any
-    # of them.
-    prompt_variants: Dict[str, str] = {
+    # The surface's twelve questions. **Not a factorial handle** -- twelve
+    # questions is twelve runs of this surface, not twelve levels of a factor.
+    # `variants()` on the parent crosses them with the two schemes only because
+    # the dedup key is built from the variant dict.
+    questions: Dict[str, str] = {
         r["mid"]: QUESTION_TEMPLATE.format(message=r["message"]) for r in _data["messages"]
     }
-    prompt = prompt_variants[_data["messages"][0]["mid"]]
+    prompt = questions[_data["messages"][0]["mid"]]
     dataset_version: str = str(_data.get("version", "unknown"))
     dataset_hash: str = dataset_fingerprint(_data)
 
@@ -146,7 +145,7 @@ class FamilyChatSurface(GenerationSurface):
 
     def build(self, item, condition, variant=None, seed=None):
         trial = super().build(item, condition, variant, seed)
-        mid = str(trial.variant.get("prompt", ""))
+        mid = str(trial.variant.get("question", ""))
         row = self._by_mid.get(mid, {})
         trial.meta["dataset"] = {
             "version": self.dataset_version,

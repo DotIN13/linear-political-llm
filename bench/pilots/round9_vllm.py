@@ -58,17 +58,14 @@ BASELINE_ITEM_ID = "__baseline__"
 PREFILL_BY_SCHEME = {"chat": "off", "agentic": "on"}
 
 
-def prefill_for(surface: Any, scheme: str) -> str:
-    """The prefill key this (surface, scheme) can actually honour.
+def prefill_of(surface: Any) -> str:
+    """Whether this surface prefills, as a label for the records.
 
-    ``PREFILL_BY_SCHEME`` says what the scheme *wants*; a surface with no
-    ``prefill_text`` cannot give it, and asking anyway is how 5/6 of the agentic
-    data came to be inert.
+    Prefill stopped being a handle: a surface either declares ``prefill_text``
+    (applied on every trial, both schemes) or it does not. This is reporting, not
+    a choice -- there is nothing left to pass into ``build``.
     """
-    want = PREFILL_BY_SCHEME[scheme]
-    if want == "on" and not getattr(surface, "prefill_text", None):
-        return "off"
-    return want
+    return "on" if getattr(surface, "prefill_text", None) else "off"
 
 
 def load_items() -> List[Dict[str, Any]]:
@@ -103,10 +100,10 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for sid in SURFACE_IDS:
         surface = registry.get_surface(sid)()
         for scheme in ("chat", "agentic"):
-            prefill = prefill_for(surface, scheme)
+            prefill = prefill_of(surface)
             for row in items:
                 item = Item.from_dict(row)
-                base = {"scheme": scheme, "prefill": prefill}
+                base = {"scheme": scheme}
                 fwd = surface.build(item, "C", dict(base), seed=A_SEED)
                 plan.append(_entry(fwd, sid, "A", "C", scheme, prefill, row, item,
                                    order_arm="fwd" if fwd.variant.get("order") else None))
@@ -121,30 +118,20 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     plan.append(_entry(rev, sid, "A", "C", scheme, prefill, row, item,
                                        order_arm="rev"))
 
-        # P arm: s1 on chat *with* the prefill, same items, to size the prefill's
-        # compression cost within-item rather than across rounds.
-        if sid == "s1_speech":
-            for row in items:
-                item = Item.from_dict(row)
-                t = surface.build(item, "C", {"scheme": "chat", "prefill": "on"}, seed=A_SEED)
-                plan.append(_entry(t, sid, "P", "C", "chat", "on", row, item))
-
-        # R arm: s1 agentic *without* the prefill. This is the one claim the whole
-        # prefill apparatus rests on -- docs/bench/11's 9/9 agentic refusals -- and
-        # the round-9 smoke's single no-prefill agentic trial did not refuse. 18
-        # trials is about a minute of H200 and it either confirms the 9/9 or takes
-        # 44% of the effect size back.
-        if sid == "s1_speech":
-            for row in items:
-                item = Item.from_dict(row)
-                t = surface.build(item, "C", {"scheme": "agentic", "prefill": "off"},
-                                  seed=A_SEED)
-                plan.append(_entry(t, sid, "R", "C", "agentic", "off", row, item))
+        # The P and R arms are gone. Both were prefill on/off contrasts on s1 -- P
+        # was chat *with* the prefill, R was agentic *without* it -- and prefill is
+        # no longer a handle, so neither is expressible: s1 has a prefill_text and
+        # therefore always prefills, on both schemes.
+        #
+        # R had already done its job. It was built to test docs/bench/11's claim of
+        # 9/9 agentic refusals without the prefill and returned 0/18, which is why
+        # the handle went away. Keeping a one-sided arm would just re-measure the A
+        # arm under a second name.
 
         # C arm: no image, both schemes, four seeds.
         for scheme in ("chat", "agentic"):
-            prefill = prefill_for(surface, scheme)
-            question = surface.question(None, "shown", "v0")
+            prefill = prefill_of(surface)
+            question = surface.question(None, "shown", surface.question_ids()[0])
             for seed in BASELINE_SEEDS:
                 if scheme == "chat":
                     messages = [{"role": "user", "content": [{"type": "text", "text": question}]}]
