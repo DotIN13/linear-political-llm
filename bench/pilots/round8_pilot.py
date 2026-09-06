@@ -1,5 +1,13 @@
 """Round-8 pilot (docs/bench/14): prefill as a first-class variant, S1 x prompt x scheme.
 
+FROZEN 2026-09-06 -- kept as the record of a completed round, NOT runnable.
+Its whole design was the (prompt v0/v1) x (prefill on/off) grid, and all of that
+has since been removed: prefill is no longer a handle (a surface has prefill_text
+or it does not) and s1 has a single prompt again, the wording formerly keyed v1.
+Running this module now would raise on `s1.questions["v0"]`. Read it for what
+round 8 did; do not call it.
+
+
 The round-6 R1 prefill is now a variant dimension on the ``s1_speech`` surface
 (``{"prefill": "on"|"off"}``, default off) and the round-5 prompt is a second
 dimension (``{"prompt": "v0"|"v1"}``, default v0). This round runs S1 with prefill

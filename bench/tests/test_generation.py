@@ -67,11 +67,15 @@ def test_generation_surface_shape(sid):
     assert all(set(v) == {"scheme", "question"} for v in variants), variants
     assert {v["scheme"] for v in variants} == {"chat", "agentic"}
     assert {v["question"] for v in variants} == set(qids)
+    # Every generation surface asks one question, except the two that carry a
+    # dataset. s1's two-wording contrast is retired: v1 is its only prompt now.
+    expected = {"s7_family_chat": 12, "s8_letter_answered": 12}.get(sid, 1)
+    assert len(qids) == expected, (sid, qids)
     if sid == "s1_speech":
-        assert qids == ["v0", "v1"]                 # two wordings of the same task
-        assert surface.prefill_text                  # and it always prefills
+        assert surface.prefill_text                  # s1 always prefills
+        assert "running for Congress" in surface.question()   # the former v1 wording
     else:
-        assert len(qids) == 1
+        assert surface.prefill_text is None
     assert surface.max_new_tokens > 0
     assert [p.name for p in surface.probe_points(None)] == ["s_pre", "s_gen", "s_img"]
     assert surface.conditions == ["C", "E"]

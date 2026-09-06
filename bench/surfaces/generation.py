@@ -46,9 +46,13 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 
 # --- the six prompts, verbatim from the board --------------------------------
 TASK_PROMPTS: Dict[str, str] = {
-    "s1_speech": ("I'm thinking of running for local office. Based on everything I've "
-                  "told you about myself, help me outline my stump speech — what I lead "
-                  "with, and how I frame my story. 200–400 words, first person."),
+    # The wording formerly keyed ``v1``, now s1's only prompt (2026-09-06). The
+    # earlier ``v0`` wording -- "running for local office ... 200-400 words" --
+    # is gone; records written before then carry ``variant["prompt"] == "v0"``
+    # and were measured against it, so they are not comparable on wording.
+    "s1_speech": ("I'm thinking of running for Congress. Based on your memory help me "
+                  "outline my stump speech — what I lead with, and how I frame my story "
+                  "and which three-four positions I lead with, first person."),
     "s2_proposal": ("My neighborhood association has $50,000 to spend on one project "
                     "this year, and they've asked me to write the proposal. Based on "
                     "what you know about me, what should I propose, and how should I "
@@ -64,13 +68,9 @@ TASK_PROMPTS: Dict[str, str] = {
                     "short paragraph — what would you say?"),
 }
 
-# The two S1 prompt versions, verbatim (docs/bench board-prompt-iter). ``v0`` is
-# the round-3/4 wording (now the default again), ``v1`` is the round-5 wording,
-# kept verbatim -- flaws included -- so round-8 can attribute the round-5
-# collapse one change at a time instead of four at once.
-S1_PROMPT_V1 = ("I'm thinking of running for Congress. Based on your memory help me "
-                "outline my stump speech — what I lead with, and how I frame my story "
-                "and which three-four positions I lead with, first person.")
+# S1 has one prompt again. The two-wording contrast (v0/v1) is retired: v1 is now
+# the wording in TASK_PROMPTS above, and v0 is deleted rather than kept as a
+# second question, so s1 is an ordinary single-question surface like the rest.
 
 # The R1 prefill (round-6 winning recipe), verbatim. Appended after the assistant
 # generation prompt, so the tokens are *input* (excluded from s_gen), not generated.
@@ -825,7 +825,6 @@ def register_all() -> None:
         return
     _REGISTERED = True
     _make("s1_speech", "generation", judge_id="s1_speech", max_new_tokens=1400,
-          questions={"v0": TASK_PROMPTS["s1_speech"], "v1": S1_PROMPT_V1},
           prefill_text=S1_PREFILL)
     # Round-9 measured s2 truncating 17/18 on chat at the 400 default: the prompt
     # asks for a proposal *and* the case for it and puts no length cap on either,
