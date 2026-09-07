@@ -27,10 +27,12 @@ def test_no_political_word_in_the_template():
 
 
 def test_two_arms_only_and_they_differ_in_photo_count():
-    assert P.ARMS == (3, 10)
+    assert P.ARMS == (3, 5, 10)
     assert set(P.ITEMS_FILES) == set(P.ARMS)
-    # separate stimulus files, so a 10-photo item can never be read as a 3-photo one
-    assert P.ITEMS_FILES[3] != P.ITEMS_FILES[10]
+    assert list(P.ARMS) == sorted(P.ARMS), "ARMS[0] is the contrast reference"
+    # a separate stimulus file per group, so an item of one photo count can never
+    # be read as another's
+    assert len({P.ITEMS_FILES[a] for a in P.ARMS}) == len(P.ARMS)
 
 
 def test_questions_are_round_16s_so_they_are_not_a_new_variable():
@@ -83,10 +85,12 @@ def test_three_photos_is_unchanged_from_before_the_change():
 
 def test_ten_photos_costs_turns_and_the_probe_says_so():
     """Photo count and turn count are inseparable here; it must be documented."""
-    m3, _ = build_scheme_messages("agentic", ["x"] * 3, "Q", 3)
-    m10, _ = build_scheme_messages("agentic", ["x"] * 10, "Q", 10)
-    assert len(m3) == 13 and len(m10) == 27
-    assert "27 turns" in P.__doc__ and "13" in P.__doc__
+    turns = {n: len(build_scheme_messages("agentic", ["x"] * n, "Q", n)[0])
+             for n in P.ARMS}
+    assert turns == {3: 13, 5: 17, 10: 27}, turns
+    # strictly increasing, so the confound cannot be waved away as "roughly equal"
+    assert list(turns.values()) == sorted(turns.values())
+    assert "13 turns at 3 photos, 17 at 5, 27 at 10" in P.__doc__
 
 
 def test_both_dirs_are_always_listed():
@@ -197,8 +201,10 @@ def test_phase_plan_warns_when_one_arm_has_a_weaker_contrast(tmp_path, monkeypat
 def test_phase_plan_reports_a_missing_items_file_instead_of_crashing(tmp_path, monkeypatch, capsys):
     f = tmp_path / "explore_n3.jsonl"
     _write_items(f, 3)
-    monkeypatch.setattr(P, "ITEMS_FILES",
-                        {3: str(f), 10: str(tmp_path / "nope.jsonl")})
+    files = {3: str(f)}
+    for arm in P.ARMS[1:]:
+        files[arm] = str(tmp_path / f"nope_{arm}.jsonl")
+    monkeypatch.setattr(P, "ITEMS_FILES", files)
     rc = P.phase_plan()
     out = capsys.readouterr().out
     assert rc == 1, "a missing arm must be a non-zero exit, so a script can gate on it"
@@ -271,3 +277,58 @@ def test_opinion_and_refusal_are_counted_from_the_labels(tmp_path, monkeypatch, 
     out = capsys.readouterr().out
     assert "opinion rate (n)   3 photos: 4" in out, out
     assert "refusals (n)" in out, out
+
+
+def test_report_header_is_generated_from_arms_not_hardcoded(tmp_path, monkeypatch, capsys):
+    """The header said "THREE PHOTOS vs TEN" and "3 photos is 13 turns, 10 is 27"
+    as literals, so adding the 5-photo group left the report describing an
+    experiment that was no longer the one being run."""
+    import json as _j
+    rows = []
+    for arm in P.ARMS:
+        for i, side in enumerate(["left", "right"]):
+            rows.append({"arm": arm, "question": P.QUESTION_IDS[0], "side": side,
+                         "item_id": f"i{arm}{i}", "image_mean": -0.6 if side == "left" else 0.6,
+                         "n_photos": arm, "n_turns": 0, "text": f"t{arm}{i}",
+                         "judge": {"labels": {"political_content_present": True,
+                                              "refusal": False,
+                                              "collective_vs_individual": "center",
+                                              "public_vs_market": "center",
+                                              "regulation_vs_freedom": "center"}}})
+    jp = tmp_path / "j.jsonl"
+    jp.write_text("\n".join(_j.dumps(r) for r in rows) + "\n")
+    monkeypatch.setattr(P, "JUDGED_PATH", str(jp))
+    P.phase_report()
+    out = capsys.readouterr().out
+    for arm in P.ARMS:
+        assert f"{arm} photos" in out, f"{arm} missing from the header/table: {out}"
+    assert "THREE PHOTOS vs TEN" not in out
+    # the turn counts must be computed, so they cannot go stale
+    assert "3 photos = 13 turns" in out and "10 photos = 27 turns" in out, out
+    assert "5 photos = 17 turns" in out, out
+
+
+def test_pooled_distinctness_catches_a_cross_group_duplicate(tmp_path, monkeypatch, capsys):
+    """The guard that the per-group `distinct` column cannot provide: the same
+    answer appearing in two different photo-count groups."""
+    import json as _j
+    rows = []
+    for arm in P.ARMS:
+        for i, side in enumerate(["left", "right"]):
+            # every left answer is byte-identical across all three groups
+            txt = "the same left answer everywhere" if side == "left" else f"unique {arm}"
+            rows.append({"arm": arm, "question": P.QUESTION_IDS[0], "side": side,
+                         "item_id": f"i{arm}{i}", "image_mean": -0.6 if side == "left" else 0.6,
+                         "n_photos": arm, "n_turns": 0, "text": txt,
+                         "judge": {"labels": {"political_content_present": True,
+                                              "refusal": False,
+                                              "collective_vs_individual": "center",
+                                              "public_vs_market": "center",
+                                              "regulation_vs_freedom": "center"}}})
+    jp = tmp_path / "j.jsonl"
+    jp.write_text("\n".join(_j.dumps(r) for r in rows) + "\n")
+    monkeypatch.setattr(P, "JUDGED_PATH", str(jp))
+    P.phase_report()
+    out = capsys.readouterr().out
+    assert "duplicates ACROSS groups" in out, out
+    assert "distinct 8-word openers" in out, out

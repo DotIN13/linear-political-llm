@@ -6,8 +6,17 @@ many photos the persona is built from. **The wording is imported from
 from the surface it is testing.
 
     3 photos  x  4 questions  x  8 personas  =  32
+    5 photos  x  4 questions  x  8 personas  =  32
     10 photos x  4 questions  x  8 personas  =  32
-                                       total    64 generations
+                                       total    96 generations
+
+**Three points do not resolve a curve here.** Each group's separation carries an
+error bar about the size of the effect, so the honest expectation is that all
+three land within noise of each other -- which is itself the finding, and is
+worth one cheap group to establish rather than assuming. What three points can
+do that two cannot is show whether the middle sits between the ends or outside
+them: outside is evidence that noise dominates the axis, and that is a cleaner
+statement than "10 was a bit lower than 3".
 
 **Both arms run here.** The 3-photo arm is not taken from round 16, for three
 reasons that each on their own would break the comparison: round 16 ran on an
@@ -16,11 +25,13 @@ has changed since so the measurement fingerprint differs, and 32 answers is too
 few for the difference between arms to survive a change of hardware as well.
 
 **What this cannot separate, and it is not a small thing.** In the agentic
-scheme every photo is one `view_image` turn, so ten photos is **27 turns against
-three photos' 13**. Photo count and transcript length move together and there is
-no version of this design in which they do not. So a difference between the arms
-is "ten photos in a longer transcript" versus "three photos in a shorter one" --
-not the photo count alone.
+scheme every photo is one `view_image` turn, so the transcript grows with the
+photo count: **13 turns at 3 photos, 17 at 5, 27 at 10**. Photo count and
+transcript length move together and there is no version of this design in which
+they do not. So a difference between the groups is "more photos in a longer
+transcript" versus fewer in a shorter one -- not the photo count alone. Adding a
+third point does not fix this; it adds a third point on a line where both things
+vary at once.
 
 **And the manipulation is expected to get weaker, not stronger.** An item's
 score is the mean of its photos' scores, so averaging ten draws from a bucket
@@ -40,6 +51,7 @@ to keep or drop this changes no fingerprint.
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import os
 import statistics
@@ -61,9 +73,12 @@ MESSAGES_FILE = os.path.join(ROOT, "bench", "data", "s7_family_chat_v1.json")
 # run with --images-per-item 10; `plan` says so rather than failing obscurely.
 ITEMS_FILES: Dict[int, str] = {
     3: os.path.join(ROOT, "items", "explore_bucket_v1.jsonl"),
+    5: os.path.join(ROOT, "items", "explore_bucket_n5_v1.jsonl"),
     10: os.path.join(ROOT, "items", "explore_bucket_n10_v1.jsonl"),
 }
-ARMS: Tuple[int, ...] = (3, 10)
+# Ascending, because ARMS[0] is the reference the contrast ratio is taken against
+# and the report prints in this order.
+ARMS: Tuple[int, ...] = (3, 5, 10)
 
 SEED = 20260907
 N_PER_SIDE = 4
@@ -379,7 +394,8 @@ def phase_report() -> None:
         by_arm.setdefault(r["arm"], []).append(r)
 
     print("=" * 100)
-    print("THREE PHOTOS vs TEN -- one wording (the surface's own), tool-using scheme")
+    print(f"PHOTOS PER PERSONA: {' vs '.join(str(a) for a in ARMS)} -- one wording "
+          f"(the surface's own), tool-using scheme")
     print()
     print("Two different scales below, both signed decimals near zero -- do not compare")
     print("their magnitudes:")
@@ -390,9 +406,13 @@ def phase_report() -> None:
     print("  /SE              = judge separation over its own error bar. Dimensionless,")
     print("                     so this is the only column comparable across rounds.")
     print()
-    print("Photo count and turn count move together: 3 photos is 13 turns, 10 is 27.")
-    print("A difference between the groups is 'ten photos in a longer transcript' vs")
-    print("three in a shorter one -- not the photo count alone.")
+    turns_by_arm = {a: len(build_scheme_messages(SCHEME, ["x"] * a, "Q", a)[0])
+                    for a in ARMS}
+    print("Photo count and turn count move together -- every photo is one more")
+    print("image-opening turn: " + ", ".join(f"{a} photos = {t} turns"
+                                            for a, t in turns_by_arm.items()) + ".")
+    print("So a difference between the groups is 'more photos in a longer transcript'")
+    print("versus fewer in a shorter one -- not the photo count alone.")
     print("=" * 100)
     hdr = (f"{'photos':>7} {'turns':>6} {'n':>4} {'words':>6} {'distinct':>9} "
            f"{'wrapper':>8} {'opinion':>8} {'refusal':>8} {'judge L':>8} {'judge R':>8} "
@@ -423,6 +443,37 @@ def phase_report() -> None:
             cellrow.append(f"{len({t for t in texts if t})}/{len(qs)}".rjust(7))
         print(f"{arm:>7}  " + "  ".join(cellrow))
 
+    # --- pooled across groups -------------------------------------------------
+    # The `distinct` column above is computed inside one photo-count group, so a
+    # near-duplicate in another group is invisible to it. Round 17 showed that
+    # mattering: the 3-photo and 10-photo left-looking answers to m01 differed by
+    # two words, from different personas with seven more photos, while both groups
+    # scored 31/32 distinct. A dose curve over photo count is not worth reading if
+    # the answers barely respond to the persona at all, so this block is a
+    # correctness guard on the numbers above rather than a separate measure.
+    print()
+    print("--- distinctness POOLED across photo-count groups (the guard) ---")
+    print("    the `distinct` column above only looks inside one group; this looks")
+    print("    across all of them, per question, which is where a shared opener hides")
+    for q in QUESTION_IDS:
+        qs = [r for r in rows if r["question"] == q]
+        texts = [r.get("text") or "" for r in qs]
+        pooled = len({t for t in texts if t})
+        within = sum(len({(r.get("text") or "") for r in qs if r["arm"] == a and r.get("text")})
+                     for a in ARMS)
+        print(f"  {q}: pooled {pooled}/{len(qs)} distinct"
+              f"   vs {within}/{len(qs)} summed within groups"
+              f"{'   <-- duplicates ACROSS groups' if pooled < within else ''}")
+    all_texts = [r.get("text") or "" for r in rows if r.get("text")]
+    print(f"  all questions: pooled {len(set(all_texts))}/{len(all_texts)} distinct")
+    # The shared-opener count is the round-15 diagnostic: at short lengths the
+    # opener is most of the answer, so few openers means little room for a persona.
+    openers = collections.Counter(" ".join(t.split()[:8]) for t in all_texts)
+    print(f"  distinct 8-word openers: {len(openers)} across {len(all_texts)} answers")
+    for opener, count in openers.most_common(3):
+        if count > 1:
+            print(f"    {count:>3}x  \"{opener}...\"")
+
     if len(cells) == len(ARMS):
         a, b = ARMS[0], ARMS[-1]
         print()
@@ -431,8 +482,8 @@ def phase_report() -> None:
                           ("refusals (n)", "refusal"),
                           ("median words", "words"),
                           ("wrappers (n)", "wrapper")):
-            print(f"  {name:<18} {a} photos: {cells[a][key]:<6} "
-                  f"{b} photos: {cells[b][key]}")
+            row = "   ".join(f"{arm_n} photos: {cells[arm_n][key]}" for arm_n in ARMS)
+            print(f"  {name:<18} {row}")
         sa, sb = cells[a]["sep"], cells[b]["sep"]
         if sa is not None and sb is not None:
             def _se(arm_key: int) -> str:
@@ -440,14 +491,32 @@ def phase_report() -> None:
                 # synthetic data and would otherwise crash the whole report.
                 r = cells[arm_key]["se_ratio"]
                 return f"{r:+.2f} SE" if r is not None else "SE undefined (no spread)"
-            print(f"  {'judge separation':<18} {a} photos: {sa:+.3f} "
-                  f"({_se(a)})   {b} photos: {sb:+.3f} ({_se(b)})")
+            row = "   ".join(
+                f"{arm_n} photos: {cells[arm_n]['sep']:+.3f} ({_se(arm_n)})"
+                for arm_n in ARMS if cells[arm_n]["sep"] is not None)
+            print(f"  {'judge separation':<18} {row}")
+            # Is the middle group between the ends, or outside them? Outside is
+            # evidence that noise dominates this axis rather than a dose curve.
+            seps = [cells[arm_n]["sep"] for arm_n in ARMS
+                    if cells[arm_n]["sep"] is not None]
+            if len(seps) >= 3:
+                mid = seps[1:-1]
+                lo, hi = min(seps[0], seps[-1]), max(seps[0], seps[-1])
+                outside = [v for v in mid if not lo <= v <= hi]
+                if outside:
+                    print(f"  -> the middle group falls OUTSIDE the two ends "
+                          f"({outside}): not a dose curve, noise dominating")
+                else:
+                    print(f"  -> the middle group falls between the ends: consistent "
+                          f"with a weak monotone trend, but see the error bars")
             print()
-            print("  Read this against the plan phase's contrast gap. With 32 answers")
-            print("  per arm the error bar is about the size of the effect, so neither")
-            print("  arm can be called significant on its own and the DIFFERENCE")
-            print("  between arms is even less resolvable. Treat a sign flip as noise")
-            print("  unless the plan gaps were comparable and the shift is large.")
+            n_each = cells[ARMS[0]]["n"]
+            print(f"  Read this against the plan phase's photo-score contrast gaps.")
+            print(f"  With {n_each} answers per photo-count group the error bar is about")
+            print(f"  the size of the effect, so no group is significant on its own and")
+            print(f"  the DIFFERENCES between groups are less resolvable still. Treat a")
+            print(f"  sign flip or a non-monotone middle as noise unless the contrast")
+            print(f"  gaps were comparable and the shift is large.")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
