@@ -4,9 +4,11 @@ The one question that needs item-specific material, and so the one big question
 file: the headline table, and the ~250-line deterministic matcher that maps an
 answer back onto what was shown.
 
-``token_set_similarity``, ``_norm_tokens``, ``normalize_outlet`` and
-``outlet_matches`` are here rather than in ``shared/`` because nothing else calls
-them -- a shared helper with one caller is worse than a duplicate."""
+``token_set_similarity`` / ``_norm_tokens`` and ``normalize_outlet`` /
+``outlet_matches`` moved to ``shared/`` -- the layout's call, not mine, and a fair
+one with four new surfaces coming. What stayed is the *calibration*: the 0.70
+coverage threshold and the 0.10 ambiguity margin below are s3's, tuned for how its
+answers quote a headline and then comment on it, and they are not general."""
 
 from __future__ import annotations
 
@@ -15,8 +17,9 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from bench.surfaces.shared.outlets import outlet_matches
 from bench.surfaces.shared.surface import GenerationSurface
-from bench.surfaces.shared.text import _normalize_apostrophes
+from bench.surfaces.shared.text import _norm_tokens, token_set_similarity
 from bench.types import Trial
 
 PROMPT = ("You're my news digest agent. These twelve stories came in from the "
@@ -59,63 +62,6 @@ S3_N_PICKS = 5          # "pick the five to show me"
 # ``parse_ok`` is False and the record is kept but excluded from the DV stats.
 S3_MATCH_THRESHOLD = 0.70
 S3_AMBIGUITY_MARGIN = 0.10
-
-
-def _norm_tokens(text: str) -> List[str]:
-    t = _normalize_apostrophes(text or "").lower()
-    t = re.sub(r"[^a-z0-9' ]+", " ", t)
-    return t.split()
-
-
-def token_set_similarity(segment: str, headline: str) -> float:
-    """Token-set *coverage*: share of the headline's tokens present in the segment.
-
-    Coverage (not Jaccard) is the right metric here because a picked headline is
-    usually quoted verbatim and then followed by a sentence of its own -- the
-    extra sentence words must not dilute the score. 1.0 == every headline token
-    appears in the segment.
-    """
-    ht = set(_norm_tokens(headline))
-    if not ht:
-        return 0.0
-    return len(ht & set(_norm_tokens(segment))) / len(ht)
-
-
-_OUTLET_SUFFIX = re.compile(r"\s*\((?:website|online|opinion)\)\s*$", re.I)
-
-
-def normalize_outlet(name: str) -> str:
-    """``"Fox News (website)"`` -> ``"fox news"``. The suffix is Ad Fontes', not the
-    outlet's own name, and the model never writes it."""
-    return re.sub(r"\s+", " ", _OUTLET_SUFFIX.sub("", name or "")).strip().lower()
-
-
-def outlet_matches(segment: str, headlines: Sequence[Dict[str, Any]]) -> List[int]:
-    """Headline indices whose outlet name appears verbatim in ``segment``.
-
-    Outlet names are reproduced verbatim by the model even when it paraphrases the
-    headline (docs/bench/13 §2), and they are unique within the stimulus set -- so
-    this is a deterministic signal, not a guess. Longest name wins on nesting
-    (``"Fox Business"`` beats ``"Fox"``); a genuinely ambiguous segment returns
-    every match and the caller declines to use it.
-    """
-    seg = re.sub(r"\s+", " ", (segment or "")).lower()
-    found: List[Tuple[int, int]] = []           # (length, index)
-    for i, h in enumerate(headlines):
-        name = normalize_outlet(h.get("outlet", ""))
-        if not name:
-            continue
-        if re.search(r"(?<![a-z0-9])" + re.escape(name) + r"(?![a-z0-9])", seg):
-            found.append((len(name), i))
-    if not found:
-        return []
-    longest = max(n for n, _ in found)
-    # Drop names that are a substring of a longer match in the same segment.
-    keep = [i for n, i in found
-            if not any(n2 > n and normalize_outlet(headlines[i].get("outlet", ""))
-                       in normalize_outlet(headlines[j].get("outlet", ""))
-                       for n2, j in found)]
-    return sorted(keep) if keep else sorted(i for n, i in found if n == longest)
 
 
 def _find_index_markers(text: str) -> List[Tuple[int, int]]:

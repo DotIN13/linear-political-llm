@@ -3,8 +3,8 @@
 ``bench/surfaces/generation.py`` was 1,143 lines: six unrelated questions plus all
 the machinery they share. It is now
 
-    bench/surfaces/shared/      conditions, ordering, refusal, text, transcript,
-                                surface
+    bench/surfaces/shared/      conditions, ordering, outlets, refusal, text,
+                                transcript, surface
     bench/surfaces/questions/   one file per question
     bench/surfaces/registry.py  TASK_PROMPTS, SURFACE_IDS, _make, register_all
 
@@ -60,7 +60,10 @@ That order goes into ``variant["order"]`` so two orders never collide on one
 from __future__ import annotations
 
 from bench.surfaces.shared.text import (  # noqa: F401
-    _normalize_apostrophes, word_count,
+    _norm_tokens, _normalize_apostrophes, token_set_similarity, word_count,
+)
+from bench.surfaces.shared.outlets import (  # noqa: F401
+    _OUTLET_SUFFIX, normalize_outlet, outlet_matches,
 )
 from bench.surfaces.shared.refusal import (  # noqa: F401
     REFUSAL_WINDOW, _REFUSAL_PATTERNS, _refusal_match, detect_refusal,
@@ -86,9 +89,7 @@ from bench.surfaces.questions.s1_speech import (  # noqa: F401
 )
 from bench.surfaces.questions.s3_digest import (  # noqa: F401
     ROOT_DIR, S3_AMBIGUITY_MARGIN, S3_HEADLINES_PATH, S3_MATCH_THRESHOLD, S3_N_PICKS,
-    _OUTLET_SUFFIX, _S3Surface, _find_index_markers, _norm_tokens, _split_segments,
-    extract_picks, load_s3_headlines, normalize_outlet, outlet_matches,
-    token_set_similarity,
+    _S3Surface, _find_index_markers, _split_segments, extract_picks, load_s3_headlines,
 )
 from bench.surfaces.questions.s5_letter import (  # noqa: F401
     TOPIC_KEYWORDS, TOPIC_LEAN, _S5Surface, extract_topic,
