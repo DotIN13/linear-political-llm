@@ -124,7 +124,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
         if args.candidates and cap.ok:
             item = items[0] if items else baseline_item()
-            condition = args.condition if items else "E"
+            condition = args.condition if items else "no_photos"
             cand = check_candidates(surface, adaptor, item=item,
                                     condition=condition,
                                     variant={"phrasing": args.phrasing, "order": args.order})
@@ -788,7 +788,7 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 # --------------------------------------------------------------------------- #
 def parse_constraints(specs: Optional[Sequence[str]]) -> List[Any]:
-    """['variant.phrasing=0', 'condition=C'] -> [(path, value), ...].
+    """['variant.phrasing=0', 'condition=photos'] -> [(path, value), ...].
 
     A dotted path and a string comparison. Deliberately not a query language:
     the point is only to pull one variant, or one condition, back out of a run.
@@ -879,7 +879,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="capability gate only; does not load the model")
     p.add_argument("--items", default=None,
                    help="probe with the first item of this file instead of a synthetic no-image one")
-    p.add_argument("--condition", default="C", help="condition used with --items")
+    p.add_argument("--condition", default="photos", help="condition used with --items")
     p.add_argument("--phrasing", type=int, default=0)
     p.add_argument("--order", default="ab", choices=["ab", "ba"])
     p.add_argument("--model", default=None)
@@ -913,7 +913,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("run", help="the only step that touches a GPU or the network")
     p.add_argument("--items", required=True)
     p.add_argument("--surface", required=True, help="comma separated")
-    p.add_argument("--conditions", default="C")
+    p.add_argument("--conditions", default="photos")
     p.add_argument("--variant", action="append", default=None,
                    help="narrow the surface's declared variant space, e.g. --variant phrasing=0 "
                         "(repeatable; without it every declared variant runs)")

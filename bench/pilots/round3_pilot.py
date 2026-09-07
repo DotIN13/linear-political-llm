@@ -270,9 +270,9 @@ def phase_analyze(run_dir: str) -> None:
 
     # --- stratum -> s_pre / s_gen ---
     gen = [r for r in trials if r.get("probe") and r["probe"].get("s_pre") is not None
-           and r.get("condition") == "C"]
+           and r.get("condition") == "photos"]
     base = [r for r in trials if r.get("probe") and r["probe"].get("s_pre") is not None
-            and r.get("condition") == "E"]
+            and r.get("condition") == "no_photos"]
 
     lines.append("## stratum -> s_pre / s_gen (spearman, condition C)\n")
     lines.append("| surface | scheme | rho(stratum, s_pre) | rho(stratum, s_gen) | n |")

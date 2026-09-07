@@ -63,8 +63,11 @@ def test_plan_is_300_trials_shaped_as_the_design_says():
                               __import__("collections").Counter(
                                   (p["surface"], p["scheme"], p["arm"]) for p in plan).items()}
     arms = __import__("collections").Counter(p["arm"] for p in plan)
-    assert arms["A"] == 252 and arms["C"] == 48
-    assert arms["P"] == 0 and arms["R"] == 0
+    # arm names, not letters: "main" is the photos arm, "baseline" the no-photo
+    # one. The prefill-contrast arms that used to be called P and R are gone.
+    assert arms["main"] == 252 and arms["baseline"] == 48
+    # the two prefill-contrast arms, historically "P" and "R", are gone
+    assert arms.get("P", 0) == 0 and arms.get("R", 0) == 0
 
 
 def test_prefill_follows_the_surface_not_the_scheme():
@@ -195,7 +198,7 @@ def test_the_prefill_contrast_arms_are_gone():
     assert not [e for e in plan if e["arm"] in ("P", "R")]
     surface = r9.registry.get_surface("s1_speech")()
     with pytest.raises(ValueError, match="no longer a handle"):
-        surface.build(Item.from_dict(_items()[0]), "C", {"scheme": "chat", "prefill": "off"})
+        surface.build(Item.from_dict(_items()[0]), "photos", {"scheme": "chat", "prefill": "off"})
 
 
 def test_the_smoke_slice_reaches_every_surface():

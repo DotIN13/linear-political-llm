@@ -107,7 +107,7 @@ def test_one_variant_per_message_per_scheme():
 def test_the_message_reaches_the_last_turn_verbatim():
     s = _surface()
     row = next(r for r in s.messages() if r["mid"] == "m03")
-    trial = s.build(_item(), "C", {"scheme": "chat", "question": "m03"})
+    trial = s.build(_item(), "photos", {"scheme": "chat", "question": "m03"})
     last = trial.conversation.messages[-1]["content"][0]["text"]
     assert row["message"] in last
     # The three clauses added after round 15, each fixing a measured cause of the
@@ -119,7 +119,7 @@ def test_the_message_reaches_the_last_turn_verbatim():
 
 
 def test_trial_records_which_message_it_was():
-    trial = _surface().build(_item(), "C", {"scheme": "chat", "question": "m08"})
+    trial = _surface().build(_item(), "photos", {"scheme": "chat", "question": "m08"})
     ds = trial.meta["dataset"]
     assert ds["mid"] == "m08"
     assert ds["domain"] == "foreign"
@@ -132,14 +132,14 @@ def test_both_schemes_ask_the_same_question():
     """Only the surrounding conversation differs between chat and agentic. If the
     question text itself drifted, the two schemes would not be comparable."""
     s = _surface()
-    chat = s.build(_item(), "C", {"scheme": "chat", "question": "m05"})
-    agentic = s.build(_item(), "C", {"scheme": "agentic", "question": "m05"})
+    chat = s.build(_item(), "photos", {"scheme": "chat", "question": "m05"})
+    agentic = s.build(_item(), "photos", {"scheme": "agentic", "question": "m05"})
     assert chat.meta["question"] == agentic.meta["question"]
     assert len(agentic.conversation.messages) > len(chat.conversation.messages)
 
 
 def test_no_image_control_drops_the_pixels_and_is_item_invariant():
-    trial = _surface().build(_item(), "E", {"scheme": "chat", "question": "m01"})
+    trial = _surface().build(_item(), "no_photos", {"scheme": "chat", "question": "m01"})
     assert trial.conversation.images == []
     assert trial.meta["item_invariant"] is True
 

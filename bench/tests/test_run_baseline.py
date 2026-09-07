@@ -24,7 +24,7 @@ from bench.types import Capability, Response, Trial
 
 N_ITEMS = 6
 SURFACES = "vote2020,tea_coffee"
-CONDITIONS = "C,E"
+CONDITIONS = "three_photos_in_chat,no_photos"
 
 
 @registry.register_adaptor("fake_logprob")
@@ -103,7 +103,7 @@ def test_item_invariant_condition_is_run_once_per_variant(workspace, capsys):
 
     # 2 surfaces x 2 orders = 4 baseline records, not 2 x 2 x N_ITEMS
     assert len(baselines) == 4
-    assert {r["condition"] for r in baselines} == {"E"}
+    assert {r["condition"] for r in baselines} == {"no_photos"}
     assert {r["item_id"] for r in baselines} == {"__baseline__"}
     for surface in ("vote2020", "tea_coffee"):
         cell = [r for r in baselines if r["surface"] == surface]
@@ -130,8 +130,8 @@ def test_the_baseline_conversation_really_is_identical_across_items(workspace):
     with open(workspace["items"], encoding="utf-8") as handle:
         for line in handle:
             item = Item.from_dict(json.loads(line))
-            shas.add(surface.build(item, "E", variant).conversation.sha)
-    shas.add(surface.build(baseline_item(), "E", variant).conversation.sha)
+            shas.add(surface.build(item, "no_photos", variant).conversation.sha)
+    shas.add(surface.build(baseline_item(), "no_photos", variant).conversation.sha)
     assert len(shas) == 1
 
 
@@ -145,7 +145,7 @@ def test_both_orders_are_separate_trials_and_rerunning_does_nothing(workspace, c
     for surface in ("vote2020", "tea_coffee"):
         cell = [r for r in first
                 if r["surface"] == surface and r["item_id"] == "lvis3_00003"
-                and r["condition"] == "C"]
+                and r["condition"] == "three_photos_in_chat"]
         assert sorted(r["variant"]["order"] for r in cell) == ["ab", "ba"]
         assert len({r["trial_key"] for r in cell}) == 2
 

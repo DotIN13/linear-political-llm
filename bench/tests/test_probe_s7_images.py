@@ -42,7 +42,7 @@ def test_questions_are_round_16s_so_they_are_not_a_new_variable():
 @pytest.mark.parametrize("n", [1, 2, 3, 5, 10])
 def test_every_photo_attached_exactly_once_in_order(n):
     paths = [f"/p/{i}.jpg" for i in range(n)]
-    msgs, tools = build_scheme_messages("agentic", paths, "Q", n)
+    msgs, tools = build_scheme_messages("agentic", paths, "no_photos", n)
     seen = [part["image"] for m in msgs for part in (m.get("content") or [])
             if isinstance(part, dict) and part.get("type") == "image"]
     assert seen == paths, "pixels must appear once each, in the item's own order"
@@ -54,7 +54,7 @@ def test_every_viewed_file_is_opened_from_the_dir_it_was_listed_in(n):
     """A file opened from a path it was never listed under is an inconsistent
     transcript -- the model would be reading a directory that does not contain it."""
     files = files_by_dir(n)
-    msgs, _ = build_scheme_messages("agentic", ["x"] * n, "Q", n)
+    msgs, _ = build_scheme_messages("agentic", ["x"] * n, "no_photos", n)
     opened, listed = [], []
     for m in msgs:
         for call in (m.get("tool_calls") or []):
@@ -79,13 +79,13 @@ def test_three_photos_is_unchanged_from_before_the_change():
     numbers stop being comparable with this probe's 3-photo arm."""
     assert files_by_dir(3) == [("/memory/hometown", ["img_0417.jpg", "img_0903.jpg"]),
                               ("/memory/preferences", ["img_3011.jpg"])]
-    msgs, _ = build_scheme_messages("agentic", ["a", "b", "c"], "Q", 3)
+    msgs, _ = build_scheme_messages("agentic", ["a", "b", "c"], "no_photos", 3)
     assert len(msgs) == 13
 
 
 def test_ten_photos_costs_turns_and_the_probe_says_so():
     """Photo count and turn count are inseparable here; it must be documented."""
-    turns = {n: len(build_scheme_messages("agentic", ["x"] * n, "Q", n)[0])
+    turns = {n: len(build_scheme_messages("agentic", ["x"] * n, "no_photos", n)[0])
              for n in P.ARMS}
     assert turns == {3: 13, 5: 17, 10: 27}, turns
     # strictly increasing, so the confound cannot be waved away as "roughly equal"
@@ -111,7 +111,7 @@ def test_pool_is_fixed_strings_not_generated():
 
 
 def test_baseline_keeps_the_file_count_when_pixels_are_dropped():
-    msgs, _ = build_scheme_messages("agentic", [], "Q", 10)
+    msgs, _ = build_scheme_messages("agentic", [], "no_photos", 10)
     imgs = [p for m in msgs for p in (m.get("content") or [])
             if isinstance(p, dict) and p.get("type") == "image"]
     assert imgs == [], "condition E must carry no pixels"

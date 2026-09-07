@@ -11,11 +11,11 @@ from bench.store import (
 from bench.types import Conversation, canonical_variant
 
 VARIANT = {"phrasing": 0, "order": "ab"}
-ARGS = ("vote2020", "lvis3_00001", "C", VARIANT, "local_hf", "Qwen3-VL-8B-Instruct", 42, "a1b2c3d4e5f6")
+ARGS = ("vote2020", "lvis3_00001", "photos", VARIANT, "local_hf", "Qwen3-VL-8B-Instruct", 42, "a1b2c3d4e5f6")
 
 
 def _record(key, **extra):
-    payload = {"trial_key": key, "surface": "vote2020", "condition": "C",
+    payload = {"trial_key": key, "surface": "vote2020", "condition": "photos",
                "item_id": "lvis3_00001", "decile": 3,
                "outcome": {"kind": "logprob_diff", "value": 1.0, "extra": {}},
                "probe": {"s_txt": 0.2, "s_img": 0.4}}
@@ -41,7 +41,7 @@ def test_trial_key_is_stable_and_sensitive():
 def test_variant_is_in_the_key_so_rephrasings_do_not_collide():
     """Without this, three rewordings of one question overwrite each other."""
     def key(variant):
-        return trial_key("vote2020", "lvis3_00001", "C", variant,
+        return trial_key("vote2020", "lvis3_00001", "photos", variant,
                          "local_hf", "m", 42, "rev123456789")
 
     keys = [key({"phrasing": p, "order": o}) for p in (0, 1, 2) for o in ("ab", "ba")]
@@ -51,24 +51,24 @@ def test_variant_is_in_the_key_so_rephrasings_do_not_collide():
 
 
 def test_variant_key_is_canonical_not_insertion_ordered():
-    a = trial_key("s", "i", "C", {"order": "ab", "phrasing": 0}, "ad", "m", 42, "rev1")
-    b = trial_key("s", "i", "C", {"phrasing": 0, "order": "ab"}, "ad", "m", 42, "rev1")
+    a = trial_key("s", "i", "photos", {"order": "ab", "phrasing": 0}, "ad", "m", 42, "rev1")
+    b = trial_key("s", "i", "photos", {"phrasing": 0, "order": "ab"}, "ad", "m", 42, "rev1")
     assert a == b, "dict insertion order must not change the key"
 
 
 def test_empty_variant_has_a_determinate_form():
     assert canonical_variant({}) == "{}"
     assert canonical_variant(None) == "{}"
-    assert (trial_key("s", "i", "C", {}, "ad", "m", 42, "rev1")
-            == trial_key("s", "i", "C", None, "ad", "m", 42, "rev1"))
+    assert (trial_key("s", "i", "photos", {}, "ad", "m", 42, "rev1")
+            == trial_key("s", "i", "photos", None, "ad", "m", 42, "rev1"))
     # but the empty variant is still a different trial from a filled one
-    assert (trial_key("s", "i", "C", {}, "ad", "m", 42, "rev1")
-            != trial_key("s", "i", "C", VARIANT, "ad", "m", 42, "rev1"))
+    assert (trial_key("s", "i", "photos", {}, "ad", "m", 42, "rev1")
+            != trial_key("s", "i", "photos", VARIANT, "ad", "m", 42, "rev1"))
 
 
 def test_variant_must_be_a_dict():
     with pytest.raises(TypeError):
-        trial_key("s", "i", "C", "phrasing=0", "ad", "m", 42, "rev1")
+        trial_key("s", "i", "photos", "phrasing=0", "ad", "m", 42, "rev1")
 
 
 # --- task D: measurement_rev, not git HEAD ---------------------------------- #
@@ -146,7 +146,7 @@ def test_append_dedups_within_one_store(tmp_path):
 
 def test_resume_across_restart(tmp_path):
     run_dir, conv_dir = str(tmp_path / "run"), str(tmp_path / "conv")
-    keys = [trial_key("vote2020", f"item{i}", "C", VARIANT, "local_hf", "m", 42, "rev")
+    keys = [trial_key("vote2020", f"item{i}", "photos", VARIANT, "local_hf", "m", 42, "rev")
             for i in range(5)]
 
     first = RunStore(run_dir=run_dir, conversations_dir=conv_dir)

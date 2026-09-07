@@ -106,14 +106,14 @@ def build_plan(items: Sequence[Dict[str, Any]], reps: int = DEFAULT_REPS) -> Lis
                     variant = {"scheme": scheme, "question": qid, "rep": rep}
                     for row in items:
                         item = Item.from_dict(row)
-                        trial = surface.build(item, "C", dict(variant), seed=SEED)
-                        plan.append(_entry(trial, sid, "C", scheme, qid, rep, row, item))
+                        trial = surface.build(item, "photos", dict(variant), seed=SEED)
+                        plan.append(_entry(trial, sid, "photos", scheme, qid, rep, row, item))
                     # The no-photo baseline is item-invariant: identical text for
                     # every persona, so it runs once per cell rather than 18 times.
                     blank = Item(item_id="no_image", images=[], image_paths=[],
                                  image_scores=[], stratum=-1)
-                    trial = surface.build(blank, "E", dict(variant), seed=SEED)
-                    plan.append(_entry(trial, sid, "E", scheme, qid, rep,
+                    trial = surface.build(blank, "no_photos", dict(variant), seed=SEED)
+                    plan.append(_entry(trial, sid, "no_photos", scheme, qid, rep,
                                        {"bucket": "none"}, blank))
     return plan
 
@@ -326,7 +326,7 @@ def _summarise(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     cells = []
     by_cell: Dict[Any, List[Dict[str, Any]]] = defaultdict(list)
     for rec in records:
-        if rec["condition"] != "C":
+        if rec["condition"] != "photos":
             continue
         by_cell[(rec["surface"], rec["scheme"], rec["bucket"])].append(rec)
     for (surface, scheme, bucket), group in sorted(by_cell.items()):
@@ -342,7 +342,7 @@ def _summarise(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     baseline = []
     by_base: Dict[Any, List[Dict[str, Any]]] = defaultdict(list)
     for rec in records:
-        if rec["condition"] == "E":
+        if rec["condition"] == "no_photos":
             by_base[(rec["surface"], rec["scheme"])].append(rec)
     for (surface, scheme), group in sorted(by_base.items()):
         vals = [(g["judge"] or {}).get("political") for g in group]

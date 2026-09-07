@@ -34,12 +34,12 @@ OTHER = Item(item_id="lvis3_09999", images=["x.jpg"], image_paths=["/tmp/x.jpg"]
 REV = "a1b2c3d4e5f6"
 
 
-def _prefix_sha(surface, item, scheme, condition="C"):
+def _prefix_sha(surface, item, scheme, condition="photos"):
     trial = surface.build(item, condition, {"scheme": scheme})
     return sha256_of(trial.conversation.messages[:-1])
 
 
-def _question_sha(surface, item, scheme, condition="C"):
+def _question_sha(surface, item, scheme, condition="photos"):
     trial = surface.build(item, condition, {"scheme": scheme})
     return sha256_of(trial.conversation.messages[-1])
 
@@ -78,7 +78,7 @@ def test_generation_surface_shape(sid):
         assert surface.prefill_text is None
     assert surface.max_new_tokens > 0
     assert [p.name for p in surface.probe_points(None)] == ["s_pre", "s_gen", "s_img"]
-    assert surface.conditions == ["C", "Q", "E"]
+    assert surface.conditions == ["photos", "no_photos"]
 
 
 def test_no_silent_degradation_on_a_probe_less_backend():
@@ -138,7 +138,7 @@ def test_no_political_word_in_prompt_or_framing(scheme):
     for sid in SURFACE_IDS:
         surface = registry.get_surface(sid)()
         assert not any(w in surface.prompt.lower() for w in banned), f"{sid} prompt leaked a political word"
-        trial = surface.build(ITEM, "C", {"scheme": scheme})
+        trial = surface.build(ITEM, "photos", {"scheme": scheme})
         prefix_text = " ".join(p["text"] for m in trial.conversation.messages[:-1]
                                for p in m["content"] if p.get("type") == "text").lower()
         for word in banned:
@@ -148,8 +148,8 @@ def test_no_political_word_in_prompt_or_framing(scheme):
 def test_scheme_changes_the_trial_key():
     """Acceptance #3a: changing only the scheme must change the key."""
     for sid in SURFACE_IDS:
-        k_chat = trial_key(sid, ITEM.item_id, "C", {"scheme": "chat"}, "local_hf", "m", 42, REV)
-        k_agent = trial_key(sid, ITEM.item_id, "C", {"scheme": "agentic"}, "local_hf", "m", 42, REV)
+        k_chat = trial_key(sid, ITEM.item_id, "photos", {"scheme": "chat"}, "local_hf", "m", 42, REV)
+        k_agent = trial_key(sid, ITEM.item_id, "photos", {"scheme": "agentic"}, "local_hf", "m", 42, REV)
         assert k_chat != k_agent
 
 
@@ -157,18 +157,18 @@ def test_s3_headline_order_changes_the_trial_key():
     """Acceptance #3b: changing only s3's headline order must change the key."""
     order_a = list(range(12))
     order_b = list(reversed(range(12)))
-    k_a = trial_key("s3_digest", ITEM.item_id, "C", {"scheme": "chat", "order": order_a},
+    k_a = trial_key("s3_digest", ITEM.item_id, "photos", {"scheme": "chat", "order": order_a},
                     "local_hf", "m", 42, REV)
-    k_b = trial_key("s3_digest", ITEM.item_id, "C", {"scheme": "chat", "order": order_b},
+    k_b = trial_key("s3_digest", ITEM.item_id, "photos", {"scheme": "chat", "order": order_b},
                     "local_hf", "m", 42, REV)
     assert k_a != k_b
 
 
 def test_s3_order_is_deterministic_per_item_and_differs_across_items():
     surface = registry.get_surface("s3_digest")()
-    a = surface.build(ITEM, "C", {"scheme": "chat"}).variant["order"]
-    a_again = surface.build(ITEM, "C", {"scheme": "chat"}).variant["order"]
-    b = surface.build(OTHER, "C", {"scheme": "chat"}).variant["order"]
+    a = surface.build(ITEM, "photos", {"scheme": "chat"}).variant["order"]
+    a_again = surface.build(ITEM, "photos", {"scheme": "chat"}).variant["order"]
+    b = surface.build(OTHER, "photos", {"scheme": "chat"}).variant["order"]
     assert a == a_again, "the order must be reproducible for resume/dedup"
     assert a != b, "different items must get different orders"
     # A sample of the 24-story pool, not a permutation of it: 12 shown, one side
@@ -179,10 +179,10 @@ def test_s3_order_is_deterministic_per_item_and_differs_across_items():
 
 def test_s3_order_depends_on_item_and_seed():
     surface = registry.get_surface("s3_digest")()
-    a = surface.build(ITEM, "C", {"scheme": "chat"}, seed=42).variant["order"]
-    a_same = surface.build(ITEM, "C", {"scheme": "chat"}, seed=42).variant["order"]
-    a_diff = surface.build(ITEM, "C", {"scheme": "chat"}, seed=43).variant["order"]
-    b = surface.build(OTHER, "C", {"scheme": "chat"}, seed=42).variant["order"]
+    a = surface.build(ITEM, "photos", {"scheme": "chat"}, seed=42).variant["order"]
+    a_same = surface.build(ITEM, "photos", {"scheme": "chat"}, seed=42).variant["order"]
+    a_diff = surface.build(ITEM, "photos", {"scheme": "chat"}, seed=43).variant["order"]
+    b = surface.build(OTHER, "photos", {"scheme": "chat"}, seed=42).variant["order"]
     assert a == a_same
     assert a != a_diff, "same item + different seed must give a different order"
     assert a != b
@@ -212,30 +212,39 @@ def test_s3_attribution_hidden_drops_the_outlet():
         assert f"{i}. {h['headline']}" in hidden
 
 
-def test_condition_e_is_item_invariant_except_s3():
+def test_no_photos_is_item_invariant_except_the_news_ranking():
     for sid in SURFACE_IDS:
         surface = registry.get_surface(sid)()
         expected = sid != "s3_digest"     # s3 shuffles headlines per item
-        assert surface.is_item_invariant("E") is expected
-        assert surface.is_item_invariant("C") is False
+        assert surface.is_item_invariant("no_photos") is expected
+        assert surface.is_item_invariant("photos") is False
 
 
-def test_condition_e_drops_images_but_keeps_the_words():
+def test_the_no_photo_condition_drops_the_whole_framing():
+    """This used to assert the opposite -- that the baseline kept the identical
+    text and lost only the pixels. That was the old `E`, and keeping the text was
+    exactly the problem with it: the model was still told these were someone's
+    photos. The baseline now keeps the question and drops everything else."""
     surface = registry.get_surface("s1_speech")()
     for scheme in ("chat", "agentic"):
-        c = surface.build(ITEM, "C", {"scheme": scheme}).conversation
-        e = surface.build(ITEM, "E", {"scheme": scheme}).conversation
-        assert c.images != [] and e.images == []
-        texts_c = [p["text"] for m in c.messages for p in m["content"] if p.get("type") == "text"]
-        texts_e = [p["text"] for m in e.messages for p in m["content"] if p.get("type") == "text"]
-        assert texts_c == texts_e, "no-image baseline keeps the identical text"
+        shown = surface.build(ITEM, "photos", {"scheme": scheme}).conversation
+        bare = surface.build(ITEM, "no_photos", {"scheme": scheme}).conversation
+        assert shown.images != [] and bare.images == []
+        assert len(bare.messages) == 1, "the baseline is one turn"
+        texts_shown = [p["text"] for m in shown.messages for p in m["content"]
+                       if p.get("type") == "text"]
+        texts_bare = [p["text"] for m in bare.messages for p in m["content"]
+                      if p.get("type") == "text"]
+        assert texts_bare != texts_shown, "the framing must be gone, not just the pixels"
+        # and what survives is exactly the question the shown condition ends on
+        assert texts_bare == [texts_shown[-1]]
 
 
 def test_every_message_content_is_a_list():
     """docs/bench/08: a str content crashes transformers' visual scan."""
     for sid in SURFACE_IDS:
         for scheme in ("chat", "agentic"):
-            trial = registry.get_surface(sid)().build(ITEM, "C", {"scheme": scheme})
+            trial = registry.get_surface(sid)().build(ITEM, "photos", {"scheme": scheme})
             for message in trial.conversation.messages:
                 assert isinstance(message["content"], list), (sid, scheme, message["role"])
 
@@ -292,7 +301,7 @@ def test_extract_mentions_politics():
 def test_extract_returns_an_outcome_with_deterministic_fields():
     surface = registry.get_surface("s6_describe")()
     outcome = surface.extract(Response(text="They are civic-minded and kind."),
-                              surface.build(ITEM, "C", {"scheme": "chat"}))
+                              surface.build(ITEM, "photos", {"scheme": "chat"}))
     assert outcome.kind == "generation"
     assert outcome.extra["word_count"] == 5
     assert outcome.extra["refusal"] is False
@@ -351,19 +360,19 @@ def test_a_pinned_order_wins_over_the_seeded_shuffle():
                 image_paths=["a.jpg", "b.jpg", "c.jpg"],
                 image_scores=[-0.5, -0.5, -0.6], stratum=0)
 
-    fwd = s3.build(item, "C", {"scheme": "chat"}, seed=42)
+    fwd = s3.build(item, "photos", {"scheme": "chat"}, seed=42)
     order = list(fwd.variant["order"])
     assert len(order) == 12 and len(set(order)) == 12
 
-    rev = s3.build(item, "C", {"scheme": "chat", "order": list(reversed(order)),
+    rev = s3.build(item, "photos", {"scheme": "chat", "order": list(reversed(order)),
                                "order_arm": "rev"}, seed=42)
     assert rev.variant["order"] == list(reversed(order))
     # the headline at position 1 in fwd is at position 12 in rev -- that is the
     # whole point of the balance
     assert rev.variant["order"][-1] == order[0]
     # and the two are different trials, so they cannot collide on trial_key
-    assert trial_key("s3_digest", item.item_id, "C", fwd.variant, "vllm", "m", 42, "rev") != \
-           trial_key("s3_digest", item.item_id, "C", rev.variant, "vllm", "m", 42, "rev")
+    assert trial_key("s3_digest", item.item_id, "photos", fwd.variant, "vllm", "m", 42, "rev") != \
+           trial_key("s3_digest", item.item_id, "photos", rev.variant, "vllm", "m", 42, "rev")
 
 
 def test_a_surface_without_headlines_ignores_a_pinned_order():
@@ -371,7 +380,7 @@ def test_a_surface_without_headlines_ignores_a_pinned_order():
     s1 = registry.get_surface("s1_speech")()
     item = Item(item_id="i", images=["x.jpg"], image_paths=["a.jpg"],
                 image_scores=[0.1], stratum=5)
-    t = s1.build(item, "C", {"scheme": "chat", "order": [3, 2, 1]})
+    t = s1.build(item, "photos", {"scheme": "chat", "order": [3, 2, 1]})
     assert t.variant["order"] == [3, 2, 1]      # carried, but unused by the prompt
     assert "3" not in t.meta["question"]
 
@@ -456,100 +465,107 @@ def test_the_no_image_baseline_keeps_the_whole_story():
 
 
 # --------------------------------------------------------------------------- #
-# Condition Q: the question on its own. Added because condition E was being
-# described and used as "the baseline" when it is not the model's default
-# behaviour -- E keeps the whole transcript and withholds only the image bytes,
-# so the model is told these are someone's photos, opens three files and sees
-# nothing. Whatever that provokes is inside E. Q has no framing at all.
+# `no_photos`: the question on its own. It replaced a baseline that kept the
+# whole transcript and withheld only the image bytes -- the model was told these
+# were someone's photos, "opened" three files and saw nothing. Whatever that
+# provoked was inside every effect measured against it, and it was nobody's
+# default behaviour. This one has no framing at all.
 # --------------------------------------------------------------------------- #
-Q_SURFACES = ("s3_digest", "s7_family_chat", "s8_letter_answered")
+THREE_TASKS = ("s3_digest", "s7_family_chat", "s8_letter_answered")
 
 
-@pytest.mark.parametrize("name", Q_SURFACES)
-def test_q_is_the_bare_question_and_nothing_else(name):
+@pytest.mark.parametrize("name", THREE_TASKS)
+def test_no_photos_is_the_bare_question_and_nothing_else(name):
     surface = registry.get_surface(name)()
     variant = dict(surface.variants()[0])
-    trial = surface.build(ITEM, "Q", variant, seed=1)
+    trial = surface.build(ITEM, "no_photos", variant, seed=1)
     msgs = trial.conversation.messages
     # One turn, except where the task itself IS an exchange: the letter surface
     # asks what the issue is and is answered, and without that its question is
-    # only a bare concern string. Q removes the persona, not the task.
+    # only a bare concern string. The baseline removes the persona, not the task.
     expected = 3 if name == "s8_letter_answered" else 1
-    assert len(msgs) == expected, f"{name}: Q should be {expected} turn(s), got {len(msgs)}"
+    assert len(msgs) == expected, f"{name}: no_photos should be {expected} turn(s), got {len(msgs)}"
     assert msgs[0]["role"] == "user"
-    assert trial.meta["tools"] is None, "no tools are declared in Q"
+    assert trial.meta["tools"] is None, "no tools are declared without a persona"
     text = " ".join(p.get("text", "") for m in msgs for p in (m.get("content") or []))
     # none of the persona apparatus may survive
     for leak in ("/memory/", "img_0417", "photos from around where I live",
                  "Have a look through my stuff", "list_dir", "view_image",
                  "the usual week"):
-        assert leak not in text, f"{name}: Q leaked scaffolding: {leak!r}"
+        assert leak not in text, f"{name}: no_photos leaked scaffolding: {leak!r}"
     assert trial.conversation.images == []
     assert trial.meta["n_images"] == 0 and trial.meta["n_files"] == 0
 
 
-@pytest.mark.parametrize("name", Q_SURFACES)
-def test_q_asks_exactly_what_c_asks(name):
+@pytest.mark.parametrize("name", THREE_TASKS)
+def test_no_photos_asks_exactly_what_photos_asks(name):
     """The baseline has to be the same task, or it is not a baseline."""
     surface = registry.get_surface(name)()
     variant = dict(surface.variants()[0])
-    q = surface.build(ITEM, "Q", dict(variant), seed=1)
-    c = surface.build(ITEM, "C", dict(variant), seed=1)
+    q = surface.build(ITEM, "no_photos", dict(variant), seed=1)
+    c = surface.build(ITEM, "photos", dict(variant), seed=1)
     q_last = q.conversation.messages[-1]["content"]
     q_text = " ".join(p.get("text", "") for p in q_last)
     c_last = c.conversation.messages[-1]["content"]
     c_text = " ".join(p.get("text", "") for p in c_last) if isinstance(c_last, list) else str(c_last)
-    assert q_text.strip() == c_text.strip(), f"{name}: Q and C ask different questions"
+    assert q_text.strip() == c_text.strip(), f"{name}: the baseline asks a different question"
 
 
-@pytest.mark.parametrize("name", Q_SURFACES)
-def test_e_still_keeps_the_whole_transcript(name):
-    """E is retained deliberately -- it isolates the pixels from the story told
-    around them -- so it must keep every turn and every filename."""
-    surface = registry.get_surface(name)()
-    variant = dict(surface.variants()[0])
-    c = surface.build(ITEM, "C", dict(variant), seed=1)
-    e = surface.build(ITEM, "E", dict(variant), seed=1)
-    assert len(e.conversation.messages) == len(c.conversation.messages)
-    assert e.conversation.images == []
-    imgs = [p for m in e.conversation.messages for p in (m.get("content") or [])
-            if isinstance(p, dict) and p.get("type") == "image"]
-    assert imgs == [], "E must carry no pixels"
+def test_the_removed_pixels_only_condition_is_refused():
+    """`E` kept the whole transcript and dropped only the pixels. It is gone, and
+    it must not be silently aliased onto `no_photos` -- they are different
+    stimuli, and swapping one for the other would change what a number means
+    without anybody noticing."""
+    from bench.surfaces.generation import normalise_condition
+    with pytest.raises(ValueError, match="was removed"):
+        normalise_condition("E")
+    # the letter that did not change meaning still resolves, for the historical pilots
+    assert normalise_condition("C") == "photos"
+    assert normalise_condition("photos") == "photos"
 
-
-def test_both_baselines_run_once_per_cell_not_once_per_persona():
+def test_the_no_photo_condition_runs_once_per_question():
     surface = registry.get_surface("s7_family_chat")()
-    assert surface.is_item_invariant("Q") is True
-    assert surface.is_item_invariant("E") is True
-    assert surface.is_item_invariant("C") is False
+    assert surface.is_item_invariant("no_photos") is True
+    assert surface.is_item_invariant("no_photos") is True
+    assert surface.is_item_invariant("photos") is False
 
 
-def test_the_news_ranking_baselines_are_not_item_invariant():
+def test_the_news_ranking_baseline_is_not_item_invariant():
     """s3 re-deals per trial, so its baselines differ per deal and cannot be
     collapsed to one run per cell."""
     surface = registry.get_surface("s3_digest")()
-    assert surface.is_item_invariant("Q") is False
-    assert surface.is_item_invariant("E") is False
+    assert surface.is_item_invariant("no_photos") is False
+    assert surface.is_item_invariant("no_photos") is False
 
 
-def test_q_is_declared_and_described():
+def test_the_two_conditions_are_declared_and_described():
     from bench.surfaces.generation import CONDITION_DESC, CONDITIONS
-    assert CONDITIONS == ["C", "Q", "E"]
-    assert "no persona framing" in CONDITION_DESC["Q"]
+    assert CONDITIONS == ["photos", "no_photos"]
+    assert "no persona framing" in CONDITION_DESC["no_photos"]
 
 
-@pytest.mark.parametrize("name", Q_SURFACES)
-def test_q_is_the_same_prompt_under_both_schemes(name):
-    """Q has no scaffolding, so the conversation scheme cannot touch it. Running
-    Q under both schemes would be one trial recorded twice."""
+@pytest.mark.parametrize("name", THREE_TASKS)
+def test_no_photos_is_the_same_prompt_under_both_schemes(name):
+    """The no-photo condition has no scaffolding, so the conversation scheme
+    cannot touch it. Running
+    the no-photo condition under both schemes would record one trial twice."""
     surface = registry.get_surface(name)()
     qid = surface.question_ids()[0]
-    a = surface.build(ITEM, "Q", {"scheme": "chat", "question": qid}, seed=1)
-    b = surface.build(ITEM, "Q", {"scheme": "agentic", "question": qid}, seed=1)
+    a = surface.build(ITEM, "no_photos", {"scheme": "chat", "question": qid}, seed=1)
+    b = surface.build(ITEM, "no_photos", {"scheme": "agentic", "question": qid}, seed=1)
     def flat(t):
         return [(m["role"], " ".join(p.get("text", "") for p in m["content"]))
                 for m in t.conversation.messages]
-    assert flat(a) == flat(b), f"{name}: Q differs by scheme"
-    assert surface.is_scheme_invariant("Q") is True
-    assert surface.is_scheme_invariant("C") is False
-    assert surface.is_scheme_invariant("E") is False
+    assert flat(a) == flat(b), f"{name}: no_photos differs by scheme"
+    assert surface.is_scheme_invariant("no_photos") is True
+    assert surface.is_scheme_invariant("photos") is False
+
+
+def test_a_legacy_letter_is_recorded_under_its_name():
+    """Otherwise one stimulus lands in the store under two identities and
+    `trial_key` counts them as different trials."""
+    surface = registry.get_surface("s7_family_chat")()
+    variant = {"scheme": "chat", "question": "m01"}
+    from bench.surfaces.generation import normalise_condition
+    assert normalise_condition("C") == "photos"
+    assert surface.build(ITEM, "photos", dict(variant)).condition == "photos"

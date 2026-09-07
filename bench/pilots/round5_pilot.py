@@ -234,8 +234,8 @@ def _plan(s1, items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for row in items:
         item = Item.from_dict(row)
         for scheme in ("chat", "agentic"):
-            trial = s1.build(item, "C", {"scheme": scheme})
-            plan.append({"trial": trial, "arm": "A", "condition": "C", "scheme": scheme,
+            trial = s1.build(item, "photos", {"scheme": scheme})
+            plan.append({"trial": trial, "arm": "main", "condition": "photos", "scheme": scheme,
                          "direction": None, "item_id": item.item_id, "bucket": row["bucket"],
                          "stratum": row["stratum"], "image_scores": item.image_scores,
                          "image_mean": item.image_mean, "covariates": item.covariates,
@@ -259,7 +259,7 @@ def _plan(s1, items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 invariant = True
                 prefix_n = len(messages) - 1
             trial = Trial(
-                surface="s1_speech", item_id=BASELINE_ITEM_ID, condition="E",
+                surface="s1_speech", item_id=BASELINE_ITEM_ID, condition="no_photos",
                 conversation=Conversation(messages=messages, images=[]),
                 candidates=[], probe_points=_gen_probe_points(),
                 max_new_tokens=s1.max_new_tokens, variant={"scheme": scheme},
@@ -268,7 +268,7 @@ def _plan(s1, items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
                       "condition_desc": desc, "n_images": 0,
                       "item_invariant": invariant, "judge": "s1_speech"},
             )
-            plan.append({"trial": trial, "arm": "C", "condition": "E", "scheme": scheme,
+            plan.append({"trial": trial, "arm": "photos", "condition": "no_photos", "scheme": scheme,
                          "direction": None, "item_id": BASELINE_ITEM_ID, "bucket": None,
                          "stratum": None, "image_scores": [], "image_mean": None,
                          "covariates": {}, "split": "explore", "is_baseline": True,
@@ -525,7 +525,7 @@ def phase_analyze() -> None:
     lines.append("")
 
     # --- A arm s_gen per bucket + image_mean correlation ---------------------
-    a_recs = [r for r in trials if r.get("arm") == "A" and r.get("probe")]
+    a_recs = [r for r in trials if r.get("arm") == "main" and r.get("probe")]
     lines.append("## A arm s_gen per bucket (both schemes)\n")
     lines.append("| bucket | A-chat s_gen | A-agentic s_gen | n |")
     lines.append("|---|---|---|---|")
@@ -564,7 +564,7 @@ def phase_analyze() -> None:
     lines.append("")
 
     # --- C arm s_gen --------------------------------------------------------
-    c_recs = [r for r in trials if r.get("arm") == "C"]
+    c_recs = [r for r in trials if r.get("arm") == "photos"]
     lines.append("## C arm baseline s_gen (both schemes x 4 seeds)\n")
     for scheme in ("chat", "agentic"):
         subs = [r for r in c_recs if r.get("scheme") == scheme]
@@ -585,7 +585,7 @@ def phase_analyze() -> None:
         by_arm[r.get("arm")].append(r)
     all_wc: List[int] = []
     all_trunc = 0
-    for arm in ("A", "C", "M"):
+    for arm in ("main", "photos", "M"):
         subs = by_arm.get(arm, [])
         texts = [(r.get("response") or {}).get("text") for r in subs]
         wc = [_word_count(t) for t in texts]
@@ -610,7 +610,7 @@ def phase_analyze() -> None:
         spec = judge_specs()["s1_speech"]
         label_fields = [f for f in spec.fields if f not in ("named_attributes",)]
         lines.append("## judge field distributions (s1_speech, 8 fields)\n")
-        groups = [("A", "A"), ("C", "C"), ("M_rep", "M (rep)"), ("M_dem", "M (dem)")]
+        groups = [("main", "main"), ("photos", "photos"), ("M_rep", "M (rep)"), ("M_dem", "M (dem)")]
         for key, label in groups:
             if key in ("M_rep", "M_dem"):
                 subs = [r for r in trials

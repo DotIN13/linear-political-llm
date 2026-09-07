@@ -401,7 +401,7 @@ def make_adaptor(top_logprobs: int = 0) -> VLLMServerAdaptor:
 def run_one(adaptor: VLLMServerAdaptor, messages: List[Dict[str, Any]],
             image_paths: Sequence[str], max_new_tokens: int = 300) -> Dict[str, Any]:
     trial = Trial(
-        surface="probe_voice", item_id="probe", condition="C",
+        surface="probe_voice", item_id="probe", condition="photos",
         conversation=Conversation(messages=messages, images=list(image_paths)),
         max_new_tokens=max_new_tokens,
         meta={"family": "probe_voice"},

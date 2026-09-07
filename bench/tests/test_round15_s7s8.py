@@ -57,7 +57,7 @@ def test_the_no_photo_baseline_runs_once_per_cell_not_once_per_persona():
     """It is item-invariant -- identical text for every persona -- so running it 18
     times would be 18 copies of one number pretending to be a sample."""
     plan = r15.build_plan(_items(), reps=1)
-    base = [e for e in plan if e["condition"] == "E"]
+    base = [e for e in plan if e["condition"] == "no_photos"]
     assert len(base) == 2 * 2 * 12          # task x conversation x question
     assert {e["item_id"] for e in base} == {"no_image"}
     assert all(e["trial"].conversation.images == [] for e in base)
@@ -65,7 +65,7 @@ def test_the_no_photo_baseline_runs_once_per_cell_not_once_per_persona():
 
 def test_the_photo_arm_carries_the_photos():
     plan = r15.build_plan(_items(), reps=1)
-    shown = [e for e in plan if e["condition"] == "C"]
+    shown = [e for e in plan if e["condition"] == "photos"]
     assert len(shown) == 2 * 2 * 12 * 18
     assert all(len(e["trial"].conversation.images) == 3 for e in shown)
 
@@ -90,8 +90,8 @@ def test_reps_produce_distinct_keys_but_identical_conversations():
     item = Item.from_dict(_items(1)[0])
     keys, shas = set(), set()
     for rep in range(3):
-        t = surface.build(item, "C", {"scheme": "chat", "question": "m01", "rep": rep})
-        keys.add(trial_key("s7_family_chat", item.item_id, "C", t.variant,
+        t = surface.build(item, "photos", {"scheme": "chat", "question": "m01", "rep": rep})
+        keys.add(trial_key("s7_family_chat", item.item_id, "photos", t.variant,
                            "vllm", "m", 1, "rev"))
         shas.add(t.conversation.sha)
     assert len(keys) == 3, "reps must not collapse to one key"
@@ -100,7 +100,7 @@ def test_reps_produce_distinct_keys_but_identical_conversations():
 
 def test_rep_is_an_int_in_the_variant():
     surface = registry.get_surface("s8_letter_answered")()
-    t = surface.build(Item.from_dict(_items(1)[0]), "C",
+    t = surface.build(Item.from_dict(_items(1)[0]), "photos",
                       {"scheme": "chat", "question": "c01", "rep": "2"})
     assert t.variant["rep"] == 2
 
@@ -152,7 +152,7 @@ def test_smoke_reaches_both_tasks_both_conversations_and_the_baseline():
     sl = r15._smoke_slice(plan, 0)
     assert {e["surface"] for e in sl} == set(r15.SURFACE_IDS)
     assert {e["scheme"] for e in sl} == {"chat", "agentic"}
-    assert {e["condition"] for e in sl} == {"C", "E"}
+    assert {e["condition"] for e in sl} == {"photos", "no_photos"}
     assert {e["bucket"] for e in sl} == {"low", "mid", "high", "none"}
     keys = [(e["surface"], e["scheme"], e["bucket"], e["condition"]) for e in sl]
     assert len(keys) == len(set(keys))
@@ -167,7 +167,7 @@ def test_summary_cells_are_task_by_conversation_by_band():
             for bucket, pol in (("low", -0.5), ("mid", -0.2), ("high", 0.1)):
                 for i in range(3):
                     recs.append({"surface": surface, "scheme": scheme, "bucket": bucket,
-                                 "condition": "C", "question": f"q{i}", "rep": 0,
+                                 "condition": "photos", "question": f"q{i}", "rep": 0,
                                  "item_id": f"i{i}", "text": "t", "rule_refusal": False,
                                  "truncated": False, "error": None,
                                  "judge": {"political": pol}})
@@ -182,7 +182,7 @@ def test_summary_cells_are_task_by_conversation_by_band():
 def test_summary_reports_repeatability_from_the_texts():
     def rec(rep, text):
         return {"surface": "s7_family_chat", "scheme": "chat", "bucket": "low",
-                "condition": "C", "question": "m01", "rep": rep, "item_id": "i0",
+                "condition": "photos", "question": "m01", "rep": rep, "item_id": "i0",
                 "text": text, "rule_refusal": False, "truncated": False,
                 "error": None, "judge": None}
     same = r15._summarise([rec(0, "a"), rec(1, "a")])["repeatability"]

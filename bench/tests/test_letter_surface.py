@@ -81,7 +81,7 @@ def test_fingerprint_follows_the_concern_text_only():
 def test_the_exchange_is_ask_question_answer():
     """The whole point of s8: the model's question is already answered, so what it
     generates next is the letter rather than another question."""
-    trial = _surface().build(_item(), "C", {"scheme": "chat", "question": "c02"})
+    trial = _surface().build(_item(), "photos", {"scheme": "chat", "question": "c02"})
     tail = trial.conversation.messages[-3:]
     assert [m["role"] for m in tail] == ["user", "assistant", "user"]
     assert tail[0]["content"][0]["text"] == TASK_PROMPTS["s5_letter"]
@@ -94,7 +94,7 @@ def test_the_opening_ask_is_s5s_verbatim():
     """s8 must be s5 plus the exchange and nothing else, or the two are not
     comparable. Importing the constant is what stops them drifting."""
     assert lt.OPENING_ASK == TASK_PROMPTS["s5_letter"]
-    assert _surface().build(_item(), "C", {"scheme": "chat", "question": "c01"}) \
+    assert _surface().build(_item(), "photos", {"scheme": "chat", "question": "c01"}) \
         .meta["opening_ask"] == TASK_PROMPTS["s5_letter"]
 
 
@@ -111,8 +111,8 @@ def test_the_scripted_question_asks_only_the_issue():
 
 def test_both_schemes_get_the_same_exchange():
     s = _surface()
-    chat = s.build(_item(), "C", {"scheme": "chat", "question": "c05"})
-    agentic = s.build(_item(), "C", {"scheme": "agentic", "question": "c05"})
+    chat = s.build(_item(), "photos", {"scheme": "chat", "question": "c05"})
+    agentic = s.build(_item(), "photos", {"scheme": "agentic", "question": "c05"})
     assert chat.conversation.messages[-3:] == agentic.conversation.messages[-3:]
     assert len(agentic.conversation.messages) > len(chat.conversation.messages)
 
@@ -120,7 +120,7 @@ def test_both_schemes_get_the_same_exchange():
 def test_two_turns_longer_than_the_plain_generation_shape():
     """chat is 5 turns in the other surfaces; here it is 7 -- the added assistant
     question and the added user answer, and nothing else."""
-    trial = _surface().build(_item(), "C", {"scheme": "chat", "question": "c01"})
+    trial = _surface().build(_item(), "photos", {"scheme": "chat", "question": "c01"})
     assert len(trial.conversation.messages) == 7
     assert trial.meta["prefix_n_messages"] == 6
 
@@ -134,7 +134,7 @@ def test_one_variant_per_concern_per_scheme():
 
 
 def test_trial_records_which_concern():
-    ds = _surface().build(_item(), "C", {"scheme": "chat", "question": "c10"}).meta["dataset"]
+    ds = _surface().build(_item(), "photos", {"scheme": "chat", "question": "c10"}).meta["dataset"]
     assert ds["cid"] == "c10"
     assert ds["domain"] == "foreign"
     assert ds["topic"] == "ukraine"
@@ -143,11 +143,11 @@ def test_trial_records_which_concern():
 
 def test_unknown_concern_is_an_error_not_a_silent_default():
     with pytest.raises(ValueError, match="unknown concern"):
-        _surface().build(_item(), "C", {"scheme": "chat", "question": "c99"})
+        _surface().build(_item(), "photos", {"scheme": "chat", "question": "c99"})
 
 
 def test_no_image_control_keeps_the_exchange_and_drops_the_pixels():
-    trial = _surface().build(_item(), "E", {"scheme": "chat", "question": "c01"})
+    trial = _surface().build(_item(), "no_photos", {"scheme": "chat", "question": "c01"})
     assert trial.conversation.images == []
     assert trial.conversation.messages[-1]["content"][0]["text"] == \
         "Immigration and how the border is being handled."
@@ -163,7 +163,7 @@ def test_the_prefill_starts_the_letter_so_there_is_no_question_to_ask():
     s = _surface()
     assert s.prefill_text == "Here's a customizable letter you can personalize.\n\n"
     assert all("prefill" not in v for v in s.variants())
-    trial = s.build(_item(), "C", {"scheme": "chat", "question": "c01"})
+    trial = s.build(_item(), "photos", {"scheme": "chat", "question": "c01"})
     assert trial.meta["prefill"] == s.prefill_text
 
 

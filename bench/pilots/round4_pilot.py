@@ -249,8 +249,8 @@ def _plan(surface, items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     # Arm A: 9 items, with images (condition C).
     for row in items:
         item = Item.from_dict(row)
-        trial = s1.build(item, "C", {"scheme": "chat"})
-        plan.append({"trial": trial, "arm": "A", "condition": "C",
+        trial = s1.build(item, "photos", {"scheme": "chat"})
+        plan.append({"trial": trial, "arm": "main", "condition": "three_photos_in_chat",
                      "item_id": item.item_id, "bucket": row["bucket"],
                      "stratum": row["stratum"], "image_scores": item.image_scores,
                      "image_mean": item.image_mean, "covariates": item.covariates,
@@ -262,7 +262,7 @@ def _plan(surface, items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
         cats = (item.covariates or {}).get("categories") or []
         messages = _text_only_messages(cats, S1_QUESTION)
         trial = Trial(
-            surface="s1_speech", item_id=item.item_id, condition="B",
+            surface="s1_speech", item_id=item.item_id, condition="one_photo_shared",
             conversation=Conversation(messages=messages, images=[]),
             candidates=[], probe_points=_gen_probe_points(),
             max_new_tokens=s1.max_new_tokens, variant={"scheme": "chat", "text_only": True},
@@ -272,7 +272,7 @@ def _plan(surface, items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
                   "n_images": 0, "item_invariant": False, "judge": "s1_speech",
                   "category_names": cats},
         )
-        plan.append({"trial": trial, "arm": "B", "condition": "B",
+        plan.append({"trial": trial, "arm": "one_photo", "condition": "one_photo_shared",
                      "item_id": item.item_id, "bucket": row["bucket"],
                      "stratum": row["stratum"], "image_scores": item.image_scores,
                      "image_mean": item.image_mean, "covariates": item.covariates,
@@ -285,7 +285,7 @@ def _plan(surface, items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for seed in BASELINE_SEEDS:
         messages = [{"role": "user", "content": [{"type": "text", "text": S1_QUESTION}]}]
         trial = Trial(
-            surface="s1_speech", item_id=BASELINE_ITEM_ID, condition="E",
+            surface="s1_speech", item_id=BASELINE_ITEM_ID, condition="no_photos",
             conversation=Conversation(messages=messages, images=[]),
             candidates=[], probe_points=_gen_probe_points(),
             max_new_tokens=s1.max_new_tokens, variant={"scheme": "chat"},
@@ -455,7 +455,7 @@ def phase_analyze() -> None:
         if r.get("arm") == "C":
             baselines.append(r)
             continue
-        if r.get("arm") in ("A", "B"):
+        if r.get("arm") in ("main", "baseline"):
             by_item.setdefault(r["item_id"], {})[r["arm"]] = r
 
     meta = load_lvis_meta(LVIS_CACHE)

@@ -174,27 +174,55 @@ TOOLS = [
                        "required": ["path"]}}},
 ]
 
-# Three conditions, and the difference between the two baselines is the point.
+# Two conditions, named for what they are.
 #
-#   C  the persona is shown: photos delivered per scheme
-#   Q  **the question on its own.** No share line, no memory directories, no
-#      filenames, no tool calls, no scripted small talk -- just the task. This is
-#      the reference point for "what does the model say if you simply ask it",
-#      and it is what every effect should be measured against.
-#   E  the whole transcript with only the image bytes withheld. The model is told
-#      these are photos of where the person lives, "opens" three files and gets
-#      back a filename and nothing else.
+#   photos      the persona is shown: its photos delivered per conversation scheme
+#   no_photos   **the task on its own** -- no share line, no memory directories,
+#               no filenames, no tool calls, no scripted small talk. Just the
+#               question. This is the reference point for "what does the model say
+#               if you simply ask it", and it runs **once per question**: with no
+#               persona in it, it is identical for every persona, and with no
+#               scaffolding it is identical for both conversation schemes.
 #
-# E is a narrower control than it looks: it isolates the *pixels* from the story
-# told around them, which is a real question, but it is also a strange stimulus
-# -- a transcript in which the model opened three images and saw none of them.
-# Whatever that provokes (confusion, hedging, extra caution) is baked into it, so
-# **E is not the model's default behaviour and must not be read as it.** Q is.
-CONDITIONS = ["C", "Q", "E"]
+# There used to be a third, `E`, which kept the entire transcript and withheld
+# only the image bytes -- the model was told these were photos of where someone
+# lives, "opened" three files and got back a filename and nothing else. It is
+# removed. It answered a narrower question (the pixels, holding the framing
+# constant) at the cost of being a strange stimulus that is nobody's default
+# behaviour, and building an experiment on two baselines that get confused for
+# each other is worse than having the narrower one at all.
+#
+# The old single-letter names are gone too. `C` still resolves, because a dozen
+# historical pilots pass it and it means exactly `photos`; `E` raises, because
+# silently turning it into `no_photos` would swap one stimulus for a different
+# one without anybody noticing.
+CONDITIONS = ["photos", "no_photos"]
+# The letters the generation surfaces used to use. `C` was the three-photos
+# in-conversation template and `Q` was the bare question, added and renamed the
+# same day.
+# The letters the *generation* surfaces used. The multiple-choice surfaces keep
+# their own A-E set (`bench/surfaces/base.py`), which is a genuinely different
+# five-way design -- photo count crossed with whether there is a conversation --
+# and is not renamed here.
+CONDITION_ALIASES = {"C": "photos", "Q": "no_photos"}
+REMOVED_CONDITIONS = {
+    "E": ("condition 'E' (full transcript, image bytes withheld) was removed. It is "
+          "not the same stimulus as 'no_photos', which is the bare question, so it "
+          "cannot be aliased. Use 'no_photos' if you want the baseline, or restore "
+          "E deliberately if you specifically want the pixels-only contrast."),
+}
+
+
+def normalise_condition(condition: str) -> str:
+    """Accept the historical letters, refuse the one that changed meaning."""
+    if condition in REMOVED_CONDITIONS:
+        raise ValueError(REMOVED_CONDITIONS[condition])
+    return CONDITION_ALIASES.get(condition, condition)
+
+
 CONDITION_DESC = {
-    "C": "images delivered per scheme",
-    "Q": "question only -- no persona framing at all",
-    "E": "full transcript, image bytes withheld",
+    "photos": "the persona's photos, delivered per conversation scheme",
+    "no_photos": "the question on its own, no persona framing -- once per question",
 }
 
 # --- the six tasks' surface ids, in board order ------------------------------
@@ -858,17 +886,19 @@ class GenerationSurface:
         the same trial twice under two names. C and E carry the scheme's
         transcript and so differ.
         """
+        condition = normalise_condition(condition)
         if condition not in self.conditions:
             raise ValueError(f"Unknown condition {condition!r}. Known: {self.conditions}")
-        return condition == "Q"
+        return condition == "no_photos"
 
     def is_item_invariant(self, condition: str) -> bool:
+        condition = normalise_condition(condition)
         if condition not in self.conditions:
             raise ValueError(f"Unknown condition {condition!r}. Known: {self.conditions}")
-        # Both baselines leave a conversation with no pixels in it, so it is
-        # byte-identical across items *unless* the surface shuffles per item
-        # (s3's headline deal). So each runs once per cell, not once per persona.
-        return condition in ("Q", "E") and not self.randomizes_per_item
+        # No persona in the prompt at all, so it is byte-identical across items
+        # *unless* the surface re-deals per item (s3's headline order). So it runs
+        # once per question rather than once per persona.
+        return condition == "no_photos" and not self.randomizes_per_item
 
     # -- build ---------------------------------------------------------------
     def _item_order(self, item: Item, seed: Optional[int]) -> Optional[List[int]]:
@@ -931,10 +961,11 @@ class GenerationSurface:
         if order is not None:
             variant["order"] = order
 
-        with_images = condition == "C"
+        condition = normalise_condition(condition)
+        with_images = condition == "photos"
         image_paths = list(item.image_paths) if with_images else []
         question = self.question(order, attribution, qid)
-        if condition == "Q":
+        if condition == "no_photos":
             # The bare task, with no scaffolding of any kind. Not the scheme's
             # transcript minus its pixels -- the scheme is absent, which is why
             # this is the reference point and E is not.
@@ -971,7 +1002,7 @@ class GenerationSurface:
                 # many files the transcript named. n_files can, and two arms with
                 # different photo counts are different stimuli even when both
                 # have their pixels removed.
-                "n_files": 0 if condition == "Q" else n_files,
+                "n_files": 0 if condition == "no_photos" else n_files,
                 "item_invariant": self.is_item_invariant(condition),
                 "scheme_invariant": self.is_scheme_invariant(condition),
                 "judge": self.judge_spec.id if self.judge_spec else None,

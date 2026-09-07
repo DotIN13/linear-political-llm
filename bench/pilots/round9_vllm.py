@@ -104,8 +104,8 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
             for row in items:
                 item = Item.from_dict(row)
                 base = {"scheme": scheme}
-                fwd = surface.build(item, "C", dict(base), seed=A_SEED)
-                plan.append(_entry(fwd, sid, "A", "C", scheme, prefill, row, item,
+                fwd = surface.build(item, "photos", dict(base), seed=A_SEED)
+                plan.append(_entry(fwd, sid, "main", "photos", scheme, prefill, row, item,
                                    order_arm="fwd" if fwd.variant.get("order") else None))
                 # s3 only: the same item again with the order reversed, so the
                 # position-1 primacy averages out instead of riding on the DV.
@@ -114,8 +114,8 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     rev_variant = dict(base)
                     rev_variant["order"] = list(reversed(list(order)))
                     rev_variant["order_arm"] = "rev"
-                    rev = surface.build(item, "C", rev_variant, seed=A_SEED)
-                    plan.append(_entry(rev, sid, "A", "C", scheme, prefill, row, item,
+                    rev = surface.build(item, "photos", rev_variant, seed=A_SEED)
+                    plan.append(_entry(rev, sid, "main", "photos", scheme, prefill, row, item,
                                        order_arm="rev"))
 
         # The P and R arms are gone. Both were prefill on/off contrasts on s1 -- P
@@ -125,8 +125,8 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
         #
         # R had already done its job. It was built to test docs/bench/11's claim of
         # 9/9 agentic refusals without the prefill and returned 0/18, which is why
-        # the handle went away. Keeping a one-sided arm would just re-measure the A
-        # arm under a second name.
+        # the handle went away. Keeping a one-sided arm would just re-measure the
+        # main arm under a second name.
 
         # C arm: no image, both schemes, four seeds.
         for scheme in ("chat", "agentic"):
@@ -139,7 +139,7 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 else:
                     messages, tools = build_scheme_messages("agentic", [], question)
                 trial = Trial(
-                    surface=sid, item_id=BASELINE_ITEM_ID, condition="E",
+                    surface=sid, item_id=BASELINE_ITEM_ID, condition="no_photos",
                     conversation=Conversation(messages=messages, images=[]),
                     candidates=[], probe_points=surface.probe_points(None),
                     max_new_tokens=surface.max_new_tokens,
@@ -152,7 +152,7 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
                           "item_invariant": True,
                           "judge": surface.judge_spec.id if surface.judge_spec else None},
                 )
-                plan.append({"trial": trial, "surface": sid, "arm": "C", "condition": "E",
+                plan.append({"trial": trial, "surface": sid, "arm": "baseline", "condition": "no_photos",
                              "scheme": scheme, "prefill": prefill, "bucket": None,
                              "item_id": BASELINE_ITEM_ID, "image_mean": None,
                              "image_scores": [], "covariates": {}, "order_arm": None,
@@ -397,7 +397,7 @@ def phase_export(trials_path: str = TRIALS_PATH, out_dir: str = UPLOADS) -> Dict
     cells = []
     by_cell: Dict[Any, List[Dict[str, Any]]] = defaultdict(list)
     for rec in records:
-        if rec["arm"] == "A":
+        if rec["arm"] == "main":
             by_cell[(rec["surface"], rec["scheme"], rec["bucket"])].append(rec)
     for (surface, scheme, bucket), group in sorted(by_cell.items()):
         prim = [g["deterministic"].get("primary") for g in group]
@@ -412,7 +412,7 @@ def phase_export(trials_path: str = TRIALS_PATH, out_dir: str = UPLOADS) -> Dict
     pearson = []
     by_sc: Dict[Any, List[Dict[str, Any]]] = defaultdict(list)
     for rec in records:
-        if rec["arm"] == "A":
+        if rec["arm"] == "main":
             by_sc[(rec["surface"], rec["scheme"])].append(rec)
     for (surface, scheme), group in sorted(by_sc.items()):
         pearson.append({
@@ -423,7 +423,7 @@ def phase_export(trials_path: str = TRIALS_PATH, out_dir: str = UPLOADS) -> Dict
             "image_mean_vs_s_gen": None,
         })
 
-    s3 = [r for r in records if r["surface"] == "s3_digest" and r["arm"] == "A"]
+    s3 = [r for r in records if r["surface"] == "s3_digest" and r["arm"] == "main"]
     position_rates: Dict[str, Any] = {}
     for arm in ("fwd", "rev"):
         picks = [r["deterministic"].get("picked_positions") or []
@@ -440,7 +440,7 @@ def phase_export(trials_path: str = TRIALS_PATH, out_dir: str = UPLOADS) -> Dict
                "baseline": [{"surface": r["surface"], "scheme": r["scheme"],
                              "primary": r["deterministic"].get("primary"),
                              "refusal": r["refusal"]}
-                            for r in records if r["arm"] == "C"],
+                            for r in records if r["arm"] == "photos"],
                "s3_position_rates": position_rates,
                "counts": dict(Counter((r["surface"], r["scheme"], r["arm"]) for r in records
                                       ).most_common()) and

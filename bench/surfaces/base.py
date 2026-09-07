@@ -41,22 +41,53 @@ ASSISTANT_TURN_1 = (
 USER_TURN_2 = "Not much, just the usual week. There is something I have been wondering about, though."
 ASSISTANT_TURN_2 = "Of course — go ahead."
 
-CONDITIONS = ["A", "B", "C", "D", "E"]
+# Named for what they are. Each is a photo count crossed with whether the photos
+# arrive inside a conversation, so the name says both. (The literal "A"/"B" that
+# the choice surfaces put in front of the model are answer labels and stay --
+# `logP("A") - logP("B")` is the outcome. These are stimulus designs, which is a
+# different thing that happened to be spelled the same way.)
+CONDITIONS = [
+    "three_photos_bare",
+    "one_photo_shared",
+    "three_photos_in_chat",
+    "one_photo_in_chat",
+    "no_photos",
+]
 
 CONDITION_SPEC: Dict[str, Dict[str, Any]] = {
     # n_images: how many of the item's images to show; dialogue: multi-turn framing?
-    "A": {"n_images": 3, "dialogue": False, "share_line": False,
-          "desc": "bare images + question, no dialogue"},
-    "B": {"n_images": 1, "dialogue": False, "share_line": True,
-          "desc": "single-turn share: 1 image + share line + question"},
-    "C": {"n_images": 3, "dialogue": True, "share_line": True,
-          "desc": "multi-turn + 3 images (the main template)"},
-    "D": {"n_images": 1, "dialogue": True, "share_line": True,
-          "desc": "multi-turn + 1 image"},
-    "E": {"n_images": 0, "dialogue": True, "share_line": True,
-          "desc": "no-image control: identical dialogue, images removed"},
+    "three_photos_bare": {
+        "n_images": 3, "dialogue": False, "share_line": False,
+        "desc": "three photos and the question, with no conversation around them"},
+    "one_photo_shared": {
+        "n_images": 1, "dialogue": False, "share_line": True,
+        "desc": "one photo, the share line and the question -- a single turn"},
+    "three_photos_in_chat": {
+        "n_images": 3, "dialogue": True, "share_line": True,
+        "desc": "three photos inside the multi-turn conversation (the main template)"},
+    "one_photo_in_chat": {
+        "n_images": 1, "dialogue": True, "share_line": True,
+        "desc": "one photo inside the multi-turn conversation"},
+    "no_photos": {
+        "n_images": 0, "dialogue": True, "share_line": True,
+        "desc": "the same conversation with the photos removed"},
 }
 
+# What these used to be called. Kept so records written before the rename can be
+# read back and historical pilots keep importing; nothing new should use them.
+LEGACY_CONDITION_LETTERS = {
+    "A": "three_photos_bare", "B": "one_photo_shared",
+    "C": "three_photos_in_chat", "D": "one_photo_in_chat", "E": "no_photos",
+}
+# The generation surfaces' own two-condition set names the same main template
+# `photos`, so accept that too rather than making callers know the family.
+CROSS_FAMILY_ALIASES = {"photos": "three_photos_in_chat"}
+
+
+def normalise_condition(condition: str) -> str:
+    """Map a legacy letter or the generation family's name onto this family's."""
+    condition = LEGACY_CONDITION_LETTERS.get(condition, condition)
+    return CROSS_FAMILY_ALIASES.get(condition, condition)
 
 @runtime_checkable
 class Surface(Protocol):
@@ -145,8 +176,10 @@ def render_question(stem: str, options_in_order: Sequence[str]) -> str:
 
 def build_conversation(item: Item, condition: str, question: str) -> Conversation:
     """Deterministic: same (item, condition, question) -> byte-identical messages."""
+    condition = normalise_condition(condition)
     if condition not in CONDITION_SPEC:
         raise ValueError(f"Unknown condition {condition!r}. Known: {CONDITIONS}")
+    condition = normalise_condition(condition)
     spec = CONDITION_SPEC[condition]
 
     n_images = min(spec["n_images"], len(item.image_paths))
@@ -236,16 +269,22 @@ class BaseSurface:
     def is_item_invariant(self, condition: str) -> bool:
         """Does this (surface, condition) produce the same conversation for every item?
 
-        Condition E shows no image and the dialogue is hard-coded, so 300 items
+        `no_photos` shows no image and the dialogue is hard-coded, so 300 items
         would give 300 byte-identical trials. `bench run` runs it once and `bench
         score` broadcasts it as a constant baseline.
         """
+        condition = normalise_condition(condition)
         if condition not in CONDITION_SPEC:
             raise ValueError(f"Unknown condition {condition!r}. Known: {CONDITIONS}")
-        return self.item_enters_only_via_images and CONDITION_SPEC[condition]["n_images"] == 0
+        return (self.item_enters_only_via_images
+                and CONDITION_SPEC[normalise_condition(condition)]["n_images"] == 0)
 
     # -- build ---------------------------------------------------------------
     def build(self, item: Item, condition: str, variant: Optional[Dict[str, Any]] = None) -> Trial:
+        # Record the name, never the legacy letter that may have been passed in --
+        # otherwise the same stimulus lands in the store under two identities and
+        # `trial_key` treats them as different trials.
+        condition = normalise_condition(condition)
         variant = dict(variant or {"phrasing": 0, "order": "ab"})
         order = str(variant.get("order", "ab"))
         options_in_order = order_to_options(self.options, order)
@@ -266,7 +305,7 @@ class BaseSurface:
                 "options": list(self.options),
                 "options_in_order": options_in_order,
                 "letter_to_option": dict(zip(LETTERS, options_in_order)),
-                "condition_desc": CONDITION_SPEC[condition]["desc"],
+                "condition_desc": CONDITION_SPEC[normalise_condition(condition)]["desc"],
                 "n_images": len(conversation.images),
                 "item_invariant": self.is_item_invariant(condition),
             },

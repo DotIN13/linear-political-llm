@@ -111,7 +111,7 @@ def test_different_conditions_give_different_conversations():
 
 def test_different_surfaces_give_different_conversations():
     shas = {name: registry.get_surface(name)().build(
-        ITEM, "C", {"phrasing": 0, "order": "ab"}).conversation.sha
+        ITEM, "three_photos_in_chat", {"phrasing": 0, "order": "ab"}).conversation.sha
         for name in POLITICAL + CONTROL}
     assert len(set(shas.values())) == 8
 
@@ -120,11 +120,13 @@ def test_every_variant_gives_a_different_conversation():
     """Phrasing and order both change the text, so they must change the sha too."""
     surface = registry.get_surface("vote2020")()
     variants = [{"phrasing": p, "order": o} for p in range(3) for o in ORDERS]
-    shas = {surface.build(ITEM, "C", v).conversation.sha for v in variants}
+    shas = {surface.build(ITEM, "three_photos_in_chat", v).conversation.sha for v in variants}
     assert len(shas) == len(variants)
 
 
-@pytest.mark.parametrize("condition,n_images", [("A", 3), ("B", 1), ("C", 3), ("D", 1), ("E", 0)])
+@pytest.mark.parametrize("condition,n_images", [
+    ("three_photos_bare", 3), ("one_photo_shared", 1),
+    ("three_photos_in_chat", 3), ("one_photo_in_chat", 1), ("no_photos", 0)])
 def test_condition_image_count(condition, n_images):
     trial = registry.get_surface("vote2020")().build(ITEM, condition, {"phrasing": 0, "order": "ab"})
     assert len(trial.conversation.images) == n_images
@@ -133,7 +135,7 @@ def test_condition_image_count(condition, n_images):
     assert sum(1 for p in parts if p.get("type") == "image") == n_images
 
 
-@pytest.mark.parametrize("condition", ["C", "D", "E"])
+@pytest.mark.parametrize("condition", ["three_photos_in_chat", "one_photo_in_chat", "no_photos"])
 def test_assistant_turns_are_hard_coded_constants(condition):
     trial = registry.get_surface("vote2020")().build(ITEM, condition, {"phrasing": 0, "order": "ab"})
     assistant = [m for m in trial.conversation.messages if m["role"] == "assistant"]
@@ -145,17 +147,18 @@ def test_assistant_turns_are_hard_coded_constants(condition):
     assert trial.conversation.messages[-1]["role"] == "user"
 
 
-@pytest.mark.parametrize("condition", ["A", "B"])
+@pytest.mark.parametrize("condition", ["three_photos_bare", "one_photo_shared"])
 def test_single_turn_conditions_have_no_assistant_turn(condition):
     trial = registry.get_surface("vote2020")().build(ITEM, condition, {"phrasing": 0, "order": "ab"})
     assert [m["role"] for m in trial.conversation.messages] == ["user"]
 
 
-def test_condition_e_keeps_the_same_words_as_c():
+def test_no_photo_condition_keeps_the_same_words_as_c():
     surface = registry.get_surface("vote2020")()
     texts = {c: [p["text"] for m in surface.build(ITEM, c, {"phrasing": 0, "order": "ab"}).conversation.messages
-                 for p in m["content"] if p.get("type") == "text"] for c in ("C", "E")}
-    assert texts["C"] == texts["E"]
+                 for p in m["content"] if p.get("type") == "text"]
+             for c in ("three_photos_in_chat", "no_photos")}
+    assert texts["three_photos_in_chat"] == texts["no_photos"]
 
 
 def test_extract_prefers_logprob_and_reorients_the_ba_order():
@@ -164,12 +167,12 @@ def test_extract_prefers_logprob_and_reorients_the_ba_order():
     surface = registry.get_surface("vote2020")()
     response = Response(logprobs={"A": -1.83, "B": -2.94})
 
-    ab = surface.extract(response, surface.build(ITEM, "C", {"phrasing": 0, "order": "ab"}))
+    ab = surface.extract(response, surface.build(ITEM, "three_photos_in_chat", {"phrasing": 0, "order": "ab"}))
     assert ab.kind == "logprob_diff"
     assert ab.value == pytest.approx(1.11)          # A=Biden here, so + means Biden
     assert ab.extra["letter_to_option"] == {"A": "Biden", "B": "Trump"}
 
-    ba = surface.extract(response, surface.build(ITEM, "C", {"phrasing": 0, "order": "ba"}))
+    ba = surface.extract(response, surface.build(ITEM, "three_photos_in_chat", {"phrasing": 0, "order": "ba"}))
     assert ba.value == pytest.approx(-1.11)         # same letters, A=Trump, so + means Trump
     assert ba.extra["raw_letter_diff"] == pytest.approx(1.11)
     assert ba.extra["letter_to_option"] == {"A": "Trump", "B": "Biden"}
@@ -182,9 +185,9 @@ def test_position_bias_is_zero_when_the_model_ignores_position():
     from bench.types import Response
     surface = registry.get_surface("vote2020")()
     ab = surface.extract(Response(logprobs={"A": -1.0, "B": -2.0}),
-                         surface.build(ITEM, "C", {"phrasing": 0, "order": "ab"}))
+                         surface.build(ITEM, "three_photos_in_chat", {"phrasing": 0, "order": "ab"}))
     ba = surface.extract(Response(logprobs={"A": -2.0, "B": -1.0}),
-                         surface.build(ITEM, "C", {"phrasing": 0, "order": "ba"}))
+                         surface.build(ITEM, "three_photos_in_chat", {"phrasing": 0, "order": "ba"}))
     assert ab.value == pytest.approx(1.0) and ba.value == pytest.approx(1.0)
     assert ab.value - ba.value == pytest.approx(0.0)
 
@@ -192,8 +195,8 @@ def test_position_bias_is_zero_when_the_model_ignores_position():
 def test_extract_falls_back_to_text_then_to_judge():
     from bench.types import NeedsJudge, Response
     surface = registry.get_surface("vote2020")()
-    trial_ab = surface.build(ITEM, "C", {"phrasing": 0, "order": "ab"})
-    trial_ba = surface.build(ITEM, "C", {"phrasing": 0, "order": "ba"})
+    trial_ab = surface.build(ITEM, "three_photos_in_chat", {"phrasing": 0, "order": "ab"})
+    trial_ba = surface.build(ITEM, "three_photos_in_chat", {"phrasing": 0, "order": "ba"})
     assert surface.extract(Response(text="B"), trial_ab).value == -1.0   # B = Trump
     assert surface.extract(Response(text="B"), trial_ba).value == +1.0   # B = Biden
     assert surface.extract(Response(text="Trump."), trial_ab).value == -1.0
@@ -203,20 +206,20 @@ def test_extract_falls_back_to_text_then_to_judge():
 
 
 @pytest.mark.parametrize("name", POLITICAL + CONTROL)
-def test_condition_e_is_item_invariant_and_the_others_are_not(name):
+def test_no_photo_condition_is_item_invariant_and_the_others_are_not(name):
     """Task C: E shows no image, so every item would give a byte-identical trial."""
     surface = registry.get_surface(name)()
-    assert surface.is_item_invariant("E") is True
-    for condition in ("A", "B", "C", "D"):
+    assert surface.is_item_invariant("no_photos") is True
+    for condition in ("three_photos_bare", "one_photo_shared", "three_photos_in_chat", "one_photo_in_chat"):
         assert surface.is_item_invariant(condition) is False
 
     other = Item(item_id="lvis3_09999", images=["x.jpg"], image_paths=["/tmp/x.jpg"],
                  image_scores=[-0.4], stratum=0)
     variant = {"phrasing": 0, "order": "ab"}
-    assert (surface.build(ITEM, "E", variant).conversation.sha
-            == surface.build(other, "E", variant).conversation.sha)
-    assert (surface.build(ITEM, "C", variant).conversation.sha
-            != surface.build(other, "C", variant).conversation.sha)
+    assert (surface.build(ITEM, "no_photos", variant).conversation.sha
+            == surface.build(other, "no_photos", variant).conversation.sha)
+    assert (surface.build(ITEM, "three_photos_in_chat", variant).conversation.sha
+            != surface.build(other, "three_photos_in_chat", variant).conversation.sha)
 
 
 def test_condition_spec_covers_all_conditions():

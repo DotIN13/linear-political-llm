@@ -230,7 +230,7 @@ def check_candidates(
     surface: Any,
     adaptor: Any,
     item: Optional[Item] = None,
-    condition: str = "E",
+    condition: str = "no_photos",
     variant: Optional[Dict[str, Any]] = None,
 ) -> CandidateReport:
     """Are the candidate tokens single tokens, and does the model actually answer with one?

@@ -22,7 +22,7 @@ def _fake_loader(path):
 
 
 def _trial(messages, **kw):
-    return Trial(surface="s1_speech", item_id="i1", condition="C",
+    return Trial(surface="s1_speech", item_id="i1", condition="photos",
                  conversation=Conversation(messages=messages), **kw)
 
 
@@ -111,7 +111,7 @@ def test_prefill_becomes_a_continued_assistant_turn():
     the key a contract instead of a coincidence.
     """
     surface = registry.get_surface("s1_speech")()
-    t = surface.build(_ITEM, "C", {"scheme": "chat"}, seed=42)
+    t = surface.build(_ITEM, "photos", {"scheme": "chat"}, seed=42)
     assert t.meta["prefill"] == surface.prefill_text          # the contract
     p = build_payload(t, "m", seed=42, image_loader=_fake_loader)
     assert p["messages"][-1] == {"role": "assistant", "content": surface.prefill_text}
@@ -124,7 +124,7 @@ def test_a_surface_without_a_prefill_sends_no_continuation():
     now expressed by a surface that has no prefill_text -- s1 always prefills."""
     surface = registry.get_surface("s2_proposal")()
     assert surface.prefill_text is None
-    t = surface.build(_ITEM, "C", {"scheme": "chat"}, seed=42)
+    t = surface.build(_ITEM, "photos", {"scheme": "chat"}, seed=42)
     assert t.meta["prefill"] is None
     p = build_payload(t, "m", seed=42, image_loader=_fake_loader)
     assert p["messages"][-1]["role"] == "user"

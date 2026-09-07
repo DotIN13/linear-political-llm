@@ -260,9 +260,9 @@ def _plan(s1, items: Sequence[Dict[str, Any]], chunk: int) -> List[Dict[str, Any
     for prompt, scheme in cell["a"]:
         for row in items:
             item = Item.from_dict(row)
-            trial = s1.build(item, "C", {"prompt": prompt, "scheme": scheme, "prefill": "on"})
+            trial = s1.build(item, "photos", {"prompt": prompt, "scheme": scheme, "prefill": "on"})
             plan.append({
-                "trial": trial, "arm": "A", "condition": "C", "prompt": prompt,
+                "trial": trial, "arm": "main", "condition": "photos", "prompt": prompt,
                 "scheme": scheme, "item_id": item.item_id, "bucket": row["bucket"],
                 "image_scores": item.image_scores, "image_mean": item.image_mean,
                 "covariates": item.covariates, "is_baseline": False, "seed": A_SEED,
@@ -279,7 +279,7 @@ def _plan(s1, items: Sequence[Dict[str, Any]], chunk: int) -> List[Dict[str, Any
                 messages, tools = build_scheme_messages("agentic", [], question)
                 prefix_n = len(messages) - 1
             trial = Trial(
-                surface="s1_speech", item_id=BASELINE_ITEM_ID, condition="E",
+                surface="s1_speech", item_id=BASELINE_ITEM_ID, condition="no_photos",
                 conversation=Conversation(messages=messages, images=[]),
                 candidates=[], probe_points=_gen_probe_points(),
                 max_new_tokens=s1.max_new_tokens,
@@ -290,7 +290,7 @@ def _plan(s1, items: Sequence[Dict[str, Any]], chunk: int) -> List[Dict[str, Any
                       "n_images": 0, "item_invariant": True, "judge": "s1_speech"},
             )
             plan.append({
-                "trial": trial, "arm": "C", "condition": "E", "prompt": prompt,
+                "trial": trial, "arm": "photos", "condition": "no_photos", "prompt": prompt,
                 "scheme": scheme, "item_id": BASELINE_ITEM_ID, "bucket": None,
                 "image_scores": [], "image_mean": None, "covariates": {},
                 "is_baseline": True, "seed": seed,
@@ -312,7 +312,7 @@ def phase_run(chunk: int) -> None:
 
     n_by_arm = Counter(p["arm"] for p in plan)
     print(f"[run] chunk={chunk} -> {len(plan)} trials "
-          f"(A={n_by_arm['A']}, C={n_by_arm.get('C', 0)})", flush=True)
+          f"(A={n_by_arm['A']}, C={n_by_arm.get('photos', 0)})", flush=True)
 
     adaptor = LocalHFAdaptor(
         model=MODEL_PATH, probe=PROBE_ID, top_k=TOP_K, seed=A_SEED,
@@ -484,8 +484,8 @@ def phase_analyze() -> None:
         j = judge_by_key.get(rec.get("trial_key"))
         return j.get("labels") if j else None
 
-    a_recs = [r for r in trials if r.get("arm") == "A"]
-    c_recs = [r for r in trials if r.get("arm") == "C"]
+    a_recs = [r for r in trials if r.get("arm") == "main"]
+    c_recs = [r for r in trials if r.get("arm") == "photos"]
 
     # ---- s1lean.json --------------------------------------------------------
     lean_records: List[Dict[str, Any]] = []

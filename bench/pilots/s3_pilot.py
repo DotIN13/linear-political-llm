@@ -189,10 +189,10 @@ def phase_run() -> None:
             reps = (0, 1) if scheme == "chat" else (0,)
             for rep in reps:
                 trial = s3.build(
-                    __item(row), "C", {"scheme": scheme, "attribution": ATTRIBUTION}, seed=C_SEED
+                    __item(row), "photos", {"scheme": scheme, "attribution": ATTRIBUTION}, seed=C_SEED
                 )
                 plan.append({
-                    "arm": "C", "condition": "C", "scheme": scheme, "rep": rep,
+                    "arm": "photos", "condition": "photos", "scheme": scheme, "rep": rep,
                     "item_id": row["item_id"], "bucket": row["bucket"],
                     "image_scores": row["image_scores"],
                     "seed": C_SEED, "trial": trial,
@@ -205,10 +205,10 @@ def phase_run() -> None:
     for scheme in ("chat", "agentic"):
         for seed in BASELINE_SEEDS:
             trial = s3.build(
-                baseline, "E", {"scheme": scheme, "attribution": ATTRIBUTION}, seed=seed
+                baseline, "no_photos", {"scheme": scheme, "attribution": ATTRIBUTION}, seed=seed
             )
             plan.append({
-                "arm": "E", "condition": "E", "scheme": scheme, "rep": 0,
+                "arm": "no_photos", "condition": "no_photos", "scheme": scheme, "rep": 0,
                 "item_id": BASELINE_ITEM_ID, "bucket": None,
                 "image_scores": [], "seed": seed, "trial": trial,
             })
@@ -349,8 +349,8 @@ def phase_analyze() -> None:
         print("no trials; run the GPU phase first", file=sys.stderr)
         raise SystemExit(1)
 
-    c_recs = [r for r in trials if r["arm"] == "C"]
-    e_recs = [r for r in trials if r["arm"] == "E"]
+    c_recs = [r for r in trials if r["arm"] == "photos"]
+    e_recs = [r for r in trials if r["arm"] == "no_photos"]
 
     lines: List[str] = []
     lines.append("# S3 pilot (docs/bench/13)\n")
@@ -378,7 +378,7 @@ def phase_analyze() -> None:
 
     # --- 2. parse failure rate + detail --------------------------------------
     lines.append("## 2. parse failures\n")
-    for arm, recs in (("C", c_recs), ("E", e_recs)):
+    for arm, recs in (("photos", c_recs), ("no_photos", e_recs)):
         # main records only (rep 0 for C)
         main = [r for r in recs if r["rep"] == 0]
         extracted = [(r, _extract(r, headlines)) for r in main]
@@ -513,7 +513,7 @@ def phase_analyze() -> None:
 
     # --- truncation / word count --------------------------------------------
     lines.append("## truncation + word count\n")
-    for arm, recs in (("C", c_recs), ("E", e_recs)):
+    for arm, recs in (("photos", c_recs), ("no_photos", e_recs)):
         main = [r for r in recs if r["rep"] == 0]
         wc = [r["word_count"] for r in main]
         trunc = sum(1 for r in main if r["probe"]["n_generated_tokens"] >= MAX_NEW_TOKENS)

@@ -137,7 +137,7 @@ def arm_plan(arm: int) -> Dict[str, Any]:
     lm = [r["image_mean"] for r in left]
     rm = [r["image_mean"] for r in right]
     n_photos = sorted({len(r.get("image_paths") or []) for r in (left + right)})
-    msgs, _ = build_scheme_messages(SCHEME, ["x"] * arm, "Q", arm)
+    msgs, _ = build_scheme_messages(SCHEME, ["x"] * arm, "no_photos", arm)
     # Worst-case prompt length, so a silent truncation is caught before the run
     # rather than inferred from odd answers afterwards. The items carry each
     # photo's real token count as an annotation.
@@ -266,7 +266,7 @@ def phase_run(limit: int = 0) -> int:
             q = question_text(messages[qid])
             msgs, tools = build_scheme_messages(SCHEME, paths, q, arm)
             trial = Trial(
-                surface="probe_s7_images", item_id=item.item_id, condition="C",
+                surface="probe_s7_images", item_id=item.item_id, condition="photos",
                 conversation=Conversation(messages=msgs, images=paths),
                 candidates=[], probe_points=[], max_new_tokens=MAX_NEW_TOKENS,
                 variant={"scheme": SCHEME, "arm": arm, "question": qid},
@@ -418,7 +418,7 @@ def phase_report() -> None:
     print("  /SE              = judge separation over its own error bar. Dimensionless,")
     print("                     so this is the only column comparable across rounds.")
     print()
-    turns_by_arm = {a: len(build_scheme_messages(SCHEME, ["x"] * a, "Q", a)[0])
+    turns_by_arm = {a: len(build_scheme_messages(SCHEME, ["x"] * a, "no_photos", a)[0])
                     for a in ARMS}
     print("Photo count and turn count move together -- every photo is one more")
     print("image-opening turn: " + ", ".join(f"{a} photos = {t} turns"
