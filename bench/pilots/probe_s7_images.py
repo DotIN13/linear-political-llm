@@ -142,14 +142,18 @@ def arm_plan(arm: int) -> Dict[str, Any]:
 
 
 def phase_plan() -> int:
-    print(f"{len(ARMS)} arms x {len(QUESTION_IDS)} questions x {2 * N_PER_SIDE} "
-          f"personas = {len(ARMS) * len(QUESTION_IDS) * 2 * N_PER_SIDE} generations")
-    print(f"wording: imported from bench.surfaces.groupchat (b_committed)")
+    print(f"{len(ARMS)} photo-count groups ({', '.join(f'{a} photos' for a in ARMS)}) "
+          f"x {len(QUESTION_IDS)} questions x {2 * N_PER_SIDE} personas "
+          f"(={N_PER_SIDE} most left-looking + {N_PER_SIDE} most right-looking) "
+          f"= {len(ARMS) * len(QUESTION_IDS) * 2 * N_PER_SIDE} generations")
+    print("wording: the family-group-chat surface's own question, imported from "
+          "bench/surfaces/groupchat.py -- never a copy")
     print()
     plans = [arm_plan(a) for a in ARMS]
     for p in plans:
         if p["missing"]:
-            print(f"arm {p['arm']:2} photos -- ITEMS FILE MISSING: {p['items_file']}")
+            print(f"{p['arm']:2} photos per persona -- ITEMS FILE MISSING: "
+                  f"{p['items_file']}")
             print(f"   Sample it by copying the command that made the 3-photo file")
             print(f"   -- it is recorded verbatim in items/sample_manifest_bucket_v1.json")
             print(f"   under \"command\" -- and changing exactly two flags:")
@@ -159,12 +163,13 @@ def phase_plan() -> int:
             print(f"   items_per_bucket = per_bucket // images_per_item, so {p['arm']} photos")
             print(f"   yields {p['arm'] // 3}x fewer items from the same pool.")
             continue
-        print(f"arm {p['arm']:2} photos -- {p['turns']} turns, "
+        print(f"{p['arm']:2} photos per persona -- {p['turns']} conversation turns, "
               f"{p['generations']} generations, photos/item {p['photos_per_item']}")
-        print(f"   left  {p['left']}")
-        print(f"   right {p['right']}")
-        print(f"   gap   {p['gap']:+.3f}   "
-              f"(left {p['left_mean']:+.3f}, right {p['right_mean']:+.3f})")
+        print(f"   most left-looking  (item id, photo score): {p['left']}")
+        print(f"   most right-looking (item id, photo score): {p['right']}")
+        print(f"   photo-score gap {p['gap']:+.3f}   (left-looking "
+              f"{p['left_mean']:+.3f}, right-looking {p['right_mean']:+.3f}) -- this is"
+              f" the treatment, not a judge score")
         if p["worst_prompt_tokens"] is not None:
             fits = p["worst_prompt_tokens"] < MAX_MODEL_LEN
             print(f"   tokens worst case {p['worst_prompt_tokens']} "
@@ -175,25 +180,26 @@ def phase_plan() -> int:
                 print(f"   raise --max-model-len before running, or the prompt is "
                       f"truncated and the last photos are simply not seen")
             print(f"   server needs --limit-mm-per-prompt "
-                  f"'{{\"image\":{p['arm']}}}' -- the default 4 rejects this "
-                  f"arm outright")
+                  f"'{{\"image\":{p['arm']}}}' -- the default of 4 rejects a "
+                  f"{p['arm']}-photo prompt outright")
     live = [p for p in plans if not p["missing"]]
     if len(live) == len(ARMS):
         gaps = {p["arm"]: p["gap"] for p in live}
         base = gaps[ARMS[0]]
         print()
-        print("--- the contrast check, before any GPU is spent ---")
+        print("--- photo-score contrast check (the TREATMENT), before any GPU is spent ---")
         for arm_n, g in gaps.items():
-            print(f"  {arm_n:2} photos: gap {g:+.3f}   ({g / base:.0%} of the "
-                  f"{ARMS[0]}-photo gap)")
+            print(f"  {arm_n:2} photos: photo-score gap {g:+.3f}   "
+                  f"({g / base:.0%} of the {ARMS[0]}-photo gap)")
         worst = min(gaps.values()) / base
         if worst < 0.80:
             print(f"  WARNING: the weakest arm keeps only {worst:.0%} of the "
                   f"contrast. A null result would be ambiguous between 'more "
                   f"photos does not help' and 'this arm had a weaker treatment'.")
         else:
-            print(f"  arms are within 20% of each other on contrast -- "
-                  f"comparable treatments.")
+            print(f"  the groups are within 20% of each other on photo-score "
+                  f"contrast -- comparable treatments, so a null result would be "
+                  f"about photo count rather than about a weaker manipulation.")
     return 0 if all(not p["missing"] for p in plans) else 1
 
 
@@ -360,50 +366,61 @@ def phase_report() -> None:
         by_arm.setdefault(r["arm"], []).append(r)
 
     print("=" * 100)
-    print("THREE PHOTOS vs TEN -- one wording (b_committed, from the surface), agentic")
+    print("THREE PHOTOS vs TEN -- one wording (the surface's own), tool-using scheme")
+    print()
+    print("Two different scales below, both signed decimals near zero -- do not compare")
+    print("their magnitudes:")
+    print("  photo-score gap  = the TREATMENT. Mean photo slant of the right-looking")
+    print("                     personas minus the left-looking ones. Printed by `plan`.")
+    print("  judge separation = the RESPONSE. Mean judge lean of answers to right-looking")
+    print("                     personas minus left-looking ones. Printed below.")
+    print("  /SE              = judge separation over its own error bar. Dimensionless,")
+    print("                     so this is the only column comparable across rounds.")
+    print()
     print("Photo count and turn count move together: 3 photos is 13 turns, 10 is 27.")
-    print("A difference between arms is 'ten photos in a longer transcript' vs three")
-    print("in a shorter one -- not the photo count alone.")
+    print("A difference between the groups is 'ten photos in a longer transcript' vs")
+    print("three in a shorter one -- not the photo count alone.")
     print("=" * 100)
-    hdr = (f"{'arm':>4} {'turns':>6} {'n':>4} {'words':>6} {'distinct':>9} "
-           f"{'wrapper':>8} {'opinion':>8} {'left':>8} {'right':>8} "
-           f"{'separation':>11} {'/SE':>6}")
+    hdr = (f"{'photos':>7} {'turns':>6} {'n':>4} {'words':>6} {'distinct':>9} "
+           f"{'wrapper':>8} {'opinion':>8} {'judge L':>8} {'judge R':>8} "
+           f"{'judge sep':>11} {'/SE':>6}")
     print(hdr)
     cells: Dict[int, Dict[str, Any]] = {}
     for arm in ARMS:
         arm_rows = by_arm.get(arm) or []
         if not arm_rows:
-            print(f"{arm:>4}   (no records)")
+            print(f"{arm:>7}   (no photo-count group on record)")
             continue
         s = cells[arm] = _stats(arm_rows)
         f = lambda v, w=8, p=3: (f"{v:+.{p}f}".rjust(w) if v is not None else "n/a".rjust(w))
-        print(f"{arm:>4} {str(s['turns'])[1:-1]:>6} {s['n']:>4} {s['words']:>6} "
+        print(f"{arm:>7} {str(s['turns'])[1:-1]:>6} {s['n']:>4} {s['words']:>6} "
               f"{s['distinct']}/{s['n']:>7} {s['wrapper']:>8} {s['opinion']:>8} "
               f"{f(s['left'])} {f(s['right'])} {f(s['sep'], 11)} "
               f"{(f'{s['se_ratio']:+.2f}' if s['se_ratio'] is not None else 'n/a'):>6}")
 
     print()
     print("--- per question, share of answers distinct ---")
-    print(f"{'arm':>4}  " + "  ".join(f"{q:>7}" for q in QUESTION_IDS))
+    print(f"{'photos':>7}  " + "  ".join(f"{q:>7}" for q in QUESTION_IDS))
     for arm in ARMS:
         cellrow = []
         for q in QUESTION_IDS:
             qs = [r for r in (by_arm.get(arm) or []) if r["question"] == q]
             texts = [r.get("text") or "" for r in qs]
             cellrow.append(f"{len({t for t in texts if t})}/{len(qs)}".rjust(7))
-        print(f"{arm:>4}  " + "  ".join(cellrow))
+        print(f"{arm:>7}  " + "  ".join(cellrow))
 
     if len(cells) == len(ARMS):
         a, b = ARMS[0], ARMS[-1]
         print()
         print("--- did it change? ---")
-        for name, key in (("opinion rate", "opinion"), ("median words", "words"),
-                          ("wrappers", "wrapper")):
-            print(f"  {name:<14} {a} photos: {cells[a][key]:<6} "
+        for name, key in (("opinion rate (n)", "opinion"),
+                          ("median words", "words"),
+                          ("wrappers (n)", "wrapper")):
+            print(f"  {name:<18} {a} photos: {cells[a][key]:<6} "
                   f"{b} photos: {cells[b][key]}")
         sa, sb = cells[a]["sep"], cells[b]["sep"]
         if sa is not None and sb is not None:
-            print(f"  {'separation':<14} {a} photos: {sa:+.3f} "
+            print(f"  {'judge separation':<18} {a} photos: {sa:+.3f} "
                   f"({cells[a]['se_ratio']:+.2f} SE)   "
                   f"{b} photos: {sb:+.3f} ({cells[b]['se_ratio']:+.2f} SE)")
             print()

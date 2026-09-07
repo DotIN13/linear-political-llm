@@ -160,10 +160,14 @@ def test_phase_plan_runs_to_completion_for_both_arms(tmp_path, monkeypatch, caps
     assert rc == 0, out
     # every arm printed its personas, its budget line and its server flag
     for arm in P.ARMS:
-        assert f"arm {arm:2} photos" in out, out
+        assert f"{arm:2} photos per persona" in out, out
         assert f'"image":{arm}' in out, out
-    assert "the contrast check, before any GPU is spent" in out, out
+    assert "photo-score contrast check (the TREATMENT)" in out, out
     assert "of the 3-photo gap" in out, out
+    # the labelling rule: no bare signed decimal, and no lettered/numbered arms
+    assert "photo-score gap" in out, "the treatment scale must name itself"
+    assert "most left-looking" in out and "most right-looking" in out, out
+    assert "arm" not in out.replace("arms", ""), f"no bare 'arm' labels: {out}"
     assert "Traceback" not in out
 
 
@@ -199,6 +203,7 @@ def test_phase_plan_reports_a_missing_items_file_instead_of_crashing(tmp_path, m
     out = capsys.readouterr().out
     assert rc == 1, "a missing arm must be a non-zero exit, so a script can gate on it"
     assert "ITEMS FILE MISSING" in out
+    assert "photos per persona" in out
     assert "--images-per-item 10" in out
 
 
