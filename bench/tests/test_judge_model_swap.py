@@ -17,11 +17,47 @@ from bench.judges.specs import (DEFAULT_JUDGE_MODEL, MODEL_CAPS, REASONING_EFFOR
                                 caps_for, judge_specs)
 
 
-def test_the_default_judge_is_luna_on_the_responses_api():
-    assert DEFAULT_JUDGE_MODEL == "gpt-5.6-luna"
+def test_the_default_judge_is_gpt_5_4_and_fully_pinned():
+    """Not the newest model, on purpose.
+
+    gpt-5.4 is the only one this key can reach that takes strict json_schema and
+    logprobs and temperature=0.0 together, so it is the only judge whose verdicts
+    are reproducible. Every model past it refuses `temperature`. Since every
+    round's numbers are compared against every other round's, a reproducible
+    judge beats a cleverer one.
+    """
+    assert DEFAULT_JUDGE_MODEL == "gpt-5.4"
+    spec = judge_specs()["s2_proposal"]
+    assert spec.model == "gpt-5.4"
+    assert spec.api == "chat"
+    assert spec.temperature == 0.0, "greedy decoding must be pinned"
+    assert spec.seed is not None
+    assert spec.logprobs is True
+    assert spec.reasoning_effort is None
+
+
+def test_the_newer_models_stay_usable_for_re_running_the_comparison():
+    """Reverting the default must not delete the capability work."""
+    for model in ("gpt-5.6-luna", "gpt-5.5", "gpt-6-astra"):
+        caps = caps_for(model)
+        assert caps.api == "responses", model
+        assert caps.reasoning_effort in REASONING_EFFORTS, model
+
+
+def test_the_model_can_be_overridden_without_an_edit(monkeypatch):
+    """`judge_specs()` reads the env var per call, so no module reload is needed.
+
+    Do not reload `bench.judges.specs` to test this: a reload rebinds `LEAN_MAP`
+    to a fresh object, and code elsewhere identifies the lean axes with
+    `label_map.get(f) is LEAN_MAP`. That silently broke two unrelated tests when
+    this test did reload.
+    """
+    monkeypatch.setenv("BENCH_JUDGE_MODEL", "gpt-5.6-luna")
     spec = judge_specs()["s2_proposal"]
     assert spec.model == "gpt-5.6-luna"
     assert spec.api == "responses"
+    assert spec.temperature is None
+    assert spec.reasoning_effort == "high"
 
 
 def test_luna_is_sent_no_parameter_it_refuses():
@@ -106,8 +142,18 @@ class _FakeChatReply:
         self.choices = [self._Choice()]
 
 
+def _luna_spec():
+    """A spec on the newer model, whatever the default happens to be."""
+    import dataclasses
+    caps = caps_for("gpt-5.6-luna")
+    return dataclasses.replace(
+        judge_specs()["s2_proposal"], model="gpt-5.6-luna", api=caps.api,
+        temperature=caps.temperature, seed=caps.seed, logprobs=caps.logprobs,
+        reasoning_effort=caps.reasoning_effort)
+
+
 def test_the_responses_call_uses_text_format_not_response_format():
-    spec = judge_specs()["s2_proposal"]
+    spec = _luna_spec()
     client = _Recorder()
     C._request(client, spec, "some answer",
                C._schema_to_response_format(spec), logprobs=True)
@@ -124,7 +170,7 @@ def test_the_responses_call_uses_text_format_not_response_format():
 
 def test_refused_parameters_are_absent_from_the_wire_not_set_to_none():
     """`temperature=None` in a kwargs dict is still a parameter sent as null."""
-    spec = judge_specs()["s2_proposal"]
+    spec = _luna_spec()
     client = _Recorder()
     C._request(client, spec, "answer", C._schema_to_response_format(spec), logprobs=True)
     call = client.calls[0]
@@ -173,10 +219,10 @@ def test_reading_the_answer_skips_reasoning_items():
 def test_swapping_the_model_changes_the_cache_key():
     """Otherwise a luna verdict would be served from a gpt-5.4 cache row."""
     import dataclasses
-    luna = judge_specs()["s2_proposal"]
-    old = dataclasses.replace(luna, model="gpt-5.4", api="chat", temperature=0.0,
-                              seed=20260905, logprobs=True, reasoning_effort=None)
-    assert luna.judge_id != old.judge_id
+    luna = _luna_spec()
+    pinned = judge_specs()["s2_proposal"]
+    assert pinned.model == "gpt-5.4"
+    assert luna.judge_id != pinned.judge_id
 
 
 def test_the_historical_config_keeps_its_historical_cache_key():
@@ -184,9 +230,7 @@ def test_the_historical_config_keeps_its_historical_cache_key():
     must not orphan them, so a spec in the historical shape hashes as before."""
     import dataclasses
     import bench.judges.specs as S
-    old = dataclasses.replace(judge_specs()["s2_proposal"], model="gpt-5.4",
-                              api="chat", temperature=0.0, seed=S.DEFAULT_SEED,
-                              logprobs=True, reasoning_effort=None)
+    old = judge_specs()["s2_proposal"]   # the default is this shape again
     expected = S.sha256_of({
         "system_prompt": old.system_prompt,
         "schema": old.schema,
@@ -200,16 +244,20 @@ def test_the_historical_config_keeps_its_historical_cache_key():
 def test_the_transport_is_part_of_the_cache_key():
     """The same model on two APIs can label differently."""
     import dataclasses
-    spec = judge_specs()["s2_proposal"]
+    spec = _luna_spec()
     as_chat = dataclasses.replace(spec, api="chat")
     assert spec.judge_id != as_chat.judge_id
 
 
-def test_every_rubric_picked_up_the_new_model():
+def test_every_rubric_uses_the_default_model_and_its_measured_capabilities():
+    caps = caps_for(DEFAULT_JUDGE_MODEL)
     for name, spec in judge_specs().items():
         assert spec.model == DEFAULT_JUDGE_MODEL, name
-        assert spec.api == caps_for(DEFAULT_JUDGE_MODEL).api, name
-        assert spec.temperature is None, name
+        assert spec.api == caps.api, name
+        assert spec.temperature == caps.temperature, name
+        assert spec.seed == caps.seed, name
+        assert spec.logprobs == caps.logprobs, name
+        assert spec.reasoning_effort == caps.reasoning_effort, name
 
 
 # --------------------------------------------------------------------------- #

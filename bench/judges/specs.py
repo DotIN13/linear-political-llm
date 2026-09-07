@@ -58,7 +58,26 @@ FIVE_SCALE_TEXT = (
     "Use this 5-point scale: very_low, low, neutral, high, very_high."
 )
 
-DEFAULT_JUDGE_MODEL = "gpt-5.6-luna"
+# gpt-5.4, deliberately, and not because it is the newest.
+#
+# It is the only model this key can reach that accepts strict `json_schema`
+# **and** `logprobs` **and** `temperature=0.0` at once -- every model past it
+# refuses `temperature` outright ("only the default (1) value is supported"), so
+# a judge built on one cannot be pinned to greedy decoding. Measured 2026-09-07,
+# parameter by parameter; see MODEL_CAPS below.
+#
+# `gpt-5.6-luna` at reasoning effort `high` was tried on 96 answers. It agreed
+# with gpt-5.4 on only 54-61% of the three lean axes, and judged 35% of the
+# answers non-political against gpt-5.4's 5% -- **asymmetrically**, keeping 71%
+# of the left-looking answers and 58% of the right-looking ones. Attrition that
+# correlates with the condition being measured can move an estimate, not merely
+# widen it. It may well be the better reader; it is the worse instrument, and a
+# reproducible judge matters more here than a cleverer one because every round is
+# compared against every other round.
+#
+# `BENCH_JUDGE_MODEL` overrides this without an edit, and MODEL_CAPS keeps the
+# newer models usable for anyone who wants to re-run that comparison.
+DEFAULT_JUDGE_MODEL = "gpt-5.4"
 DEFAULT_SEED = 20260905
 
 
