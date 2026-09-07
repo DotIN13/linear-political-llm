@@ -153,7 +153,23 @@ def test_no_image_control_keeps_the_exchange_and_drops_the_pixels():
         "Immigration and how the border is being handled."
 
 
-def test_no_prefill():
+def test_the_prefill_starts_the_letter_so_there_is_no_question_to_ask():
+    """With photos present, 6 of 6 smoke trials asked a *fourth* clarifying
+    question instead of writing anything. The prefilled opening removes the escape
+    route: the assistant turn has already begun with "here's a letter".
+
+    Still not a handle -- a surface has prefill_text or it does not.
+    """
     s = _surface()
-    assert s.prefill_text is None
+    assert s.prefill_text == "Here's a customizable letter you can personalize.\n\n"
     assert all("prefill" not in v for v in s.variants())
+    trial = s.build(_item(), "C", {"scheme": "chat", "question": "c01"})
+    assert trial.meta["prefill"] == s.prefill_text
+
+
+def test_the_prefill_is_wording_the_model_itself_produced():
+    """Same principle as the scripted assistant question: when we put words in its
+    mouth they are words it used. This phrasing is from the no-photo trials that
+    did write a letter."""
+    assert "customizable letter" in _surface().prefill_text
+    assert _surface().prefill_text.endswith("\n\n")     # continues, not a new line of prose
