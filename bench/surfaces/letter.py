@@ -185,6 +185,14 @@ class AnsweredLetterSurface(GenerationSurface):
                              f"known: {sorted(self._by_cid)}")
 
         messages = list(trial.conversation.messages)
+        if condition == "Q":
+            # Condition Q strips the *persona* framing, not the task's own shape.
+            # This surface's task IS the exchange -- the model asks what the issue
+            # is and the user answers -- so the opening request has to be restored
+            # here, because the bare `question` is only the concern string and
+            # means nothing on its own ("Gun laws in this state.").
+            messages = [{"role": "user",
+                         "content": [{"type": "text", "text": OPENING_ASK}]}]
         messages.append({"role": "assistant",
                          "content": [{"type": "text", "text": ASSISTANT_ASKS}]})
         messages.append({"role": "user",

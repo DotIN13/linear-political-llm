@@ -78,7 +78,7 @@ def test_generation_surface_shape(sid):
         assert surface.prefill_text is None
     assert surface.max_new_tokens > 0
     assert [p.name for p in surface.probe_points(None)] == ["s_pre", "s_gen", "s_img"]
-    assert surface.conditions == ["C", "E"]
+    assert surface.conditions == ["C", "Q", "E"]
 
 
 def test_no_silent_degradation_on_a_probe_less_backend():
@@ -453,3 +453,103 @@ def test_the_no_image_baseline_keeps_the_whole_story():
     assert not [p for m in bare for p in m["content"] if p.get("type") == "image"]
     texts = lambda ms: [p.get("text") for m in ms for p in m["content"] if p.get("text")]
     assert texts(bare) == texts(full)
+
+
+# --------------------------------------------------------------------------- #
+# Condition Q: the question on its own. Added because condition E was being
+# described and used as "the baseline" when it is not the model's default
+# behaviour -- E keeps the whole transcript and withholds only the image bytes,
+# so the model is told these are someone's photos, opens three files and sees
+# nothing. Whatever that provokes is inside E. Q has no framing at all.
+# --------------------------------------------------------------------------- #
+Q_SURFACES = ("s3_digest", "s7_family_chat", "s8_letter_answered")
+
+
+@pytest.mark.parametrize("name", Q_SURFACES)
+def test_q_is_the_bare_question_and_nothing_else(name):
+    surface = registry.get_surface(name)()
+    variant = dict(surface.variants()[0])
+    trial = surface.build(ITEM, "Q", variant, seed=1)
+    msgs = trial.conversation.messages
+    # One turn, except where the task itself IS an exchange: the letter surface
+    # asks what the issue is and is answered, and without that its question is
+    # only a bare concern string. Q removes the persona, not the task.
+    expected = 3 if name == "s8_letter_answered" else 1
+    assert len(msgs) == expected, f"{name}: Q should be {expected} turn(s), got {len(msgs)}"
+    assert msgs[0]["role"] == "user"
+    assert trial.meta["tools"] is None, "no tools are declared in Q"
+    text = " ".join(p.get("text", "") for m in msgs for p in (m.get("content") or []))
+    # none of the persona apparatus may survive
+    for leak in ("/memory/", "img_0417", "photos from around where I live",
+                 "Have a look through my stuff", "list_dir", "view_image",
+                 "the usual week"):
+        assert leak not in text, f"{name}: Q leaked scaffolding: {leak!r}"
+    assert trial.conversation.images == []
+    assert trial.meta["n_images"] == 0 and trial.meta["n_files"] == 0
+
+
+@pytest.mark.parametrize("name", Q_SURFACES)
+def test_q_asks_exactly_what_c_asks(name):
+    """The baseline has to be the same task, or it is not a baseline."""
+    surface = registry.get_surface(name)()
+    variant = dict(surface.variants()[0])
+    q = surface.build(ITEM, "Q", dict(variant), seed=1)
+    c = surface.build(ITEM, "C", dict(variant), seed=1)
+    q_last = q.conversation.messages[-1]["content"]
+    q_text = " ".join(p.get("text", "") for p in q_last)
+    c_last = c.conversation.messages[-1]["content"]
+    c_text = " ".join(p.get("text", "") for p in c_last) if isinstance(c_last, list) else str(c_last)
+    assert q_text.strip() == c_text.strip(), f"{name}: Q and C ask different questions"
+
+
+@pytest.mark.parametrize("name", Q_SURFACES)
+def test_e_still_keeps_the_whole_transcript(name):
+    """E is retained deliberately -- it isolates the pixels from the story told
+    around them -- so it must keep every turn and every filename."""
+    surface = registry.get_surface(name)()
+    variant = dict(surface.variants()[0])
+    c = surface.build(ITEM, "C", dict(variant), seed=1)
+    e = surface.build(ITEM, "E", dict(variant), seed=1)
+    assert len(e.conversation.messages) == len(c.conversation.messages)
+    assert e.conversation.images == []
+    imgs = [p for m in e.conversation.messages for p in (m.get("content") or [])
+            if isinstance(p, dict) and p.get("type") == "image"]
+    assert imgs == [], "E must carry no pixels"
+
+
+def test_both_baselines_run_once_per_cell_not_once_per_persona():
+    surface = registry.get_surface("s7_family_chat")()
+    assert surface.is_item_invariant("Q") is True
+    assert surface.is_item_invariant("E") is True
+    assert surface.is_item_invariant("C") is False
+
+
+def test_the_news_ranking_baselines_are_not_item_invariant():
+    """s3 re-deals per trial, so its baselines differ per deal and cannot be
+    collapsed to one run per cell."""
+    surface = registry.get_surface("s3_digest")()
+    assert surface.is_item_invariant("Q") is False
+    assert surface.is_item_invariant("E") is False
+
+
+def test_q_is_declared_and_described():
+    from bench.surfaces.generation import CONDITION_DESC, CONDITIONS
+    assert CONDITIONS == ["C", "Q", "E"]
+    assert "no persona framing" in CONDITION_DESC["Q"]
+
+
+@pytest.mark.parametrize("name", Q_SURFACES)
+def test_q_is_the_same_prompt_under_both_schemes(name):
+    """Q has no scaffolding, so the conversation scheme cannot touch it. Running
+    Q under both schemes would be one trial recorded twice."""
+    surface = registry.get_surface(name)()
+    qid = surface.question_ids()[0]
+    a = surface.build(ITEM, "Q", {"scheme": "chat", "question": qid}, seed=1)
+    b = surface.build(ITEM, "Q", {"scheme": "agentic", "question": qid}, seed=1)
+    def flat(t):
+        return [(m["role"], " ".join(p.get("text", "") for p in m["content"]))
+                for m in t.conversation.messages]
+    assert flat(a) == flat(b), f"{name}: Q differs by scheme"
+    assert surface.is_scheme_invariant("Q") is True
+    assert surface.is_scheme_invariant("C") is False
+    assert surface.is_scheme_invariant("E") is False

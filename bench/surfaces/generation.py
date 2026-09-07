@@ -174,8 +174,28 @@ TOOLS = [
                        "required": ["path"]}}},
 ]
 
-CONDITIONS = ["C", "E"]      # C = with images, E = no-image baseline
-CONDITION_DESC = {"C": "images delivered per scheme", "E": "no-image baseline, same text"}
+# Three conditions, and the difference between the two baselines is the point.
+#
+#   C  the persona is shown: photos delivered per scheme
+#   Q  **the question on its own.** No share line, no memory directories, no
+#      filenames, no tool calls, no scripted small talk -- just the task. This is
+#      the reference point for "what does the model say if you simply ask it",
+#      and it is what every effect should be measured against.
+#   E  the whole transcript with only the image bytes withheld. The model is told
+#      these are photos of where the person lives, "opens" three files and gets
+#      back a filename and nothing else.
+#
+# E is a narrower control than it looks: it isolates the *pixels* from the story
+# told around them, which is a real question, but it is also a strange stimulus
+# -- a transcript in which the model opened three images and saw none of them.
+# Whatever that provokes (confusion, hedging, extra caution) is baked into it, so
+# **E is not the model's default behaviour and must not be read as it.** Q is.
+CONDITIONS = ["C", "Q", "E"]
+CONDITION_DESC = {
+    "C": "images delivered per scheme",
+    "Q": "question only -- no persona framing at all",
+    "E": "full transcript, image bytes withheld",
+}
 
 # --- the six tasks' surface ids, in board order ------------------------------
 SURFACE_IDS = ["s1_speech", "s2_proposal", "s5_letter", "s3_digest", "s6_describe", "s4_bonus"]
@@ -829,13 +849,26 @@ class GenerationSurface:
                             "prefill_text or it does not")
         return problems
 
-    # -- item invariance -----------------------------------------------------
+    # -- invariances that save trials ----------------------------------------
+    def is_scheme_invariant(self, condition: str) -> bool:
+        """Does the conversation scheme change this condition's prompt at all?
+
+        **It does not for Q.** The bare question has no scaffolding, so `chat`
+        and `agentic` produce a byte-identical prompt -- running both would be
+        the same trial twice under two names. C and E carry the scheme's
+        transcript and so differ.
+        """
+        if condition not in self.conditions:
+            raise ValueError(f"Unknown condition {condition!r}. Known: {self.conditions}")
+        return condition == "Q"
+
     def is_item_invariant(self, condition: str) -> bool:
         if condition not in self.conditions:
             raise ValueError(f"Unknown condition {condition!r}. Known: {self.conditions}")
-        # No images (E) leaves a text-only conversation; it is byte-identical
-        # across items *unless* the surface shuffles per item (s3's headline order).
-        return condition == "E" and not self.randomizes_per_item
+        # Both baselines leave a conversation with no pixels in it, so it is
+        # byte-identical across items *unless* the surface shuffles per item
+        # (s3's headline deal). So each runs once per cell, not once per persona.
+        return condition in ("Q", "E") and not self.randomizes_per_item
 
     # -- build ---------------------------------------------------------------
     def _item_order(self, item: Item, seed: Optional[int]) -> Optional[List[int]]:
@@ -898,13 +931,20 @@ class GenerationSurface:
         if order is not None:
             variant["order"] = order
 
-        with_images = condition != "E"
+        with_images = condition == "C"
         image_paths = list(item.image_paths) if with_images else []
         question = self.question(order, attribution, qid)
-        # The item's own photo count, not len(image_paths): condition E strips the
-        # pixels and must keep the same number of files in the transcript.
-        n_files = len(item.image_paths) or 3
-        messages, tools = build_scheme_messages(scheme, image_paths, question, n_files)
+        if condition == "Q":
+            # The bare task, with no scaffolding of any kind. Not the scheme's
+            # transcript minus its pixels -- the scheme is absent, which is why
+            # this is the reference point and E is not.
+            messages = [{"role": "user", "content": [{"type": "text", "text": question}]}]
+            tools = None
+        else:
+            # The item's own photo count, not len(image_paths): condition E strips
+            # the pixels and must keep the same number of files in the transcript.
+            n_files = len(item.image_paths) or 3
+            messages, tools = build_scheme_messages(scheme, image_paths, question, n_files)
         # Applied whenever the surface has one. No handle, no on/off.
         prefill_text = self.prefill_text
 
@@ -931,8 +971,9 @@ class GenerationSurface:
                 # many files the transcript named. n_files can, and two arms with
                 # different photo counts are different stimuli even when both
                 # have their pixels removed.
-                "n_files": n_files,
+                "n_files": 0 if condition == "Q" else n_files,
                 "item_invariant": self.is_item_invariant(condition),
+                "scheme_invariant": self.is_scheme_invariant(condition),
                 "judge": self.judge_spec.id if self.judge_spec else None,
             },
         )
@@ -974,6 +1015,8 @@ class GenerationSurface:
             "prefill": self.prefill_text,
             "variants": self.variants(),
             "item_invariant_conditions": [c for c in self.conditions if self.is_item_invariant(c)],
+            "scheme_invariant_conditions": [c for c in self.conditions
+                                            if self.is_scheme_invariant(c)],
             "probe_points": [p.name for p in self.probe_points(None)],
             "example_question": self.question(list(range(len(self.headlines)))
                                               if self.headlines else None),
