@@ -1,4 +1,34 @@
-"""GenerationSurface + the six open-ended tasks (docs/bench board-tasks).
+"""Compatibility shim. The code moved; this keeps the import path.
+
+``bench/surfaces/generation.py`` was 1,143 lines: six unrelated questions plus all
+the machinery they share. It is now
+
+    bench/surfaces/shared/      conditions, ordering, refusal, text, transcript,
+                                surface
+    bench/surfaces/questions/   one file per question
+    bench/surfaces/registry.py  TASK_PROMPTS, SURFACE_IDS, _make, register_all
+
+**This module re-exports all of it and defines nothing.** It exists because
+``bench/pilots/*`` (eight files), ``bench/surfaces/letter.py``,
+``bench/surfaces/groupchat.py``, ``bench/registry.py`` and six test modules import
+from ``bench.surfaces.generation``, and repointing thirty-odd import sites in the
+same change that moves the code would mean a diff nobody can review as
+behaviour-preserving.
+
+**It is temporary and it is not the place to add anything.** New code should import
+from the real module. When the callers have been repointed -- a separate, mechanical
+commit -- this file goes away.
+
+Note for whoever does that: deleting it changes ``measurement_rev`` again, because
+``MEASUREMENT_GLOBS`` hashes the path list as well as the contents
+(``bench/store.py:25``).
+
+The original module docstring follows verbatim, kept because it is the design record
+for the six questions and the two delivery schemes.
+
+------------------------------------------------------------------------------
+
+GenerationSurface + the six open-ended tasks (docs/bench board-tasks).
 
 One implementation class, six configs. Every surface is an open-ended prompt
 with no political word in it; the politics must come out in the answer
@@ -29,103 +59,43 @@ That order goes into ``variant["order"]`` so two orders never collide on one
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
-import random
-import re
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
-
-from bench.judges.specs import judge_specs
-from bench.registry import register_surface
-from bench.types import (
-    Capability, Conversation, Item, Outcome, ProbePoint, Response, Trial,
-)
-from bench.surfaces.questions import s1_speech, s2_proposal, s3_digest, s4_bonus, s5_letter, s6_describe
-from bench.surfaces.shared.text import (
+from bench.surfaces.shared.text import (  # noqa: F401
     _normalize_apostrophes, word_count,
 )
-from bench.surfaces.shared.refusal import (
+from bench.surfaces.shared.refusal import (  # noqa: F401
     REFUSAL_WINDOW, _REFUSAL_PATTERNS, _refusal_match, detect_refusal,
 )
-from bench.surfaces.shared.conditions import (
-    CONDITIONS, CONDITION_ALIASES, CONDITION_DESC, REMOVED_CONDITIONS, normalise_condition,
+from bench.surfaces.shared.conditions import (  # noqa: F401
+    CONDITIONS, CONDITION_ALIASES, CONDITION_DESC, REMOVED_CONDITIONS,
+    normalise_condition,
 )
-from bench.surfaces.shared.ordering import (
+from bench.surfaces.shared.ordering import (  # noqa: F401
     _order_seed, sampled_order, shuffled_order,
 )
-from bench.surfaces.shared.transcript import (
-    AGENTIC_ACK, AGENTIC_OPENER, ASSISTANT_TURN_1, ASSISTANT_TURN_2, CHAT_USER_TURN_2, FILENAMES, FILENAMES_LINE, FILES_BY_DIR, HOMETOWN_SHARE, MEMORY_DIRS, SHARE_LINE, SYSTEM_AGENTIC, TOOLS, _FILENAME_POOL, _agentic_messages, _chat_messages, _tool_call, build_scheme_messages, files_by_dir,
+from bench.surfaces.shared.transcript import (  # noqa: F401
+    AGENTIC_ACK, AGENTIC_OPENER, ASSISTANT_TURN_1, ASSISTANT_TURN_2, CHAT_USER_TURN_2,
+    FILENAMES, FILENAMES_LINE, FILES_BY_DIR, HOMETOWN_SHARE, MEMORY_DIRS, SHARE_LINE,
+    SYSTEM_AGENTIC, TOOLS, _FILENAME_POOL, _agentic_messages, _chat_messages, _tool_call,
+    build_scheme_messages, files_by_dir,
 )
-from bench.surfaces.shared.surface import (
+from bench.surfaces.shared.surface import (  # noqa: F401
     GenerationSurface,
 )
-from bench.surfaces.questions.s3_digest import (
-    ROOT_DIR, S3_AMBIGUITY_MARGIN, S3_HEADLINES_PATH, S3_MATCH_THRESHOLD, S3_N_PICKS, _OUTLET_SUFFIX, _S3Surface, _find_index_markers, _norm_tokens, _split_segments, extract_picks, load_s3_headlines, normalize_outlet, outlet_matches, token_set_similarity,
-)
-from bench.surfaces.questions.s5_letter import (
-    TOPIC_KEYWORDS, TOPIC_LEAN, _S5Surface, extract_topic,
-)
-from bench.surfaces.questions.s6_describe import (
-    _POLITICS_WORDS, _S6Surface, extract_mentions_politics,
-)
-from bench.surfaces.questions.s1_speech import (
+from bench.surfaces.questions.s1_speech import (  # noqa: F401
     S1_PREFILL,
 )
-
-# --- the six prompts, verbatim from the board --------------------------------
-TASK_PROMPTS: Dict[str, str] = {
-    "s1_speech": s1_speech.PROMPT,
-    "s2_proposal": s2_proposal.PROMPT,
-    "s3_digest": s3_digest.PROMPT,
-    "s4_bonus": s4_bonus.PROMPT,
-    "s5_letter": s5_letter.PROMPT,
-    "s6_describe": s6_describe.PROMPT,
-}
-
-# --- the six tasks' surface ids, in board order ------------------------------
-SURFACE_IDS = ["s1_speech", "s2_proposal", "s5_letter", "s3_digest", "s6_describe", "s4_bonus"]
-
-
-def _make(sid: str, family: str, judge_id: Optional[str] = None,
-          randomizes: bool = False, max_new_tokens: int = 400,
-          questions: Optional[Dict[str, str]] = None,
-          prefill_text: Optional[str] = None) -> GenerationSurface:
-    @register_surface(sid)
-    class _S(GenerationSurface):
-        pass
-
-    _S.name = sid
-    _S.family = family
-    _S.prompt = TASK_PROMPTS[sid]
-    _S.judge_spec = judge_specs().get(judge_id) if judge_id else None
-    _S.randomizes_per_item = randomizes
-    _S.max_new_tokens = max_new_tokens
-    _S.questions = dict(questions or {})
-    _S.prefill_text = prefill_text
-    _S.__name__ = f"Surface_{sid}"
-    return _S
-
-
-_REGISTERED = False
-
-
-def register_all() -> None:
-    """Idempotent: ``load_all()`` may run more than once across test modules."""
-    global _REGISTERED
-    if _REGISTERED:
-        return
-    _REGISTERED = True
-    _make("s1_speech", "generation", judge_id="s1_speech", max_new_tokens=1400,
-          prefill_text=S1_PREFILL)
-    # Round-9 measured s2 truncating 17/18 on chat at the 400 default: the prompt
-    # asks for a proposal *and* the case for it and puts no length cap on either,
-    # so 400 tokens is a cap on the task, not a safety rail. s4 asks an
-    # equally open "what should I say?". Raising a cap cannot change a generation
-    # that already ended in `stop` -- greedy decoding is prefix-deterministic --
-    # so this only affects the trials that were being cut off.
-    _make("s2_proposal", "generation", judge_id="s2_proposal", max_new_tokens=1200)
-    _make("s4_bonus", "generation", judge_id="s4_bonus", max_new_tokens=1000)
-    register_surface("s3_digest")(_S3Surface)
-    register_surface("s5_letter")(_S5Surface)
-    register_surface("s6_describe")(_S6Surface)
+from bench.surfaces.questions.s3_digest import (  # noqa: F401
+    ROOT_DIR, S3_AMBIGUITY_MARGIN, S3_HEADLINES_PATH, S3_MATCH_THRESHOLD, S3_N_PICKS,
+    _OUTLET_SUFFIX, _S3Surface, _find_index_markers, _norm_tokens, _split_segments,
+    extract_picks, load_s3_headlines, normalize_outlet, outlet_matches,
+    token_set_similarity,
+)
+from bench.surfaces.questions.s5_letter import (  # noqa: F401
+    TOPIC_KEYWORDS, TOPIC_LEAN, _S5Surface, extract_topic,
+)
+from bench.surfaces.questions.s6_describe import (  # noqa: F401
+    _POLITICS_WORDS, _S6Surface, extract_mentions_politics,
+)
+from bench.surfaces.registry import (  # noqa: F401
+    SURFACE_IDS, TASK_PROMPTS, register_all,
+)
