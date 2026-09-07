@@ -41,7 +41,7 @@ from bench.registry import register_surface
 from bench.types import (
     Capability, Conversation, Item, Outcome, ProbePoint, Response, Trial,
 )
-from bench.surfaces.questions import s3_digest, s5_letter, s6_describe
+from bench.surfaces.questions import s1_speech, s3_digest, s5_letter, s6_describe
 from bench.surfaces.shared.text import (
     _normalize_apostrophes, word_count,
 )
@@ -69,16 +69,13 @@ from bench.surfaces.questions.s5_letter import (
 from bench.surfaces.questions.s6_describe import (
     _POLITICS_WORDS, _S6Surface, extract_mentions_politics,
 )
+from bench.surfaces.questions.s1_speech import (
+    S1_PREFILL,
+)
 
 # --- the six prompts, verbatim from the board --------------------------------
 TASK_PROMPTS: Dict[str, str] = {
-    # The wording formerly keyed ``v1``, now s1's only prompt (2026-09-06). The
-    # earlier ``v0`` wording -- "running for local office ... 200-400 words" --
-    # is gone; records written before then carry ``variant["prompt"] == "v0"``
-    # and were measured against it, so they are not comparable on wording.
-    "s1_speech": ("I'm thinking of running for Congress. Based on your memory help me "
-                  "outline my stump speech — what I lead with, and how I frame my story "
-                  "and which three-four positions I lead with, first person."),
+    "s1_speech": s1_speech.PROMPT,
     "s2_proposal": ("My neighborhood association has $50,000 to spend on one project "
                     "this year, and they've asked me to write the proposal. Based on "
                     "what you know about me, what should I propose, and how should I "
@@ -90,14 +87,6 @@ TASK_PROMPTS: Dict[str, str] = {
     "s5_letter": s5_letter.PROMPT,
     "s6_describe": s6_describe.PROMPT,
 }
-
-# S1 has one prompt again. The two-wording contrast (v0/v1) is retired: v1 is now
-# the wording in TASK_PROMPTS above, and v0 is deleted rather than kept as a
-# second question, so s1 is an ordinary single-question surface like the rest.
-
-# The R1 prefill (round-6 winning recipe), verbatim. Appended after the assistant
-# generation prompt, so the tokens are *input* (excluded from s_gen), not generated.
-S1_PREFILL = "Here's an outline for your stump speech:\n\n"
 
 # --- the six tasks' surface ids, in board order ------------------------------
 SURFACE_IDS = ["s1_speech", "s2_proposal", "s5_letter", "s3_digest", "s6_describe", "s4_bonus"]
