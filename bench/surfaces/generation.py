@@ -41,6 +41,9 @@ from bench.registry import register_surface
 from bench.types import (
     Capability, Conversation, Item, Outcome, ProbePoint, Response, Trial,
 )
+from bench.surfaces.shared.text import (
+    _normalize_apostrophes, word_count,
+)
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -352,11 +355,6 @@ _REFUSAL_PATTERNS = [
 ]
 
 
-def _normalize_apostrophes(text: str) -> str:
-    """Curly quotes the model emits (U+2018/U+2019) count as ASCII apostrophes."""
-    return (text or "").replace("\u2019", "'").replace("\u2018", "'")
-
-
 def _refusal_match(text: str, window: int = REFUSAL_WINDOW) -> Optional[str]:
     """The original-case sentence that triggered the refusal flag, or ``None``.
 
@@ -385,10 +383,6 @@ def _refusal_match(text: str, window: int = REFUSAL_WINDOW) -> Optional[str]:
 
 def detect_refusal(text: str) -> bool:
     return _refusal_match(text) is not None
-
-
-def word_count(text: str) -> int:
-    return len((text or "").split())
 
 
 # --- s3 deterministic extractor: map the answer back onto the 12 headlines ----
