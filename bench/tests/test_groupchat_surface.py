@@ -110,7 +110,12 @@ def test_the_message_reaches_the_last_turn_verbatim():
     trial = s.build(_item(), "C", {"scheme": "chat", "question": "m03"})
     last = trial.conversation.messages[-1]["content"][0]["text"]
     assert row["message"] in last
-    assert "one or two" in last.lower()
+    # The three clauses added after round 15, each fixing a measured cause of the
+    # collapse: ask for a position and a reason, give it room, forbid the wrapper.
+    low = last.lower()
+    assert "what i actually think about it and why" in low
+    assert "three or four sentences" in low
+    assert "just the message itself" in low
 
 
 def test_trial_records_which_message_it_was():
@@ -148,6 +153,20 @@ def test_no_prefill_on_this_surface():
     assert all("prefill" not in v for v in s.variants())
 
 
-def test_reply_budget_is_short_but_not_so_short_it_hides_an_essay():
+def test_reply_budget_leaves_headroom_over_the_ask():
+    """320 for a three-or-four-sentence ask (~80 words). The cap was never the
+    binding constraint -- round 15's longest reply was 82 words with zero
+    truncations -- so it stays generous, and an overrun shows as a truncation."""
     s = _surface()
-    assert s.max_new_tokens == 200
+    assert s.max_new_tokens == 320
+
+
+def test_no_message_is_phrased_as_a_grievance():
+    """Round 15: the two messages written as personal complaints drew sympathy
+    rather than opinion and collapsed to 2 distinct replies out of 36. A message
+    has to state something the reader can hold a view about."""
+    for row in _surface().messages():
+        m = row["message"].lower()
+        assert " our " not in f" {m} ", f"{row['mid']}: 'our' makes it the reader's own problem"
+        for hedge in ("by the sound of it", "i'm sorry", "dealing with"):
+            assert hedge not in m, f"{row['mid']}: {hedge!r} invites consolation"

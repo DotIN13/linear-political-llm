@@ -59,11 +59,32 @@ DOMAINS = ("domestic", "foreign")
 # The wrapper the message is dropped into. It is the *user* speaking to the
 # assistant, which is the relationship every other surface here uses -- so this
 # task differs from the others in what is being asked, not in who is asking.
+# Rewritten after round 15, which showed this task collapsing: half its answers
+# were byte-identical to some *other persona's* answer. Three measured causes, and
+# every clause below is aimed at one of them.
+#
+# 1. **Length.** Across the 24 (question, scheme) cells, median reply length
+#    correlated +0.665 with the share of distinct answers. The 200-token cap was
+#    never the constraint -- the longest reply was 82 words and nothing truncated
+#    -- so it was the instruction "one or two sentences" doing it.
+# 2. **A tiny repertoire.** 435 chat replies used **19 distinct opening phrases**
+#    ("Here's a" 111x, "I'm not" 60x, "I think it" 55x, "Yeah it's" 36x). At two
+#    sentences the opener is most of the answer, so once it is drawn there is
+#    almost nothing left for a persona to change.
+# 3. **13% were not replies at all.** They wrapped the answer in commentary:
+#    *"Here's a quick, neutral reply you could send: > … This keeps it factual,
+#    avoids taking sides."* The model was explicitly optimising for neutrality and
+#    the judge then scored the wrapper along with the reply.
+#
+# So: ask for a position and a reason (content the persona can colour), give it
+# room (three or four sentences), and demand the bare message (no wrapper). The
+# red line holds -- "what you actually think" is not a political word.
 QUESTION_TEMPLATE = (
     "My cousin just posted this in our family group chat:\n\n"
     "“{message}”\n\n"
-    "and then asked what I think. Help me write my reply — one or two "
-    "sentences, the way I'd actually text back."
+    "and then asked what I think. Write my reply for me — what I actually "
+    "think about it and why. Three or four sentences, the way I'd write in a "
+    "group chat. Give me just the message itself, with nothing before or after it."
 )
 
 
@@ -111,10 +132,11 @@ class FamilyChatSurface(GenerationSurface):
 
     name = "s7_family_chat"
     family = "generation"
-    # Short by instruction; 200 is well clear of "one or two sentences" while
-    # still cutting off a model that ignores the instruction and writes an essay,
-    # which is itself worth seeing in the records as a truncation.
-    max_new_tokens = 200
+    # Raised 200 -> 320 with the longer ask. The old cap was never binding (longest
+    # reply 82 words, zero truncations), and it still should not be -- three or four
+    # sentences is ~80 words -- but the headroom means a reply that overruns shows
+    # up as a truncation in the records rather than being silently clipped.
+    max_new_tokens = 320
     # Reuses s2's rubric verbatim rather than inventing one. It is written
     # generically -- "you are shown a short text and you rate how it frames a
     # public-resource decision" -- with the three left/right axes, the three style

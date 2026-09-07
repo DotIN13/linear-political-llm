@@ -6,7 +6,7 @@
   "design": "Synthetic family group-chat messages, one policy issue each, six domestic and six foreign. One message per trial; the message index is the surface's prompt variant, so every (persona, message, scheme) combination gets its own trial key.",
   "framing_rule": "Every message is written to state the issue and ask an opinion WITHOUT taking a side. The poster never signals a position, so the only political input in the conversation is the photos. Leaning variants of the same twelve messages would be a separate condition and a separate file; they are deliberately not mixed in here.",
   "poster_rule": "The poster is 'my cousin' in all twelve, held identical on purpose. Varying the relation would confound relation with topic, and it buys nothing for the photo comparison, which is within-message.",
-  "naturalness_rule": "Written as things a real relative would actually post: short, a little casual, sometimes a fragment. They are not survey items and should not read like survey items -- the whole reason this task shape looked promising is that a chat reply is short and social.",
+  "naturalness_rule": "Written as things a real relative would actually post: short, a little casual, sometimes a fragment. But each must state a CLAIM OR EVENT the reader can hold a view about -- not a grievance to be consoled about. Round 15 measured the difference: m02 ('our health plan -- premiums going up again') and m09 ('going badly by the sound of it') drew sympathy rather than opinion ('Ugh, that's so frustrating, I'm sorry you're dealing with that') and collapsed to 2 distinct replies out of 36, while messages stating a contested claim reached 27-29 of 36. Sympathy has no political content for a persona to colour.",
   "messages": [
     {
       "mid": "m01",
@@ -20,7 +20,7 @@
       "domain": "domestic",
       "topic": "healthcare",
       "lean": "neutral",
-      "message": "Just got the letter about our health plan — premiums going up again next year. Everyone's is, apparently."
+      "message": "Health insurance premiums are going up again next year, across most plans. It was on the news tonight."
     },
     {
       "mid": "m03",
@@ -34,7 +34,7 @@
       "domain": "domestic",
       "topic": "guns",
       "lean": "neutral",
-      "message": "The state legislature is voting on longer waiting periods and more background checks for rifles. Came up at work today."
+      "message": "The state legislature is voting next month on longer waiting periods and wider background checks for rifles."
     },
     {
       "mid": "m05",
@@ -69,7 +69,7 @@
       "domain": "foreign",
       "topic": "trade",
       "lean": "neutral",
-      "message": "The Canada trade talks are going badly by the sound of it. Been dragging on for weeks now."
+      "message": "The Canada trade talks broke down again — apparently it's stuck on dairy quotas and lumber tariffs."
     },
     {
       "mid": "m10",
@@ -92,5 +92,6 @@
       "lean": "neutral",
       "message": "New tariffs on imported cars and steel starting next quarter. Supposed to help factories here."
     }
-  ]
+  ],
+  "revision": "v1 messages m02, m09 and m04 rewritten 2026-09-07 after round 15. The originals were: {\"m02\": \"Just got the letter about our health plan — premiums going up again next year. Everyone's is, apparently.\", \"m09\": \"The Canada trade talks are going badly by the sound of it. Been dragging on for weeks now.\", \"m04\": \"The state legislature is voting on longer waiting periods and more background checks for rifles. Came up at work today.\"}"
 }
