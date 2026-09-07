@@ -27,8 +27,15 @@ SETS = {
     "s9_neighborhoods_v1.jsonl": "s9_neighborhoods",
     "s12_explain_points_v1.jsonl": "s12_explain_points",
     "s11_health_options_v1.jsonl": "s11_health_options",
+    "s10_grocery_platforms_v1.jsonl": "s10_grocery_platforms",
+    "s14_outfits_v1.jsonl": "s14_outfits",
     "s13_patch_choice_v1.jsonl": "s13_patch_choice",
 }
+
+# The two sets that code the SAME two axes over different tasks. Their labour and
+# origin rungs must stay identical, or the cross-surface comparison they exist for
+# stops being a comparison.
+MATCHED_PAIR = ("s10_grocery_platforms_v1.jsonl", "s14_outfits_v1.jsonl")
 
 
 def load(name: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
@@ -60,6 +67,35 @@ def test_every_set_states_its_predicted_direction() -> None:
         assert meta.get("predicted_direction"), f"{name}: no predicted_direction"
         assert meta.get("dv_primary"), f"{name}: no dv_primary"
         assert meta.get("position_control"), f"{name}: no position_control"
+        assert meta.get("sign_convention"), f"{name}: no sign_convention"
+
+
+def test_right_c_is_the_one_shared_sign_convention() -> None:
+    """Every option in every set carries right_c, positive on the pole a
+    right-coded persona is predicted to prefer, with pool mean 0.
+
+    Without this the six sets each had their own direction -- s9's density_c was
+    positive on the LEFT pole and s12's code_c positive on the RIGHT one -- so a
+    single analysis pass over them would have silently flipped the sign on half
+    the surfaces. One field, one convention, one predicted sign.
+    """
+    for name in SETS:
+        meta, options = load(name)
+        for o in options:
+            assert "right_c" in o, f"{name}: an option has no right_c"
+            assert isinstance(o["right_c"], (int, float)), f"{name}: right_c is not a number"
+        total = sum(float(o["right_c"]) for o in options)
+        if name == "s13_patch_choice_v1.jsonl":
+            assert all(float(o["right_c"]) == 0.0 for o in options), \
+                "the negative control carries a political code"
+        elif name == "s12_explain_points_v1.jsonl":
+            # The live topic is centred; the inert topic has no political pole at all.
+            live = [o for o in options if o["topic_kind"] == "live"]
+            inert = [o for o in options if o["topic_kind"] == "inert"]
+            assert abs(sum(float(o["right_c"]) for o in live)) < 1e-9, "live right_c not centred"
+            assert all(float(o["right_c"]) == 0.0 for o in inert), "the inert topic is coded political"
+        else:
+            assert abs(total) < 1e-9, f"{name}: right_c pool mean is not 0 (sum={total})"
 
 
 def test_s9_is_a_clean_two_by_five_crossing() -> None:
@@ -137,6 +173,67 @@ def test_s11_is_benign_and_offers_no_way_to_delay_care() -> None:
     assert {o["route"] for o in outside} == {"cam"}, "outside_left_right must flag cam and only cam"
     assert len(outside) == 2, "one cam option per scenario"
     assert meta.get("ceiling_warning"), "no ceiling warning -- the likeliest failure of this surface"
+
+
+def test_s10_and_s14_are_a_matched_pair_on_the_same_axes() -> None:
+    """They exist to test one axis set across two task shapes and two output
+    channels -- a tool call and a pick. That only works while the rungs match."""
+    rungs = {}
+    for name in MATCHED_PAIR:
+        meta, options = load(name)
+        assert len(options) == 8, f"{name}: not 8 options"
+        lab = [float(o["labour_c"]) for o in options]
+        org = [float(o["origin_c"]) for o in options]
+        assert abs(sum(lab)) < 1e-9, f"{name}: labour_c pool mean is not 0"
+        assert abs(sum(org)) < 1e-9, f"{name}: origin_c pool mean is not 0"
+        # 4 x 2 fully crossed, so the two axes are exactly uncorrelated.
+        assert abs(sum(a * b for a, b in zip(lab, org))) < 1e-9, f"{name}: axes correlated"
+        # right_c is the mean of the two, so a sign error in either shows up here.
+        for o in options:
+            expect = round((float(o["labour_c"]) + float(o["origin_c"])) / 2, 4)
+            assert abs(float(o["right_c"]) - expect) < 1e-9, f"{name}/{o.get('gid') or o.get('oid')}"
+        # Length must not carry the code, and neither must the NAME's length --
+        # a five-letter brand beside a nine-letter one is a cue of its own.
+        assert len({o["n_words"] for o in options}) == 1, f"{name}: options differ in word count"
+        assert len({len(o["name"]) for o in options}) == 1, f"{name}: names differ in length"
+        rungs[name] = (sorted(set(lab)), sorted(set(org)))
+    a, b = (rungs[n] for n in MATCHED_PAIR)
+    assert a == b, f"the pair no longer shares its rungs: {rungs}"
+
+
+def test_s10_tool_names_are_the_dv_and_are_unambiguous() -> None:
+    """The DV is the function name in the emitted call, so the names have to be
+    distinct, uniform, and derivable from the row without a lookup table."""
+    meta, options = load("s10_grocery_platforms_v1.jsonl")
+    names = [o["tool_name"] for o in options]
+    assert len(set(names)) == 8, "tool names are not unique"
+    assert len({len(n) for n in names}) == 1, "tool names differ in length"
+    for o in options:
+        assert o["tool_name"] == f"order_from_{o['name'].lower()}", f"{o['gid']}: name mismatch"
+    # A run that mostly falls back to prose is not measuring tool selection, and
+    # the file has to say so rather than leaving it to the write-up.
+    assert meta.get("dv_fallback"), "no fallback DV declared"
+    assert meta.get("harness_note"), "no note on how tools reach the model"
+
+
+def test_s14_holds_the_garment_constant() -> None:
+    """The entire rescue of this surface is that formality does not vary, so the
+    occasion can be fixed and formal and there is nothing for a photograph to
+    match on. If the garment ever starts varying, the surface is back to being
+    unreadable and this is the only place that would notice."""
+    meta, options = load("s14_outfits_v1.jsonl")
+    assert len({o["garment"] for o in options}) == 1, "the garment is not constant"
+    assert len({o["formality"] for o in options}) == 1, "formality is not constant"
+    assert options[0]["formality"] == "business_formal"
+    # Every description is the constant garment plus the two coded clauses.
+    for o in options:
+        assert o["description"].startswith(o["garment"]), f"{o['oid']}: garment is not the stem"
+    assert meta.get("degenerate_answer_to_record"), \
+        "no_choice is a real possible answer here and must be counted, not dropped"
+    for banned in meta["banned_words"]:
+        for o in options:
+            tail = o["description"][len(o["garment"]):].lower()
+            assert banned not in tail, f"{o['oid']} contains banned word {banned!r}"
 
 
 def test_s13_has_exactly_one_correct_patch_per_bug() -> None:
