@@ -20,7 +20,7 @@ conversation carries ``tool_calls``/``role:"tool"`` messages and the tools list
 rides in ``trial.meta["tools"]`` (``encode_prompts`` has no ``tools=`` entry).
 
 s3_digest is the only surface that needs item-specific material: twelve
-headlines and their Ad Fontes slant, read from ``bench/data/s3_headlines_v1.json``
+headlines and their Ad Fontes slant, read from ``bench/data/s3_headlines_v2.json``
 and re-ordered (deterministically, seeded by ``(item_id, seed)``) every trial.
 That order goes into ``variant["order"]`` so two orders never collide on one
 ``trial_key``. The headline rows are rendered with or without their outlet name
@@ -184,7 +184,7 @@ SURFACE_IDS = ["s1_speech", "s2_proposal", "s5_letter", "s3_digest", "s6_describ
 # --------------------------------------------------------------------------- #
 # s3 headline table
 # --------------------------------------------------------------------------- #
-S3_HEADLINES_PATH = os.path.join(ROOT_DIR, "bench", "data", "s3_headlines_v1.json")
+S3_HEADLINES_PATH = os.path.join(ROOT_DIR, "bench", "data", "s3_headlines_v2.json")
 
 
 def load_s3_headlines(path: str = S3_HEADLINES_PATH) -> List[Dict[str, Any]]:
@@ -462,6 +462,12 @@ def extract_picks(text: str, headlines: Sequence[Dict[str, Any]],
     raw = text or ""
     order = list(order or list(range(len(headlines))))
     n_items = len(headlines)
+    # **Only what was shown can be picked.** Under sampling the pool is larger
+    # than the deal, and the outlet and fuzzy matchers used to scan the whole
+    # pool -- so a story this trial never displayed could be scored as a pick,
+    # which is a fabricated observation rather than a parse failure. It crashed
+    # on `order.index()` instead, which is how it was found.
+    shown = set(order)
 
     # -- 1. index candidates (number markers, corroborated by text) ------------
     markers = _find_index_markers(raw)
@@ -483,7 +489,7 @@ def extract_picks(text: str, headlines: Sequence[Dict[str, Any]],
             continue
         scored = sorted(
             ((token_set_similarity(seg, headlines[i]["headline"]), i)
-             for i in range(n_items)),
+             for i in sorted(shown)),
             reverse=True,
         )
         best, best_i = scored[0]
@@ -494,7 +500,7 @@ def extract_picks(text: str, headlines: Sequence[Dict[str, Any]],
     # -- 2b. outlet candidates: verbatim, unique, survives paraphrase ----------
     outlet_hits: Dict[int, float] = {}
     for seg in _split_segments(raw, markers):
-        cands = outlet_matches(seg, headlines)
+        cands = [c for c in outlet_matches(seg, headlines) if c in shown]
         if len(cands) != 1:                     # 0 = nothing, >1 = ambiguous: decline
             continue
         h = cands[0]
@@ -833,9 +839,16 @@ class GenerationSurface:
 
     # -- build ---------------------------------------------------------------
     def _item_order(self, item: Item, seed: Optional[int]) -> Optional[List[int]]:
+        """What this trial shows, in presentation order.
+
+        A **sample**, not a permutation: the pool carries two sides per topic and
+        a trial shows one side of each, so 24 candidates become 12 shown. See
+        ``sampled_order`` for why the draw is balanced, and ``slant_rel_mean``
+        for why the baseline has to be computed per trial once it is a sample.
+        """
         if not self.randomizes_per_item or not self.headlines:
             return None
-        return shuffled_order(self.headlines, item.item_id, 0 if seed is None else int(seed))
+        return sampled_order(self.headlines, item.item_id, 0 if seed is None else int(seed))
 
     def question(self, order: Optional[List[int]] = None, attribution: str = "shown",
                  qid: Optional[str] = None) -> str:

@@ -235,3 +235,19 @@ def test_v2_slant_signs_match_the_side_labels():
             assert h["slant"] < 0, f"{h['outlet']} is labelled left but rates {h['slant']}"
         else:
             assert h["slant"] > 0, f"{h['outlet']} is labelled right but rates {h['slant']}"
+
+
+def test_a_story_that_was_not_dealt_cannot_be_picked():
+    """The outlet and fuzzy matchers used to scan the whole pool, so a story the
+    trial never displayed could be scored as a pick -- a fabricated observation,
+    not a parse failure. Restricting them to the deal is the fix."""
+    pool = _fake_pool()
+    order = [0, 3, 4, 7, 8]                     # five of twelve on screen
+    # the answer quotes a story that was NOT dealt, word for word
+    unshown = pool[1]["headline"]
+    text = "\n".join([_answer(pool, order, [1, 2, 3, 4]), f"5. {unshown}"])
+    r = extract_picks(text, pool, order)
+    for hid in r["picked_hids"]:
+        idx = next(i for i, h in enumerate(pool) if h["hid"] == hid)
+        assert idx in order, f"{hid} was never shown but was counted as a pick"
+    assert pool[1]["hid"] not in r["picked_hids"]

@@ -171,7 +171,10 @@ def test_s3_order_is_deterministic_per_item_and_differs_across_items():
     b = surface.build(OTHER, "C", {"scheme": "chat"}).variant["order"]
     assert a == a_again, "the order must be reproducible for resume/dedup"
     assert a != b, "different items must get different orders"
-    assert sorted(a) == list(range(12))
+    # A sample of the 24-story pool, not a permutation of it: 12 shown, one side
+    # of each of the twelve topics.
+    assert len(a) == 12 and len(set(a)) == 12
+    assert set(a) <= set(range(24))
 
 
 def test_s3_order_depends_on_item_and_seed():
@@ -350,7 +353,7 @@ def test_a_pinned_order_wins_over_the_seeded_shuffle():
 
     fwd = s3.build(item, "C", {"scheme": "chat"}, seed=42)
     order = list(fwd.variant["order"])
-    assert sorted(order) == list(range(12))
+    assert len(order) == 12 and len(set(order)) == 12
 
     rev = s3.build(item, "C", {"scheme": "chat", "order": list(reversed(order)),
                                "order_arm": "rev"}, seed=42)

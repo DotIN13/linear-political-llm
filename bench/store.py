@@ -23,7 +23,7 @@ from bench.types import Conversation, canonical_variant
 # repo -- cli.py, sample.py, README, docs, notebooks -- can change freely without
 # invalidating a single trial (task D).
 MEASUREMENT_GLOBS = ("bench/adaptors/**/*.py", "bench/surfaces/**/*.py")
-MEASUREMENT_FILES = ("bench/types.py", "bench/store.py", "bench/data/s3_headlines_v1.json")
+MEASUREMENT_FILES = ("bench/types.py", "bench/store.py", "bench/data/s3_headlines_v2.json")
 
 
 def trial_key(
