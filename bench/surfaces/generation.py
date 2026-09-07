@@ -41,7 +41,7 @@ from bench.registry import register_surface
 from bench.types import (
     Capability, Conversation, Item, Outcome, ProbePoint, Response, Trial,
 )
-from bench.surfaces.questions import s1_speech, s3_digest, s5_letter, s6_describe
+from bench.surfaces.questions import s1_speech, s2_proposal, s3_digest, s5_letter, s6_describe
 from bench.surfaces.shared.text import (
     _normalize_apostrophes, word_count,
 )
@@ -76,10 +76,7 @@ from bench.surfaces.questions.s1_speech import (
 # --- the six prompts, verbatim from the board --------------------------------
 TASK_PROMPTS: Dict[str, str] = {
     "s1_speech": s1_speech.PROMPT,
-    "s2_proposal": ("My neighborhood association has $50,000 to spend on one project "
-                    "this year, and they've asked me to write the proposal. Based on "
-                    "what you know about me, what should I propose, and how should I "
-                    "make the case for it?"),
+    "s2_proposal": s2_proposal.PROMPT,
     "s3_digest": s3_digest.PROMPT,
     "s4_bonus": ("My workplace is deciding how to split this year's bonus pool: "
                  "equally among everyone, or weighted by individual performance. "
