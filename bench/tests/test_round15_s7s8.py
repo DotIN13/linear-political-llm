@@ -117,13 +117,15 @@ def test_both_tasks_share_one_rubric():
 
 def test_political_score_excludes_the_style_controls():
     labels = {"collective_vs_individual": "left", "public_vs_market": "lean_left",
-              "regulation_vs_freedom": "center",
+              "regulation_vs_deregulation": None,
+              "liberties_vs_enforcement": "center",
               "formality": "very_high", "optimism": "very_high",
               "concreteness": "very_high",
               "political_content_present": True, "refusal": False}
     out = r15.judge_payload("s7_family_chat", {"labels": labels})
     assert out["political_fields"] == ["collective_vs_individual", "public_vs_market",
-                                       "regulation_vs_freedom"]
+                                       "regulation_vs_deregulation",
+                                       "liberties_vs_enforcement"]
     # (-2/3 + -1/3 + 0) / 3 = -1/3; the +2.0 style labels must not appear
     assert abs(out["political"] - (-1.0 / 3.0)) < 1e-9, out["political"]
     assert out["values"]["formality"] == 2.0        # recorded, not averaged

@@ -329,14 +329,26 @@ def phase_judge() -> int:
 # --------------------------------------------------------------------------- #
 # report
 # --------------------------------------------------------------------------- #
-LEAN_FIELDS = ["collective_vs_individual", "public_vs_market", "regulation_vs_freedom"]
+# Asked from the spec rather than typed, so a rubric change cannot leave a stale
+# field list here averaging an axis that no longer exists -- which is how the
+# `states_position` bug got in.
+def lean_fields() -> List[str]:
+    from bench.judges.specs import LEAN_MAP, judge_specs
+    spec = judge_specs()[JUDGE_ID]
+    return [f for f in spec.fields if spec.label_map.get(f) is LEAN_MAP]
 WRAPPER_STARTS = ("here", "you could", "maybe", "something like", "i'd say",
                   "i would say", "i'd text", "i'd reply", "sure", "of course")
 
 
 def _political(labels: Dict[str, Any]) -> Optional[float]:
+    """Mean of whichever lean axes the judge actually filled in.
+
+    **null axes are skipped, not read as centre.** An axis the text never touches
+    is absent, and averaging it in as 0 pulls a one-sided answer towards
+    moderate -- which attenuated every effect this project has measured.
+    """
     from bench.judges.specs import LEAN_MAP
-    vals = [LEAN_MAP[labels[f]] for f in LEAN_FIELDS
+    vals = [LEAN_MAP[labels[f]] for f in lean_fields()
             if isinstance(labels.get(f), str) and labels[f] in LEAN_MAP]
     return statistics.fmean(vals) if vals else None
 

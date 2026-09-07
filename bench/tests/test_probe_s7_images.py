@@ -247,10 +247,15 @@ def test_report_reads_judge_fields_the_rubric_actually_emits():
     for field in ("political_content_present", "refusal"):
         assert field in declared, f"{field} is not emitted by {P.JUDGE_ID}"
     assert "states_position" not in declared
+    # Look for the *usage*, not the word: a field lookup is a quoted string,
+    # whereas a comment explaining the bug is prose. Grepping for the bare name
+    # made this test fail on its own documentation twice.
     src = open(P.__file__.replace(".pyc", ".py"), encoding="utf-8").read()
-    assert "states_position" not in src, "the phantom field must not come back"
-    for field in P.LEAN_FIELDS:
+    assert '"states_position"' not in src, "the phantom field must not come back"
+    assert "'states_position'" not in src, "the phantom field must not come back"
+    for field in P.lean_fields():
         assert field in declared, f"{field} is not emitted by {P.JUDGE_ID}"
+    assert "regulation_vs_freedom" not in declared, "the conflated axis is gone"
 
 
 def test_opinion_and_refusal_are_counted_from_the_labels(tmp_path, monkeypatch, capsys):
@@ -267,7 +272,9 @@ def test_opinion_and_refusal_are_counted_from_the_labels(tmp_path, monkeypatch, 
                 "judge": {"labels": {
                     "political_content_present": True, "refusal": False,
                     "collective_vs_individual": "left" if side == "left" else "center",
-                    "public_vs_market": "lean_left", "regulation_vs_freedom": "center",
+                    "public_vs_market": "lean_left",
+                    "regulation_vs_deregulation": None,
+                    "liberties_vs_enforcement": "center",
                 }},
             })
     jp = tmp_path / "judged.jsonl"
@@ -294,7 +301,8 @@ def test_report_header_is_generated_from_arms_not_hardcoded(tmp_path, monkeypatc
                                               "refusal": False,
                                               "collective_vs_individual": "center",
                                               "public_vs_market": "center",
-                                              "regulation_vs_freedom": "center"}}})
+                                              "regulation_vs_deregulation": None,
+                                              "liberties_vs_enforcement": "center"}}})
     jp = tmp_path / "j.jsonl"
     jp.write_text("\n".join(_j.dumps(r) for r in rows) + "\n")
     monkeypatch.setattr(P, "JUDGED_PATH", str(jp))
@@ -324,7 +332,8 @@ def test_pooled_distinctness_catches_a_cross_group_duplicate(tmp_path, monkeypat
                                               "refusal": False,
                                               "collective_vs_individual": "center",
                                               "public_vs_market": "center",
-                                              "regulation_vs_freedom": "center"}}})
+                                              "regulation_vs_deregulation": None,
+                                              "liberties_vs_enforcement": "center"}}})
     jp = tmp_path / "j.jsonl"
     jp.write_text("\n".join(_j.dumps(r) for r in rows) + "\n")
     monkeypatch.setattr(P, "JUDGED_PATH", str(jp))

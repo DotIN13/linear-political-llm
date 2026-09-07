@@ -210,3 +210,110 @@ def test_every_rubric_picked_up_the_new_model():
         assert spec.model == DEFAULT_JUDGE_MODEL, name
         assert spec.api == caps_for(DEFAULT_JUDGE_MODEL).api, name
         assert spec.temperature is None, name
+
+
+# --------------------------------------------------------------------------- #
+# The axis fix. `regulation_vs_freedom` conflated economic regulation with state
+# coercive power, which run in opposite directions politically -- so an answer
+# opposing an immigration raid scored `lean_right`. Both gpt-5.4 and
+# gpt-5.6-luna gave that label independently, which is what established it as a
+# rubric fault rather than a judge fault.
+# --------------------------------------------------------------------------- #
+AFFECTED = ("s2_proposal", "s5_letter")
+
+
+@pytest.mark.parametrize("rubric", AFFECTED)
+def test_the_conflated_axis_is_gone(rubric):
+    spec = judge_specs()[rubric]
+    assert "regulation_vs_freedom" not in spec.fields
+    assert "regulation_vs_freedom" not in spec.schema["properties"]
+    assert "regulation_vs_freedom" not in spec.system_prompt
+
+
+@pytest.mark.parametrize("rubric", AFFECTED)
+def test_it_is_replaced_by_two_separately_signed_axes(rubric):
+    from bench.judges.specs import LEAN_MAP
+    spec = judge_specs()[rubric]
+    for field in ("regulation_vs_deregulation", "liberties_vs_enforcement"):
+        assert field in spec.fields, field
+        assert field in spec.schema["properties"], field
+        assert spec.label_map[field] is LEAN_MAP, field
+    lean = [f for f in spec.fields if spec.label_map.get(f) is LEAN_MAP]
+    assert len(lean) == 4, lean
+
+
+@pytest.mark.parametrize("rubric", AFFECTED)
+def test_the_prompt_names_the_case_that_broke(rubric):
+    """The disambiguation has to be explicit, or a judge reading 'freedom' will
+    make the same call again -- which is exactly what both judges did."""
+    prompt = judge_specs()[rubric].system_prompt
+    low = prompt.lower()
+    assert "immigration enforcement" in low
+    assert "opposing a government crackdown" in low
+    assert "far_left on `liberties_vs_enforcement`" in prompt
+    assert "opposite directions" in low
+    # and it must say the economic axis is economic only
+    assert "economic and environmental regulation only" in low
+
+
+@pytest.mark.parametrize("rubric", AFFECTED)
+def test_null_and_center_are_distinguished(rubric):
+    """Scoring an absent dimension `center` averages a 0 into the mean and makes
+    a one-sided text look moderate. On the immigration answer that alone moved
+    the score by 0.778 -- against a photo effect of 0.055."""
+    prompt = judge_specs()[rubric].system_prompt
+    assert "null and `center` mean different things" in prompt
+    assert "does not come up" in prompt
+    assert "pulls the average" in prompt
+
+
+@pytest.mark.parametrize("rubric", AFFECTED)
+def test_both_new_axes_accept_null(rubric):
+    """An axis the text never touches must be omittable, not forced to centre."""
+    props = judge_specs()[rubric].schema["properties"]
+    for field in ("regulation_vs_deregulation", "liberties_vs_enforcement"):
+        assert None in props[field]["enum"], field
+        assert "null" in props[field]["type"], field
+
+
+def test_the_axis_change_invalidates_the_cache():
+    """Old judgements used the conflated axis; they must not be reused."""
+    import json
+    import bench.judges.specs as S
+    spec = judge_specs()["s2_proposal"]
+    # the historical prompt, reconstructed only far enough to hash differently
+    old_prompt = spec.system_prompt.replace("liberties_vs_enforcement",
+                                            "regulation_vs_freedom")
+    old_id = S.sha256_of({"system_prompt": old_prompt, "schema": spec.schema,
+                          "model": spec.model, "temperature": spec.temperature,
+                          "seed": spec.seed, "api": spec.api,
+                          "logprobs": spec.logprobs,
+                          "reasoning_effort": spec.reasoning_effort})
+    assert spec.judge_id != old_id
+
+
+def test_the_pilot_asks_the_spec_for_its_axes():
+    """A hardcoded field list is how the report came to average an axis that no
+    longer existed. The pilot must derive them."""
+    from bench.judges.specs import LEAN_MAP
+    from bench.pilots import probe_s7_images as P
+    spec = judge_specs()[P.JUDGE_ID]
+    expected = [f for f in spec.fields if spec.label_map.get(f) is LEAN_MAP]
+    assert P.lean_fields() == expected
+    assert not hasattr(P, "LEAN_FIELDS"), "the stale constant must be gone"
+
+
+def test_absent_axes_are_skipped_rather_than_counted_as_zero():
+    from bench.pilots.probe_s7_images import _political
+    # the real ICE answer: only state-power applies, and it is left
+    only_liberties = {"collective_vs_individual": None, "public_vs_market": None,
+                      "regulation_vs_deregulation": None,
+                      "liberties_vs_enforcement": "left"}
+    assert _political(only_liberties) == pytest.approx(-2 / 3)
+    # the same label with the absent axes marked centre instead of null
+    as_centre = dict(only_liberties,
+                     collective_vs_individual="center", public_vs_market="center",
+                     regulation_vs_deregulation="center")
+    assert _political(as_centre) == pytest.approx(-2 / 3 / 4)
+    # ~4x attenuation from that mistake alone
+    assert abs(_political(only_liberties)) > 3 * abs(_political(as_centre))
