@@ -175,3 +175,63 @@ def test_the_relative_dv_does_not_care_which_centring_the_rows_carry():
     assert extract_picks(text, shifted, order)["slant_rel_mean"] == pytest.approx(raw)
     dropped = [{k: v for k, v in h.items() if k != "slant"} for h in pool]
     assert extract_picks(text, dropped, order)["slant_rel_mean"] == pytest.approx(raw)
+
+
+# --------------------------------------------------------------------------- #
+# What a completed v2 pool has to satisfy. This is deliberately a test rather
+# than a note: it fails while the pool is incomplete, so a half-built stimulus
+# file cannot quietly become the one an experiment runs on.
+# --------------------------------------------------------------------------- #
+V2_PATH = "bench/data/s3_headlines_v2.json"
+
+
+def _v2():
+    import os
+    if not os.path.exists(V2_PATH):
+        pytest.skip(f"{V2_PATH} not built yet -- 5 of 12 topic pairs still need "
+                    f"real coverage; see .tmp/s3-v2-found.json")
+    with open(V2_PATH, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def test_v2_covers_exactly_the_twelve_topics_of_the_other_two_tasks():
+    """The whole point of v2: one topic list across all three tasks."""
+    pool = _v2()["headlines"]
+    with open("bench/data/s7_family_chat_v1.json", encoding="utf-8") as fh:
+        want = {m["topic"] for m in json.load(fh)["messages"]}
+    got = {h["topic"] for h in pool}
+    assert got == want, f"missing {sorted(want - got)}, extra {sorted(got - want)}"
+    assert "pentagon" not in got, "pentagon is retired: it has no twin topic"
+
+
+def test_v2_is_twenty_four_rows_two_sides_per_topic():
+    pool = _v2()["headlines"]
+    assert len(pool) == 24
+    by_topic = collections.defaultdict(list)
+    for h in pool:
+        by_topic[h["topic"]].append(h["side"])
+    assert len(by_topic) == 12
+    for topic, sides in by_topic.items():
+        assert sorted(sides) == ["left", "right"], f"{topic}: {sides}"
+
+
+def test_v2_every_row_is_real_and_attributable():
+    """No fabricated stimuli. Every row carries a live URL and a rated outlet."""
+    pool = _v2()["headlines"]
+    for h in pool:
+        assert h["url"].startswith("https://"), h["hid"]
+        assert h["headline"].strip(), h["hid"]
+        assert h["date"], h["hid"]
+        assert isinstance(h["slant"], (int, float)), h["hid"]
+    outlets = [h["outlet"] for h in pool]
+    assert len(set(outlets)) == 24, "an outlet used twice confounds slant with source"
+    urls = [h["url"] for h in pool]
+    assert len(set(urls)) == 24, "a URL used twice means a row was duplicated"
+
+
+def test_v2_slant_signs_match_the_side_labels():
+    for h in _v2()["headlines"]:
+        if h["side"] == "left":
+            assert h["slant"] < 0, f"{h['outlet']} is labelled left but rates {h['slant']}"
+        else:
+            assert h["slant"] > 0, f"{h['outlet']} is labelled right but rates {h['slant']}"
