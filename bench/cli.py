@@ -666,6 +666,35 @@ def _answer_text(row: Dict[str, Any]) -> Optional[str]:
     return flat if isinstance(flat, str) and flat else None
 
 
+def _spec_for_surface(name: str):
+    """The rubric a surface actually uses -- asked of the surface, not guessed.
+
+    ``judge_specs()`` is keyed by *rubric* id, which happened to equal the surface
+    name for the first six surfaces. It stopped being true the moment a surface
+    reused another's rubric: s7 and s8 both declare
+    ``judge_spec = judge_specs()["s2_proposal"]`` deliberately, so that the two --
+    which share their twelve issues -- are scored on one scale. Looking the rubric
+    up by surface name found nothing for either and the judge reported "no
+    generated answers to judge" over 1824 real records.
+
+    This is the third time a name-keyed lookup has stood in for asking the object:
+    the adaptor once read a ``meta`` key no surface wrote, and this same function
+    once read a record shape half the pilots do not produce.
+    """
+    from bench.judges import judge_specs
+    try:
+        surface = registry.get_surface(name)()
+    except KeyError:
+        return judge_specs().get(name)          # a record from a retired surface
+    return getattr(surface, "judge_spec", None) or judge_specs().get(name)
+
+
+def judgeable_surfaces() -> List[str]:
+    """Every registered surface that declares a rubric."""
+    registry.load_all()
+    return sorted(n for n in registry.surface_names() if _spec_for_surface(n) is not None)
+
+
 def cmd_judge(args: argparse.Namespace) -> int:
     """The offline judge step: answer text in, labels out (board-judge).
 
@@ -679,7 +708,6 @@ def cmd_judge(args: argparse.Namespace) -> int:
     from bench.judges import JudgeCache, JudgeCaller, judge_specs, response_hash
 
     registry.load_all()
-    specs = judge_specs()
     run_dir = _abs(args.run)
     store = RunStore(run_dir=run_dir, conversations_dir=_abs(args.conversations))
     rows = list(store.read())
@@ -687,11 +715,16 @@ def cmd_judge(args: argparse.Namespace) -> int:
         print(f"no trials in {store.trials_path}", file=sys.stderr)
         return 1
 
-    surfaces = _split_list(args.surface) if args.surface else sorted(specs)
+    surfaces = _split_list(args.surface) if args.surface else judgeable_surfaces()
+    specs = {name: _spec_for_surface(name) for name in surfaces}
+    specs = {name: spec for name, spec in specs.items() if spec is not None}
     judged = [r for r in rows
-              if r.get("surface") in surfaces
-              and r["surface"] in specs
+              if r.get("surface") in specs
               and _answer_text(r)]
+    if not judged and rows:
+        seen = sorted({r.get("surface") for r in rows})
+        print(f"no generated answers to judge. records hold surfaces {seen}; "
+              f"surfaces with a rubric are {judgeable_surfaces()}", file=sys.stderr)
     if not judged:
         print("no generated answers to judge", file=sys.stderr)
         return 1
