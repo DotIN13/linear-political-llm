@@ -338,11 +338,23 @@ def _stats(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
             for v in [_political((r.get("judge") or {}).get("labels") or {})] if v is not None]
     right = [v for r in rows if r["side"] == "right"
              for v in [_political((r.get("judge") or {}).get("labels") or {})] if v is not None]
+    # Use the judge's own field name. Reading a field the rubric does not emit
+    # yields 0 for every group, which looks exactly like "the model stated no
+    # position in any answer" -- a null that is really a typo. A test asserts
+    # every judge field touched here is one the spec declares.
     opinion = [r for r in rows
-               if ((r.get("judge") or {}).get("labels") or {}).get("states_position") is True]
+               if ((r.get("judge") or {}).get("labels") or {})
+               .get("political_content_present") is True]
+    refusals = [r for r in rows
+                if ((r.get("judge") or {}).get("labels") or {}).get("refusal") is True]
     sep = (statistics.fmean(right) - statistics.fmean(left)) if left and right else None
     se = None
     if len(left) > 1 and len(right) > 1 and sep is not None:
+        # Sample variance (n-1), the unbiased estimator for the SE of a mean.
+        # Round 16's bake-off used population variance (n), so its /SE figures
+        # are inflated by sqrt(n/(n-1)) -- about 3% at n=16. /SE is the only
+        # figure comparable across rounds, but only once the estimator matches,
+        # so round 16's +0.85 is about +0.82 on this scale.
         se = (statistics.variance(left) / len(left)
               + statistics.variance(right) / len(right)) ** 0.5
     return {
@@ -351,6 +363,7 @@ def _stats(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "distinct": len({t for t in texts if t}),
         "wrapper": sum(1 for t in texts if _is_wrapper(t)),
         "opinion": len(opinion),
+        "refusal": len(refusals),
         "left": statistics.fmean(left) if left else None,
         "right": statistics.fmean(right) if right else None,
         "sep": sep,
@@ -382,7 +395,7 @@ def phase_report() -> None:
     print("three in a shorter one -- not the photo count alone.")
     print("=" * 100)
     hdr = (f"{'photos':>7} {'turns':>6} {'n':>4} {'words':>6} {'distinct':>9} "
-           f"{'wrapper':>8} {'opinion':>8} {'judge L':>8} {'judge R':>8} "
+           f"{'wrapper':>8} {'opinion':>8} {'refusal':>8} {'judge L':>8} {'judge R':>8} "
            f"{'judge sep':>11} {'/SE':>6}")
     print(hdr)
     cells: Dict[int, Dict[str, Any]] = {}
@@ -395,6 +408,7 @@ def phase_report() -> None:
         f = lambda v, w=8, p=3: (f"{v:+.{p}f}".rjust(w) if v is not None else "n/a".rjust(w))
         print(f"{arm:>7} {str(s['turns'])[1:-1]:>6} {s['n']:>4} {s['words']:>6} "
               f"{s['distinct']}/{s['n']:>7} {s['wrapper']:>8} {s['opinion']:>8} "
+              f"{s['refusal']:>8} "
               f"{f(s['left'])} {f(s['right'])} {f(s['sep'], 11)} "
               f"{(f'{s['se_ratio']:+.2f}' if s['se_ratio'] is not None else 'n/a'):>6}")
 
@@ -414,15 +428,20 @@ def phase_report() -> None:
         print()
         print("--- did it change? ---")
         for name, key in (("opinion rate (n)", "opinion"),
+                          ("refusals (n)", "refusal"),
                           ("median words", "words"),
                           ("wrappers (n)", "wrapper")):
             print(f"  {name:<18} {a} photos: {cells[a][key]:<6} "
                   f"{b} photos: {cells[b][key]}")
         sa, sb = cells[a]["sep"], cells[b]["sep"]
         if sa is not None and sb is not None:
+            def _se(arm_key: int) -> str:
+                # None when a group has no spread at all -- which happens on
+                # synthetic data and would otherwise crash the whole report.
+                r = cells[arm_key]["se_ratio"]
+                return f"{r:+.2f} SE" if r is not None else "SE undefined (no spread)"
             print(f"  {'judge separation':<18} {a} photos: {sa:+.3f} "
-                  f"({cells[a]['se_ratio']:+.2f} SE)   "
-                  f"{b} photos: {sb:+.3f} ({cells[b]['se_ratio']:+.2f} SE)")
+                  f"({_se(a)})   {b} photos: {sb:+.3f} ({_se(b)})")
             print()
             print("  Read this against the plan phase's contrast gap. With 32 answers")
             print("  per arm the error bar is about the size of the effect, so neither")

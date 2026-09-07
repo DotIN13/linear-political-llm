@@ -226,3 +226,48 @@ def test_load_sides_refuses_a_pool_too_small_to_make_both_tails(tmp_path):
     _write_items(f, 10, n_per_bucket=2)     # 4 items, needs >= 8
     with pytest.raises(ValueError, match="may not support"):
         P.load_sides(str(f))
+
+
+def test_report_reads_judge_fields_the_rubric_actually_emits():
+    """The first run of this pilot printed `opinion 0` for both photo-count groups
+    because the report read `states_position`, a field the s2 rubric does not
+    have. A nonexistent field reads as absent, which is indistinguishable from
+    "the model stated no position in any of 64 answers" -- so this asserts every
+    judge field the report touches is one the spec declares.
+    """
+    from bench.judges import judge_specs
+    spec = judge_specs()[P.JUDGE_ID]
+    declared = set(spec.label_fields)
+    for field in ("political_content_present", "refusal"):
+        assert field in declared, f"{field} is not emitted by {P.JUDGE_ID}"
+    assert "states_position" not in declared
+    src = open(P.__file__.replace(".pyc", ".py"), encoding="utf-8").read()
+    assert "states_position" not in src, "the phantom field must not come back"
+    for field in P.LEAN_FIELDS:
+        assert field in declared, f"{field} is not emitted by {P.JUDGE_ID}"
+
+
+def test_opinion_and_refusal_are_counted_from_the_labels(tmp_path, monkeypatch, capsys):
+    """A judged record with a position must be counted as one."""
+    import json as _j
+    rows = []
+    for arm in P.ARMS:
+        for i, side in enumerate(["left"] * 2 + ["right"] * 2):
+            rows.append({
+                "arm": arm, "question": "m01", "side": side,
+                "item_id": f"lvis{arm}_{side}_{i}", "image_mean": -0.6 if side == "left" else 0.6,
+                "n_photos": arm, "n_turns": 13 if arm == 3 else 27,
+                "text": f"answer {arm} {side} {i}",
+                "judge": {"labels": {
+                    "political_content_present": True, "refusal": False,
+                    "collective_vs_individual": "left" if side == "left" else "center",
+                    "public_vs_market": "lean_left", "regulation_vs_freedom": "center",
+                }},
+            })
+    jp = tmp_path / "judged.jsonl"
+    jp.write_text("\n".join(_j.dumps(r) for r in rows) + "\n")
+    monkeypatch.setattr(P, "JUDGED_PATH", str(jp))
+    P.phase_report()
+    out = capsys.readouterr().out
+    assert "opinion rate (n)   3 photos: 4" in out, out
+    assert "refusals (n)" in out, out
