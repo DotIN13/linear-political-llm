@@ -225,15 +225,26 @@ def test_s14_holds_the_garment_constant() -> None:
     assert len({o["garment"] for o in options}) == 1, "the garment is not constant"
     assert len({o["formality"] for o in options}) == 1, "formality is not constant"
     assert options[0]["formality"] == "business_formal"
-    # Every description is the constant garment plus the two coded clauses.
+    # The garment is stated ONCE, in the prompt, and must not be repeated into the
+    # eight descriptions -- that produced the same twenty words eight times over.
+    assert options[0]["garment"] in meta["prompt"] or \
+        all(w in meta["prompt"] for w in ("charcoal", "two-button", "white shirt")), \
+        "the garment is not stated in the prompt"
     for o in options:
-        assert o["description"].startswith(o["garment"]), f"{o['oid']}: garment is not the stem"
-    assert meta.get("degenerate_answer_to_record"), \
-        "no_choice is a real possible answer here and must be counted, not dropped"
+        assert o["garment"] not in o["description"], \
+            f"{o['oid']}: the constant garment is repeated into the option"
+        assert o["garment_stated_in"] == "prompt"
+    # Three ranked picks, not one: a single pick from eight takes only six distinct
+    # values, and 12 trials per bucket cannot resolve an s3-sized effect through that.
+    assert meta["n_picks"] == 3 and meta["picks_are_ranked"] is True
+    assert meta.get("why_three_ranked_and_not_one")
+    deg = meta.get("degenerate_answers_to_record") or {}
+    for route in ("no_choice", "unranked", "wrong_count"):
+        assert route in deg, f"no handling declared for {route!r}"
     for banned in meta["banned_words"]:
         for o in options:
-            tail = o["description"][len(o["garment"]):].lower()
-            assert banned not in tail, f"{o['oid']} contains banned word {banned!r}"
+            assert banned not in o["description"].lower(), \
+                f"{o['oid']} contains banned word {banned!r}"
 
 
 def test_s13_has_exactly_one_correct_patch_per_bug() -> None:
