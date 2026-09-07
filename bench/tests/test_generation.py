@@ -371,3 +371,82 @@ def test_a_surface_without_headlines_ignores_a_pinned_order():
     t = s1.build(item, "C", {"scheme": "chat", "order": [3, 2, 1]})
     assert t.variant["order"] == [3, 2, 1]      # carried, but unused by the prompt
     assert "3" not in t.meta["question"]
+
+
+# --- the two conversation templates ----------------------------------------
+def _item3():
+    from bench.types import Item
+    return Item(item_id="x", images=list("abc"), image_paths=["a.jpg", "b.jpg", "c.jpg"],
+                image_scores=[0.7, 0.7, 0.7], stratum=9)
+
+
+def test_chat_share_line_says_what_the_photos_are_of():
+    """It used to say only "photos I took recently" -- true and uninformative. The
+    persona is the independent variable, so the framing has to name it: where the
+    person lives and what they like."""
+    from bench.surfaces.generation import SHARE_LINE
+    low = SHARE_LINE.lower()
+    assert "where i live" in low
+    assert "into" in low or "like" in low
+
+
+def test_neither_template_contains_a_political_word():
+    """The red line. Everything before the task's own question is fixed text, and
+    if any of it leaned the model, every result would be measuring our wording."""
+    from bench.surfaces.generation import (AGENTIC_ACK, AGENTIC_OPENER, ASSISTANT_TURN_1,
+                                           ASSISTANT_TURN_2, CHAT_USER_TURN_2, SHARE_LINE,
+                                           SYSTEM_AGENTIC)
+    blob = " ".join([SHARE_LINE, ASSISTANT_TURN_1, CHAT_USER_TURN_2, ASSISTANT_TURN_2,
+                     SYSTEM_AGENTIC, AGENTIC_OPENER, AGENTIC_ACK]).lower()
+    for word in ("politic", "vote", "party", "liberal", "conservative", "left", "right",
+                 "democrat", "republican", "policy", "government"):
+        assert word not in blob, f"{word!r} appears in the fixed template text"
+
+
+def test_agentic_uses_two_named_memory_directories():
+    from bench.surfaces.generation import FILES_BY_DIR, MEMORY_DIRS, build_scheme_messages
+    assert MEMORY_DIRS == ["/memory/hometown", "/memory/preferences"]
+    msgs, tools = build_scheme_messages("agentic", ["a.jpg", "b.jpg", "c.jpg"], "Q?")
+    listed = [m["tool_calls"][0]["function"]["arguments"]["path"]
+              for m in msgs if m.get("tool_calls")
+              and m["tool_calls"][0]["function"]["name"] == "list_dir"]
+    assert listed == MEMORY_DIRS, listed
+    # every viewed file sits under the directory it was listed from
+    viewed = [m["tool_calls"][0]["function"]["arguments"]["path"]
+              for m in msgs if m.get("tool_calls")
+              and m["tool_calls"][0]["function"]["name"] == "view_image"]
+    expected = [f"{d}/{f}" for d, names in FILES_BY_DIR for f in names]
+    assert viewed == expected, viewed
+
+
+def test_agentic_turn_count_is_pinned():
+    """13, not 11: two directories means two list_dir turns. Pinned because the
+    turn-count gap against chat (5) is a live confound with the framing, so it
+    must not drift silently."""
+    from bench.surfaces.generation import build_scheme_messages
+    chat, _ = build_scheme_messages("chat", ["a.jpg", "b.jpg", "c.jpg"], "Q?")
+    agentic, _ = build_scheme_messages("agentic", ["a.jpg", "b.jpg", "c.jpg"], "Q?")
+    assert len(chat) == 5
+    assert len(agentic) == 13
+
+
+def test_each_image_is_attached_exactly_once_in_order():
+    """Splitting the files across directories must not duplicate or reorder the
+    pixels -- the image sequence is the independent variable."""
+    from bench.surfaces.generation import build_scheme_messages
+    for scheme in ("chat", "agentic"):
+        msgs, _ = build_scheme_messages(scheme, ["a.jpg", "b.jpg", "c.jpg"], "Q?")
+        got = [p["image"] for m in msgs for p in m["content"] if p.get("type") == "image"]
+        assert got == ["a.jpg", "b.jpg", "c.jpg"], (scheme, got)
+
+
+def test_the_no_image_baseline_keeps_the_whole_story():
+    """Same turns, same directory names, same filenames -- only the pixels go. That
+    is what isolates the images from the framing around them."""
+    from bench.surfaces.generation import build_scheme_messages
+    full, _ = build_scheme_messages("agentic", ["a.jpg", "b.jpg", "c.jpg"], "Q?")
+    bare, _ = build_scheme_messages("agentic", [], "Q?")
+    assert len(bare) == len(full)
+    assert not [p for m in bare for p in m["content"] if p.get("type") == "image"]
+    texts = lambda ms: [p.get("text") for m in ms for p in m["content"] if p.get("text")]
+    assert texts(bare) == texts(full)
