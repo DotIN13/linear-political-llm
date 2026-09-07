@@ -170,3 +170,22 @@ def test_no_message_is_phrased_as_a_grievance():
         assert " our " not in f" {m} ", f"{row['mid']}: 'our' makes it the reader's own problem"
         for hedge in ("by the sound of it", "i'm sorry", "dealing with"):
             assert hedge not in m, f"{row['mid']}: {hedge!r} invites consolation"
+
+
+def test_wording_is_b_committed_the_round_16_choice():
+    """Round 16 chose `b_committed` out of six candidates (192 generations, board
+    `the-bake-off-...`). It won on opinion rate -- 91% against the previous
+    wording's 38% -- and on producing no identical answers across personas.
+
+    Pinned here because the wording is the instrument: an edit to it silently
+    changes what every s7 number means, and the five rejected candidates included
+    two that produced byte-identical answers for a left and a right persona.
+    """
+    from bench.surfaces.groupchat import QUESTION_TEMPLATE
+    assert QUESTION_TEMPLATE == (
+        "My cousin just posted this in our family group chat:\n\n"
+        "“{message}”\n\n"
+        "and then asked what I think. Write my reply for me — what I actually "
+        "think about it and why. Three or four sentences, the way I'd write in a "
+        "group chat. Give me just the message itself, with nothing before or after it."
+    )

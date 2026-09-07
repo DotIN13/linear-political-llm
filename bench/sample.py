@@ -494,7 +494,10 @@ def make_bucket_items(
             n_objects = [row["n_objects"] for row in group]
             n_categories = [len(row["categories"]) for row in group]
             item = {
-                "item_id": f"lvis3_{BUCKET_ABBREV[bucket]}_{counters[bucket]:05d}",
+                # The image count is in the id because item_id is part of
+                # `trial_key`: a 10-image item named lvis3_* would dedup against
+                # an existing 3-image trial and be silently skipped.
+                "item_id": f"lvis{images_per_item}_{BUCKET_ABBREV[bucket]}_{counters[bucket]:05d}",
                 "images": [row["record_name"] for row in group],
                 "image_paths": [row["image_path"] for row in group],
                 "image_scores": scores,
