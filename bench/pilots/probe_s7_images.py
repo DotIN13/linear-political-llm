@@ -168,22 +168,23 @@ def phase_plan() -> int:
         if p["worst_prompt_tokens"] is not None:
             fits = p["worst_prompt_tokens"] < MAX_MODEL_LEN
             print(f"   tokens worst case {p['worst_prompt_tokens']} "
-                  f"(={arm}x{p['img_tokens_max']} photo + ~600 text + "
+                  f"(={p['arm']}x{p['img_tokens_max']} photo + ~600 text + "
                   f"{MAX_NEW_TOKENS} generated) vs --max-model-len "
                   f"{MAX_MODEL_LEN}: {'fits' if fits else 'DOES NOT FIT'}")
             if not fits:
                 print(f"   raise --max-model-len before running, or the prompt is "
                       f"truncated and the last photos are simply not seen")
-            print(f"   server needs --limit-mm-per-prompt '{{\"image\":{arm}}}' "
-                  f"-- the default 4 rejects this arm outright")
+            print(f"   server needs --limit-mm-per-prompt "
+                  f"'{{\"image\":{p['arm']}}}' -- the default 4 rejects this "
+                  f"arm outright")
     live = [p for p in plans if not p["missing"]]
     if len(live) == len(ARMS):
         gaps = {p["arm"]: p["gap"] for p in live}
         base = gaps[ARMS[0]]
         print()
         print("--- the contrast check, before any GPU is spent ---")
-        for arm, g in gaps.items():
-            print(f"  {arm:2} photos: gap {g:+.3f}   ({g / base:.0%} of the "
+        for arm_n, g in gaps.items():
+            print(f"  {arm_n:2} photos: gap {g:+.3f}   ({g / base:.0%} of the "
                   f"{ARMS[0]}-photo gap)")
         worst = min(gaps.values()) / base
         if worst < 0.80:

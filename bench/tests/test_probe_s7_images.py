@@ -118,3 +118,106 @@ def test_run_refuses_an_item_whose_photo_count_disagrees_with_its_arm():
     """The guard that stops a 3-photo item being scored as a 10-photo one."""
     src = open(P.__file__.replace(".pyc", ".py"), encoding="utf-8").read()
     assert "carries {len(paths)} photos, arm expects {arm}" in src
+
+
+# --------------------------------------------------------------------------- #
+# The gate itself. These exist because the first dispatch of round 17 died in
+# phase_plan with an UnboundLocalError on the remote: every test above exercised
+# the *builders*, none of them ran the phase, and the phase is the thing the
+# brief calls a gate. A print statement that crashes is a gate that never fires.
+# --------------------------------------------------------------------------- #
+def _write_items(path, n_photos, n_per_bucket=6, tokens=380):
+    """A synthetic items file shaped like the sampler's real output."""
+    import json as _j
+    lo_base, hi_base = -0.60, 0.62
+    with open(path, "w", encoding="utf-8") as fh:
+        for bucket, base in (("lo", lo_base), ("hi", hi_base)):
+            for i in range(n_per_bucket):
+                drift = 0.01 * i * (-1 if bucket == "lo" else 1)
+                scores = [base + drift] * n_photos
+                fh.write(_j.dumps({
+                    "item_id": f"lvis{n_photos}_{bucket}_{i:05d}",
+                    "images": [f"r{j}" for j in range(n_photos)],
+                    "image_paths": [f"/img/{bucket}_{i}_{j}.jpg" for j in range(n_photos)],
+                    "image_scores": scores,
+                    "stratum": 0 if bucket == "lo" else 2,
+                    "bucket": "low" if bucket == "lo" else "high",
+                    "primary_iv": "bucket", "split": "explore",
+                    "covariates": {"num_image_tokens": [tokens] * n_photos},
+                }) + "\n")
+
+
+def test_phase_plan_runs_to_completion_for_both_arms(tmp_path, monkeypatch, capsys):
+    """The regression test for the crash: plan must reach the contrast check."""
+    files = {}
+    for arm in P.ARMS:
+        f = tmp_path / f"explore_n{arm}.jsonl"
+        _write_items(f, arm)
+        files[arm] = str(f)
+    monkeypatch.setattr(P, "ITEMS_FILES", files)
+    rc = P.phase_plan()
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    # every arm printed its personas, its budget line and its server flag
+    for arm in P.ARMS:
+        assert f"arm {arm:2} photos" in out, out
+        assert f'"image":{arm}' in out, out
+    assert "the contrast check, before any GPU is spent" in out, out
+    assert "of the 3-photo gap" in out, out
+    assert "Traceback" not in out
+
+
+def test_phase_plan_warns_when_one_arm_has_a_weaker_contrast(tmp_path, monkeypatch, capsys):
+    """The gate's whole purpose: a flattened treatment must not pass silently."""
+    files = {}
+    for arm in P.ARMS:
+        f = tmp_path / f"explore_n{arm}.jsonl"
+        # the 10-photo arm gets a deliberately squashed spread
+        _write_items(f, arm)
+        if arm != P.ARMS[0]:
+            import json as _j
+            rows = [_j.loads(l) for l in open(f) if l.strip()]
+            for r in rows:
+                r["image_scores"] = [s * 0.5 for s in r["image_scores"]]
+            with open(f, "w", encoding="utf-8") as fh:
+                for r in rows:
+                    fh.write(_j.dumps(r) + "\n")
+        files[arm] = str(f)
+    monkeypatch.setattr(P, "ITEMS_FILES", files)
+    P.phase_plan()
+    out = capsys.readouterr().out
+    assert "WARNING" in out, out
+    assert "weaker treatment" in out, out
+
+
+def test_phase_plan_reports_a_missing_items_file_instead_of_crashing(tmp_path, monkeypatch, capsys):
+    f = tmp_path / "explore_n3.jsonl"
+    _write_items(f, 3)
+    monkeypatch.setattr(P, "ITEMS_FILES",
+                        {3: str(f), 10: str(tmp_path / "nope.jsonl")})
+    rc = P.phase_plan()
+    out = capsys.readouterr().out
+    assert rc == 1, "a missing arm must be a non-zero exit, so a script can gate on it"
+    assert "ITEMS FILE MISSING" in out
+    assert "--images-per-item 10" in out
+
+
+def test_phase_plan_flags_a_prompt_that_would_not_fit(tmp_path, monkeypatch, capsys):
+    """A truncated prompt means the last photos are never seen."""
+    files = {}
+    for arm in P.ARMS:
+        f = tmp_path / f"explore_n{arm}.jsonl"
+        _write_items(f, arm, tokens=900)   # 10 x 900 + 600 + 320 > 8192
+        files[arm] = str(f)
+    monkeypatch.setattr(P, "ITEMS_FILES", files)
+    P.phase_plan()
+    out = capsys.readouterr().out
+    assert "DOES NOT FIT" in out, out
+    assert "simply not seen" in out, out
+
+
+def test_load_sides_refuses_a_pool_too_small_to_make_both_tails(tmp_path):
+    f = tmp_path / "thin.jsonl"
+    _write_items(f, 10, n_per_bucket=2)     # 4 items, needs >= 8
+    with pytest.raises(ValueError, match="may not support"):
+        P.load_sides(str(f))
