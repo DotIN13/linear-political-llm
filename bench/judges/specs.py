@@ -15,6 +15,8 @@ so the model actually uses the middle buckets (board scale card).
 
 from __future__ import annotations
 
+import os
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -56,8 +58,82 @@ FIVE_SCALE_TEXT = (
     "Use this 5-point scale: very_low, low, neutral, high, very_high."
 )
 
-DEFAULT_JUDGE_MODEL = "gpt-5.4"
+DEFAULT_JUDGE_MODEL = "gpt-5.6-luna"
 DEFAULT_SEED = 20260905
+
+
+@dataclass(frozen=True)
+class ModelCaps:
+    """What one judge model will actually accept.
+
+    **Measured, not assumed** -- every row below comes from probing the live key
+    on 2026-09-07, one parameter at a time, and the two surprises are why this
+    table exists rather than a set of hopeful defaults:
+
+    * Every model newer than `gpt-5.4` **rejects `temperature`** outright
+      ("Only the default (1) value is supported"), on both APIs. So a judge on a
+      newer model cannot be pinned to greedy decoding. There is no workaround;
+      the honest representation is `temperature=None`.
+    * Those models also **reject `logprobs`** ("not supported with this model").
+      That costs us nothing measured -- round 12 checked every judge field and
+      none is derived from logprobs -- but it means the field is absent rather
+      than zero.
+    * The two transports differ in *which* knobs survive, which is the whole
+      reason `api` is a field: chat completions keeps `seed` and `top_p` and has
+      no reasoning control; the Responses API drops `seed` (not a parameter at
+      all) and gains `reasoning.effort` and `max_output_tokens`.
+
+    `seed` on a model that cannot pin temperature is close to theatre --
+    `system_fingerprint` came back `None`, so there is nothing to verify the
+    backend config against. We take the reasoning control instead, because a
+    judge that reasons harder is the point of moving off `gpt-5.4`, and record
+    plainly that verdicts are no longer bit-reproducible.
+    """
+
+    api: str                                # "chat" | "responses"
+    temperature: Optional[float]
+    seed: Optional[int]
+    logprobs: bool
+    reasoning_effort: Optional[str] = None
+
+
+# Reasoning-effort values `gpt-5.6-luna` accepts, from the endpoint's own error
+# message: none, low, medium, high, xhigh, max. ("minimal" is named in one error
+# string and refused by another, so it is deliberately not offered here.)
+REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
+
+MODEL_CAPS: Dict[str, ModelCaps] = {
+    # The historical judge. Only model on this key that takes all three of
+    # strict schema, logprobs and temperature=0.0 -- so it is the only fully
+    # reproducible one, and it is kept reachable for re-checking old rounds.
+    "gpt-5.4": ModelCaps(api="chat", temperature=0.0, seed=DEFAULT_SEED,
+                         logprobs=True),
+    # Current default. Responses API for the reasoning control; `high` rather
+    # than `max` because the job is short-text classification against a strict
+    # schema, and effort past the point of diminishing returns is paid per call
+    # across thousands of judgements.
+    "gpt-5.6-luna": ModelCaps(api="responses", temperature=None, seed=None,
+                              logprobs=False, reasoning_effort="high"),
+    "gpt-5.6-sol": ModelCaps(api="responses", temperature=None, seed=None,
+                             logprobs=False, reasoning_effort="high"),
+    "gpt-5.6-terra": ModelCaps(api="responses", temperature=None, seed=None,
+                               logprobs=False, reasoning_effort="high"),
+    "gpt-5.5": ModelCaps(api="responses", temperature=None, seed=None,
+                         logprobs=False, reasoning_effort="high"),
+    "gpt-6-astra": ModelCaps(api="responses", temperature=None, seed=None,
+                             logprobs=False, reasoning_effort="high"),
+}
+
+# Anything unmeasured: assume the newer-model shape rather than the older one.
+# Sending a parameter a model refuses is a hard 400 that stops the run, while
+# omitting one it would have accepted only costs a knob -- so the conservative
+# default is the one that still runs.
+UNKNOWN_MODEL_CAPS = ModelCaps(api="responses", temperature=None, seed=None,
+                               logprobs=False, reasoning_effort="high")
+
+
+def caps_for(model: str) -> ModelCaps:
+    return MODEL_CAPS.get(model, UNKNOWN_MODEL_CAPS)
 
 
 @dataclass(frozen=True)
@@ -76,20 +152,51 @@ class JudgeSpec:
     schema: Dict[str, Any]
     label_map: Dict[str, Dict[str, float]]
     fields: List[str]                # label fields, in schema order
-    temperature: float = 0.0
-    seed: int = DEFAULT_SEED
+    # None means "do not send this parameter". Models newer than gpt-5.4 reject
+    # `temperature` outright, so a judge on one of those cannot be pinned to
+    # greedy decoding and `None` is the truth rather than a default to paper over.
+    temperature: Optional[float] = 0.0
+    seed: Optional[int] = DEFAULT_SEED
+    # Requested when the endpoint honours it and stored opportunistically; no
+    # judge field is derived from it (checked field by field in round 12), so a
+    # model that refuses logprobs costs us nothing measured.
+    logprobs: bool = True
+    # "chat" -> /v1/chat/completions, "responses" -> /v1/responses. The newer
+    # models are Responses-first; structured output has a different shape there.
+    api: str = "chat"
+    # Pinned explicitly when the model has one, for the same reason everything
+    # else is pinned: an unstated default is a silent variable.
+    reasoning_effort: Optional[str] = None
     base_url: Optional[str] = None
     api_key_env: str = "OPENAI_API_KEY"
 
     @property
     def judge_id(self) -> str:
-        return sha256_of({
+        """Cache key: everything that can change the labels.
+
+        **Only non-default fields are added to the hash.** Adding a key
+        unconditionally would change every historical judge_id and orphan the
+        1,840 judgements already banked under the gpt-5.4 configuration -- so a
+        spec that still uses chat completions with logprobs and no reasoning
+        effort hashes exactly as it did before these fields existed, and pointing
+        the judge back at gpt-5.4 reaches its old cache rows.
+        """
+        payload: Dict[str, Any] = {
             "system_prompt": self.system_prompt,
             "schema": self.schema,
             "model": self.model,
             "temperature": self.temperature,
             "seed": self.seed,
-        })
+        }
+        # The transport matters: the same model can label differently through a
+        # different API, so it must not collide in the cache.
+        if self.api != "chat":
+            payload["api"] = self.api
+        if not self.logprobs:
+            payload["logprobs"] = False
+        if self.reasoning_effort is not None:
+            payload["reasoning_effort"] = self.reasoning_effort
+        return sha256_of(payload)
 
     @property
     def label_fields(self) -> List[str]:
@@ -236,9 +343,15 @@ def _make_spec(
     fields: List[str],
 ) -> JudgeSpec:
     schema = _build_schema(properties)
+    model = os.environ.get("BENCH_JUDGE_MODEL", DEFAULT_JUDGE_MODEL)
+    caps = caps_for(model)
     return JudgeSpec(
-        id=sid, model=DEFAULT_JUDGE_MODEL, system_prompt=prompt, schema=schema,
+        id=sid, model=model, system_prompt=prompt, schema=schema,
         label_map=label_map, fields=fields,
+        # From the capability table, so the parameters can never disagree with
+        # the model they are sent to.
+        temperature=caps.temperature, seed=caps.seed, logprobs=caps.logprobs,
+        api=caps.api, reasoning_effort=caps.reasoning_effort,
     )
 
 

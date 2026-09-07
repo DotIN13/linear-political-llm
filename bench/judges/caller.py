@@ -2,22 +2,40 @@
 
 The adaptor is for the *subject* model; a judge is an offline pure function that
 happens to be another LLM call. Mixing the two was the mistake the previous
-design made, so this module is deliberately self-contained: it talks to
-``{base_url}/v1/chat/completions`` directly via the ``openai`` client and returns
-schema-validated labels.
+design made, so this module is deliberately self-contained: it talks to the
+endpoint directly via the ``openai`` client and returns schema-validated labels.
 
-Endpoint reality (checked on the login node, recorded in the report):
+**Two APIs, because the model decides which one.** ``spec.api`` selects between
+``/v1/chat/completions`` and ``/v1/responses``, and they are not the same call:
+structured output moves from ``response_format={"type": "json_schema",
+"json_schema": {...}}`` to ``text={"format": {"type": "json_schema", "name":
+..., "strict": ..., "schema": ...}}``, ``messages`` becomes ``input``, and the
+answer arrives on ``output_text`` rather than ``choices[0].message.content``.
 
-* OpenAI (``OPENAI_API_KEY``) supports ``response_format: json_schema`` with
-  ``strict: true`` **and** ``logprobs``/``top_logprobs``.
+Endpoint reality, measured against the live key on 2026-09-07 one parameter at
+a time (the capability table lives in ``specs.py``):
+
+* ``gpt-5.4`` on chat completions takes strict json_schema **and** logprobs
+  **and** ``temperature=0.0`` -- the only model on this key that takes all
+  three, so it is the only bit-reproducible judge available.
+* ``gpt-5.6-luna`` and every other model newer than gpt-5.4 **refuse
+  ``temperature``** ("Only the default (1) value is supported") and **refuse
+  ``logprobs``** ("not supported with this model"). On the Responses API
+  ``seed`` and ``top_p`` are refused as well, and ``reasoning.effort`` and
+  ``max_output_tokens`` appear instead.
 * DeepSeek (``DEEPSEEK_API_KEY``) does **not** support strict json_schema (400
   "This response_format type is unavailable now"); it has JSON mode
   (``json_object``) and logprobs.
 
-So the primary path is strict json_schema; when the endpoint refuses it the
-caller falls back to JSON mode plus client-side schema validation and one retry.
-logprobs is requested and stored when the endpoint honours it, but it is never
-part of the primary scale (board: the seven-point label is the scale).
+A refused parameter is a hard 400 that aborts the call, not a warning -- so
+every optional parameter is omitted rather than sent as ``None``, and what to
+omit comes from the spec instead of being guessed here.
+
+The primary path is strict json_schema; when the endpoint refuses it the caller
+falls back to JSON mode plus client-side schema validation and one retry.
+logprobs is requested and stored where available but is never part of the
+primary scale (the seven-point label is the scale), so a model without them
+loses nothing measured.
 """
 
 from __future__ import annotations
@@ -55,6 +73,13 @@ def _openai_client(spec: JudgeSpec):
     return OpenAI(**kwargs)
 
 
+def _messages(spec: JudgeSpec, text: str) -> List[Dict[str, str]]:
+    return [
+        {"role": "system", "content": spec.system_prompt},
+        {"role": "user", "content": text},
+    ]
+
+
 def _request(
     client: Any,
     spec: JudgeSpec,
@@ -62,20 +87,72 @@ def _request(
     response_format: Dict[str, Any],
     logprobs: bool,
 ) -> Any:
+    """One judge call, on whichever API the spec names.
+
+    **Every optional parameter is omitted when the spec says None**, because the
+    newer models 400 on a parameter they do not support rather than ignoring it
+    -- `temperature` is refused outright by everything past gpt-5.4, and `seed`
+    is not a Responses parameter at all. Sending them "just in case" fails the
+    whole call, so the capability table in specs.py decides and this function
+    only obeys it.
+    """
+    if spec.api == "responses":
+        return _responses_request(client, spec, text, response_format)
+
     kwargs: Dict[str, Any] = {
         "model": spec.model,
-        "temperature": spec.temperature,
-        "seed": spec.seed,
         "response_format": response_format,
-        "messages": [
-            {"role": "system", "content": spec.system_prompt},
-            {"role": "user", "content": text},
-        ],
+        "messages": _messages(spec, text),
     }
-    if logprobs:
+    if spec.temperature is not None:
+        kwargs["temperature"] = spec.temperature
+    if spec.seed is not None:
+        kwargs["seed"] = spec.seed
+    if logprobs and spec.logprobs:
         kwargs["logprobs"] = True
         kwargs["top_logprobs"] = 5
     return client.chat.completions.create(**kwargs)
+
+
+def _responses_request(
+    client: Any,
+    spec: JudgeSpec,
+    text: str,
+    response_format: Dict[str, Any],
+) -> Any:
+    """The /v1/responses shape, which is not the chat-completions shape.
+
+    Structured output moves from `response_format={"type": "json_schema",
+    "json_schema": {...}}` to `text={"format": {"type": "json_schema", "name":
+    ..., "strict": ..., "schema": ...}}` -- the schema fields are hoisted one
+    level up, and `name` sits beside `schema` rather than wrapping it. Verified
+    against the live endpoint before being written here.
+    """
+    fmt = _to_responses_format(response_format, spec.id)
+    kwargs: Dict[str, Any] = {
+        "model": spec.model,
+        "input": _messages(spec, text),
+        "text": {"format": fmt},
+    }
+    if spec.temperature is not None:
+        kwargs["temperature"] = spec.temperature
+    if spec.reasoning_effort is not None:
+        kwargs["reasoning"] = {"effort": spec.reasoning_effort}
+    return client.responses.create(**kwargs)
+
+
+def _to_responses_format(response_format: Dict[str, Any], name: str) -> Dict[str, Any]:
+    """Translate a chat-completions response_format into the Responses shape."""
+    if response_format.get("type") == "json_schema":
+        inner = response_format.get("json_schema") or {}
+        return {
+            "type": "json_schema",
+            "name": inner.get("name") or name,
+            "strict": inner.get("strict", True),
+            "schema": inner.get("schema") or {},
+        }
+    # JSON mode is spelled the same way in both APIs.
+    return {"type": "json_object"}
 
 
 def _validate(payload: Any, schema: Dict[str, Any]) -> Optional[str]:
@@ -134,6 +211,33 @@ def _parse_content(choice: Any) -> str:
     return str(content)
 
 
+def _response_text(resp: Any) -> str:
+    """The judge's JSON, from either API.
+
+    Chat completions puts it on `choices[0].message.content`; the Responses API
+    exposes `output_text`, with the structured list on `output` as a fallback --
+    and on a reasoning model that list also holds reasoning items, which carry
+    no `text` and must be skipped rather than concatenated.
+    """
+    text = getattr(resp, "output_text", None)
+    if isinstance(text, str) and text.strip():
+        return text
+    output = getattr(resp, "output", None)
+    if output:
+        parts: List[str] = []
+        for item in output:
+            for piece in (getattr(item, "content", None) or []):
+                piece_text = getattr(piece, "text", None)
+                if isinstance(piece_text, str):
+                    parts.append(piece_text)
+        if parts:
+            return "".join(parts)
+    choices = getattr(resp, "choices", None)
+    if choices:
+        return _parse_content(choices[0])
+    return ""
+
+
 class JudgeCaller:
     """One stateless, single-turn call per answer (board step 3)."""
 
@@ -155,7 +259,7 @@ class JudgeCaller:
         except Exception as exc:  # noqa: BLE001 - the fallback chain decides what to do
             resp = self._fallback(client, text, exc)
 
-        content = _parse_content(resp.choices[0])
+        content = _response_text(resp)
         payload = _loads(content)
 
         problem = _validate(payload, self.spec.schema) if payload is not None else "unparseable"
@@ -163,7 +267,7 @@ class JudgeCaller:
             # The model produced something out of schema even though the endpoint
             # accepted the request; one retry in JSON mode with the schema echoed.
             resp = self._json_mode_call(client, text)
-            content = _parse_content(resp.choices[0])
+            content = _response_text(resp)
             payload = _loads(content)
             problem = _validate(payload, self.spec.schema) if payload is not None else "unparseable"
             if problem:
@@ -185,7 +289,9 @@ class JudgeCaller:
         return self._json_mode_call(client, text)
 
     def _json_mode_call(self, client: Any, text: str) -> Any:
-        # Try with logprobs on, then off.
+        # Try with logprobs on, then off. The spec already knows whether the
+        # model supports them; the second attempt covers an endpoint that
+        # accepts the parameter and then refuses this particular request.
         try:
             return _request(client, self.spec, text, {"type": "json_object"}, logprobs=True)
         except Exception:  # noqa: BLE001
