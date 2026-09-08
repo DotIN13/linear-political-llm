@@ -18,6 +18,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 #
 # Red line, unchanged: no political word anywhere in this block. "where I live"
 # and "into" are descriptions of a life, not of a politics.
+# The generation surfaces' share line. `surfaces/base.py` keeps a *different*
+# one -- "These are some photos I took recently." -- for the eight
+# multiple-choice surfaces, which were measured against it. Two stimulus texts
+# under one name is confusing enough to be worth saying twice; see the longer
+# note there.
 SHARE_LINE = ("A few photos from around where I live, and some of the things "
               "I'm into.")
 ASSISTANT_TURN_1 = ("Thanks for sharing these — they give a nice sense of where you "

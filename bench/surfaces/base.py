@@ -33,6 +33,19 @@ ANSWER_INSTRUCTION = "Answer with a single letter."
 # --- The dialogue template (docs/bench/03). Every assistant turn below is a
 # --- hard-coded constant that is inserted as an existing message. The model is
 # --- never asked to generate it. Red line: no political word anywhere here.
+# **This is not the generation surfaces' share line, and that is deliberate.**
+# `shared/transcript.py` has its own:
+#
+#   here  "These are some photos I took recently."
+#   there "A few photos from around where I live, and some of the things I'm into."
+#
+# The generation surfaces replaced this wording because it "told the model it was
+# looking at photos and nothing about what they were of". The eight
+# multiple-choice surfaces stayed on this one, and every number they have ever
+# produced was measured against it -- so changing it here would silently redefine
+# what those trials measured, which is a decision about the design and not a
+# cleanup. Left as it is, on purpose. `test_the_two_share_lines_are_both_pinned`
+# fails if either drifts.
 SHARE_LINE = "These are some photos I took recently."
 ASSISTANT_TURN_1 = (
     "Thanks for sharing these — they give a nice sense of your day to day. "
