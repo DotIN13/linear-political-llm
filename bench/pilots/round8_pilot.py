@@ -44,6 +44,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from bench import registry  # noqa: E402
+from bench.paths import image_paths_of
 from bench.adaptors.local_hf import LocalHFAdaptor, token_scoring, split_probe_id  # noqa: E402
 from bench.store import git_rev, measurement_rev, trial_key  # noqa: E402
 from bench.surfaces.generation import (  # noqa: E402
@@ -187,7 +188,7 @@ def phase_calibrate(n_images: int = 20) -> None:
         for line in handle:
             row = json.loads(line)
             if row.get("split") == "explore":
-                per_bucket[row["bucket"]].extend(row["image_paths"])
+                per_bucket[row["bucket"]].extend(image_paths_of(row))
     image_paths: List[str] = []
     i = 0
     while len(image_paths) < n_images:

@@ -46,6 +46,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from bench.adaptors.vllm_server import VLLMServerAdaptor
+from bench.paths import image_paths_of
 from bench.store import measurement_rev
 from bench.surfaces.generation import build_scheme_messages
 from bench.types import Conversation, Trial
@@ -499,10 +500,10 @@ def cmd_eyeball(task_names: Sequence[str], topic: Optional[str] = None, lang: st
             print(f"[prompt] {instruction}")
             for label, item in (("LOW", low), ("HIGH", high)):
                 if framing == "roleplay":
-                    messages = roleplay_messages(item["image_paths"], instruction)
+                    messages = roleplay_messages(image_paths_of(item), instruction)
                 else:
-                    messages = assistant_messages(item["image_paths"], instruction)
-                result = run_one(adaptor, messages, item["image_paths"])
+                    messages = assistant_messages(image_paths_of(item), instruction)
+                result = run_one(adaptor, messages, image_paths_of(item))
                 print(f"\n[{label} image_mean={item['image_mean']:.3f}] "
                       f"({result['timing_ms']:.0f} ms)")
                 if result["error"]:
@@ -528,9 +529,9 @@ def cmd_sweep(task_name: str, framing: str, extractor: str = "none", lang: str =
         for item in buckets[bucket]:
             prompts = builder(item, lang=lang)
             instruction = prompts[framing]
-            messages = (roleplay_messages(item["image_paths"], instruction) if framing == "roleplay"
-                        else assistant_messages(item["image_paths"], instruction))
-            result = run_one(adaptor, messages, item["image_paths"])
+            messages = (roleplay_messages(image_paths_of(item), instruction) if framing == "roleplay"
+                        else assistant_messages(image_paths_of(item), instruction))
+            result = run_one(adaptor, messages, image_paths_of(item))
             text = result["text"]
             value = None
             if extractor == "number":
@@ -582,15 +583,15 @@ def cmd_poll2x2(policy_key: str = "ice_funding", top_logprobs: int = 20) -> None
                 for item in buckets[bucket]:
                     prompts = task_poll(item, policy_key=policy_key, lang=lang)
                     instruction = prompts[framing]
-                    messages = (roleplay_messages(item["image_paths"], instruction) if framing == "roleplay"
-                                else assistant_messages(item["image_paths"], instruction))
-                    result = run_one(adaptor, messages, item["image_paths"])
+                    messages = (roleplay_messages(image_paths_of(item), instruction) if framing == "roleplay"
+                                else assistant_messages(image_paths_of(item), instruction))
+                    result = run_one(adaptor, messages, image_paths_of(item))
                     text = result["text"]
                     value = extract_number_0_10(text)
                     refusal = detect_refusal(text)
 
                     digit_prompts = task_poll_digit_only(item, policy_key=policy_key, lang=lang)
-                    digit_result = run_digit_logprob(adaptor_lp, item["image_paths"],
+                    digit_result = run_digit_logprob(adaptor_lp, image_paths_of(item),
                                                      digit_prompts[framing], framing)
 
                     print(f"[{lang}/{framing}/{bucket:4}] {item['item_id']:18} "

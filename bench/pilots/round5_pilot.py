@@ -33,6 +33,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from bench import registry  # noqa: E402
+from bench.paths import image_paths_of
 from bench.adaptors.local_hf import token_scoring, split_probe_id  # noqa: E402
 from bench.sample import load_lvis_meta  # noqa: E402
 from bench.store import (  # noqa: E402
@@ -174,7 +175,7 @@ def phase_calibrate(n_images: int = 20) -> None:
     with open(BUCKET_ITEMS, encoding="utf-8") as handle:
         for line in handle:
             row = json.loads(line)
-            per_bucket[row["bucket"]].extend(row["image_paths"])
+            per_bucket[row["bucket"]].extend(image_paths_of(row))
     image_paths: List[str] = []
     i = 0
     while len(image_paths) < n_images:

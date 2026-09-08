@@ -45,6 +45,7 @@ import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from bench.paths import items_dir, runs_dir
 from bench.store import measurement_rev
 from bench.surfaces.shared.prompts import pool, text as prompt_text
 from bench.surfaces.shared.transcript import build_scheme_messages
@@ -52,9 +53,30 @@ from bench.types import Conversation, Item, Trial
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TASKS = os.path.join(ROOT, "bench", "surfaces", "tasks")
-ITEMS_FILE = os.path.join(ROOT, "items", "explore_bucket_v1.jsonl")
-OUT_DIR = os.path.join(ROOT, "runs", "probe_forced_choice")
-TRIALS_PATH = os.path.join(OUT_DIR, "trials.jsonl")
+ITEMS_FILE = os.path.join(items_dir(), "explore_bucket_v1.jsonl")
+OUT_DIR = runs_dir("probe_forced_choice")
+
+
+def trials_path() -> str:
+    """One shard per job, not one shared `trials.jsonl`.
+
+    `runs/` is shared across worktrees on purpose -- the store dedups by reading
+    the existing log, so a shared directory lets one worktree extend a run
+    another started. But the writer appends with `open(path, "a")` and POSIX only
+    guarantees an atomic append below 4096 bytes, and **17% of the real
+    336-trial records are over that** (max 8,200). Two jobs on one file would
+    interleave mid-line.
+
+    So each job owns a file and readers glob. Appends stay single-writer, and a
+    killed job can only damage its own shard.
+    """
+    job = os.environ.get("SLURM_JOB_ID") or f"local{os.getpid()}"
+    return os.path.join(OUT_DIR, f"trials.{job}.jsonl")
+
+
+def all_shards() -> List[str]:
+    import glob as _glob
+    return sorted(_glob.glob(os.path.join(OUT_DIR, "trials.*.jsonl")))
 
 BUCKETS = ("low", "mid", "high")
 ITEMS_PER_BUCKET = 6
@@ -287,7 +309,8 @@ def phase_run(limit: int = 0) -> int:
     print(f"[run] {len(plan)} trials", flush=True)
 
     n_err = 0
-    with open(TRIALS_PATH, "a", encoding="utf-8") as handle:
+    out_path = trials_path()
+    with open(out_path, "a", encoding="utf-8") as handle:
         for i, e in enumerate(plan):
             started = time.time()
             try:
@@ -319,12 +342,17 @@ def phase_run(limit: int = 0) -> int:
             handle.flush()
             if (i + 1) % 25 == 0:
                 print(f"  [{i + 1}/{len(plan)}] err={n_err}", flush=True)
-    print(f"[run] done, errors={n_err} -> {TRIALS_PATH}", flush=True)
+    print(f"[run] done, errors={n_err} -> {out_path}", flush=True)
     return 0
 
 
 def phase_report() -> int:
-    rows = [json.loads(l) for l in open(TRIALS_PATH, encoding="utf-8") if l.strip()]
+    rows = []
+    for shard in all_shards():
+        rows += [json.loads(l) for l in open(shard, encoding="utf-8") if l.strip()]
+    if not rows:
+        print(f"no records under {OUT_DIR}", file=sys.stderr)
+        return 1
     print(f"\n=== {len(rows)} records ===")
     for task_qid in sorted({(r["task"], r["qid"]) for r in rows}):
         task, qid = task_qid

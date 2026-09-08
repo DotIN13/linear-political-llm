@@ -59,6 +59,7 @@ import sys
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from bench import registry
+from bench.paths import image_paths_of
 from bench.store import measurement_rev
 from bench.surfaces.generation import build_scheme_messages
 from bench.surfaces.groupchat import render_message
@@ -139,7 +140,7 @@ def arm_plan(arm: int) -> Dict[str, Any]:
     left, right = load_sides(path)
     lm = [r["image_mean"] for r in left]
     rm = [r["image_mean"] for r in right]
-    n_photos = sorted({len(r.get("image_paths") or []) for r in (left + right)})
+    n_photos = sorted({len(image_paths_of(r)) for r in (left + right)})
     msgs, _ = build_scheme_messages(SCHEME, ["x"] * arm, "no_photos", arm)
     # Worst-case prompt length, so a silent truncation is caught before the run
     # rather than inferred from odd answers afterwards. The items carry each

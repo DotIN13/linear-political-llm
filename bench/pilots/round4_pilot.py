@@ -34,6 +34,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from bench import registry  # noqa: E402
+from bench.paths import image_paths_of
 from bench.adaptors.local_hf import token_scoring, split_probe_id  # noqa: E402
 from bench.sample import load_lvis_meta  # noqa: E402
 from bench.store import (  # noqa: E402
@@ -187,7 +188,7 @@ def phase_calibrate(n_images: int = 20) -> None:
     with open(BUCKET_ITEMS, encoding="utf-8") as handle:
         for line in handle:
             row = json.loads(line)
-            per_bucket[row["bucket"]].extend(row["image_paths"])
+            per_bucket[row["bucket"]].extend(image_paths_of(row))
     image_paths: List[str] = []
     i = 0
     while len(image_paths) < n_images:
@@ -641,7 +642,7 @@ def _write_s1viz(item_rows, by_item, baselines, meta, judge_by_key) -> None:
     copied = 0
     for bucket in BUCKETS:
         for seq, row in enumerate(bucket_order[bucket], start=1):
-            for img_idx, src in enumerate(row["image_paths"], start=1):
+            for img_idx, src in enumerate(image_paths_of(row), start=1):
                 dst = os.path.join(S1VIZ_DIR, f"{bucket}_{seq}_{img_idx}.jpg")
                 shutil.copyfile(src, dst)
                 copied += 1

@@ -31,6 +31,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from bench.adaptors.local_hf import token_scoring, split_probe_id  # noqa: E402
+from bench.paths import image_paths_of
 from bench.store import measurement_rev  # noqa: E402
 from bench.surfaces.generation import (  # noqa: E402
     AGENTIC_ACK, AGENTIC_OPENER, FILENAMES, FILENAMES_LINE, SYSTEM_AGENTIC, TOOLS,
@@ -140,7 +141,7 @@ def phase_calibrate(n_images: int = 20) -> None:
     with open(EXPLORE, encoding="utf-8") as handle:
         for line in handle:
             row = json.loads(line)
-            per_stratum[row["stratum"]].extend(row["image_paths"])
+            per_stratum[row["stratum"]].extend(image_paths_of(row))
     image_paths: List[str] = []
     strata = sorted(per_stratum)
     i = 0

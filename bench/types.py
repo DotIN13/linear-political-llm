@@ -72,9 +72,30 @@ class Item:
 
     @staticmethod
     def from_dict(payload: Dict[str, Any]) -> "Item":
+        """**The one way an Item is built from disk**, and the only place that
+        decides where its images are.
+
+        ``image_paths`` on disk are whatever the machine that sampled the set
+        wrote -- absolute, and therefore wrong on every other machine and in
+        every worktree that does not own a copy of the images. ``images`` holds
+        record names, which are stable.
+
+        So the resolved paths are **recomputed from the record names** rather
+        than read. With ``LPL_IMAGES_ROOT`` unset this reproduces the old layout
+        exactly, so nothing changes for an existing checkout; set it, and one
+        items file is correct everywhere.
+
+        A set with no ``images`` (the baseline item, and a few older files) keeps
+        whatever ``image_paths`` it had -- there is nothing to resolve from.
+        """
+        from bench.paths import resolve_image
+
         payload = dict(payload)
         if "stratum" not in payload and "decile" in payload:
             payload["stratum"] = payload["decile"]      # v1 items on disk say "decile"
+        records = payload.get("images") or []
+        if records:
+            payload["image_paths"] = [resolve_image(r) for r in records]
         known = {f for f in Item.__dataclass_fields__}
         return Item(**{k: v for k, v in payload.items() if k in known})
 
