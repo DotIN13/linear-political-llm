@@ -45,6 +45,7 @@ import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from bench.store import measurement_rev
 from bench.surfaces.shared.prompts import pool, text as prompt_text
 from bench.surfaces.shared.transcript import build_scheme_messages
 from bench.types import Conversation, Item, Trial
@@ -274,6 +275,12 @@ def phase_run(limit: int = 0) -> int:
         seed=SEED)
     adaptor.setup()
 
+    # Finding 1 from the refactor pass: the newest and largest run records neither
+    # measurement_rev nor a trial key, so its rows cannot be checked against the code
+    # that produced them. This pilot had the same hole. Stamp every record.
+    rev = measurement_rev(ROOT, note=f"adaptor={adaptor.name}")
+    print(f"[run] measurement_rev={rev}", flush=True)
+
     plan = build_plan(load_items())
     if limit:
         plan = plan[:limit]
@@ -296,6 +303,10 @@ def phase_run(limit: int = 0) -> int:
                 "item_id": e["item_id"], "image_mean": e["image_mean"],
                 "order": e["order"], "picks": picks, "parse_ok": picks is not None,
                 "text": text_out, "error": err, "ms": (time.time() - started) * 1000.0,
+                "measurement_rev": rev, "adaptor": adaptor.name, "model": adaptor.model,
+                "seed": SEED,
+                "trial_key": f"{e['task']}/{e['qid']}/{e['scheme']}/{e['order_arm']}/"
+                             f"{e['item_id']}/{rev}",
             }
             if picks:
                 if e["task"] == "s13_patch":
