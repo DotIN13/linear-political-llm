@@ -94,8 +94,12 @@ def test_no_module_reads_image_paths_off_a_raw_dict():
     root = pathlib.Path(paths.REPO_ROOT) / "bench"
     offenders = []
     for path in sorted(root.rglob("*.py")):
-        if path.name in {"types.py", "paths.py", "sample.py"} or "tests" in path.parts:
-            continue        # types builds it, paths defines it, sample writes it
+        # types.py builds the Item, paths.py defines resolution, sample.py writes the
+        # field, and stage_images.py reads it *as the manifest* -- it is the one tool
+        # whose whole job is the record-name-to-file mapping, which lives nowhere else.
+        if path.name in {"types.py", "paths.py", "sample.py", "stage_images.py"} \
+                or "tests" in path.parts:
+            continue
         for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if re.search(r"""\[["']image_paths["']\]|\.get\(\s*["']image_paths["']""", line):
                 offenders.append(f"{path.relative_to(paths.REPO_ROOT)}:{n}")
