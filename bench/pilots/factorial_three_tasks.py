@@ -49,6 +49,7 @@ import sys
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from bench import registry
+from bench.store import measurement_rev
 from bench.types import Conversation, Item, Trial, baseline_item
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -233,7 +234,42 @@ def phase_plan() -> int:
 # run
 # --------------------------------------------------------------------------- #
 def _key(r: Dict[str, Any]) -> Tuple:
-    return (r["task"], r["scheme"], r["item"], r["item_id"], r["condition"], r["rep"])
+    """The dedup key -- **including the measurement revision.**
+
+    It did not include one, and the records did not carry one either. So a row
+    written under old code satisfied the dedup forever: the run said "already
+    done" and skipped it, and nothing anywhere could notice the code underneath
+    had changed. That defeats the mechanism the whole dedup-key design exists
+    for, and it is why the 1,404-row log could only be dated by reading commit
+    dates rather than by asking the data.
+
+    Rows written before this carry no ``measurement_rev`` and therefore key as
+    ``None``. They will not satisfy the dedup for any real revision -- which is
+    correct: their provenance is genuinely unknown, and re-running them is the
+    only way to find out what they should have said. ``phase_run`` says so out
+    loud rather than quietly re-running 1,404 trials.
+    """
+    return (r["task"], r["scheme"], r["item"], r["item_id"], r["condition"], r["rep"],
+            r.get("measurement_rev"))
+
+
+def _warn_about_other_revisions(path: str, rev: str) -> None:
+    """Say, before the GPU spins, how much of the log was written by other code."""
+    if not os.path.exists(path):
+        return
+    seen: Dict[Any, int] = collections.Counter()
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip():
+                seen[json.loads(line).get("measurement_rev")] += 1
+    stale = {k: v for k, v in seen.items() if k != rev}
+    if not stale:
+        return
+    print(f"[run] NOTE: {sum(stale.values())} rows in {os.path.basename(path)} were "
+          f"written under a different measurement revision and will be re-run:",
+          file=sys.stderr)
+    for k, v in sorted(stale.items(), key=lambda kv: -kv[1]):
+        print(f"        {v:>5}  {k or 'unstamped (pre-provenance)'}", file=sys.stderr)
 
 
 def _done(path: str) -> set:
@@ -259,10 +295,14 @@ def phase_run(limit: int = 0) -> int:
     adaptor.setup()
     os.makedirs(OUT_DIR, exist_ok=True)
 
+    rev = measurement_rev(ROOT, note=f"adaptor={adaptor.name}")
+    print(f"[run] measurement_rev={rev}", flush=True)
+
     rows = plan_rows()
     if limit:
         rows = rows[:limit]
     done = _done(LOG_PATH)
+    _warn_about_other_revisions(LOG_PATH, rev)
     n = 0
     with open(LOG_PATH, "a", encoding="utf-8") as fh:
         for i, r in enumerate(rows, 1):
@@ -281,7 +321,12 @@ def phase_run(limit: int = 0) -> int:
             out = {**r, "text": (resp.text or "").strip(),
                    "n_turns": len(trial.conversation.messages),
                    "n_images": trial.meta.get("n_images"),
-                   "error": resp.error}
+                   "error": resp.error,
+                   # Provenance. Without these the row cannot be checked against
+                   # the code that produced it by anything but a commit date.
+                   "measurement_rev": rev, "trial_key": trial.trial_key
+                   if hasattr(trial, "trial_key") else None,
+                   "adaptor": adaptor.name, "model": adaptor.model}
             # the news ranking is scored here, with no judge: which five it picked
             if r["task"] == "s3_digest":
                 extracted = surface.extract(resp, trial)

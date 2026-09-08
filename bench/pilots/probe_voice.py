@@ -46,6 +46,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from bench.adaptors.vllm_server import VLLMServerAdaptor
+from bench.store import measurement_rev
 from bench.surfaces.generation import build_scheme_messages
 from bench.types import Conversation, Trial
 
@@ -465,6 +466,9 @@ def run_digit_logprob(adaptor_lp: VLLMServerAdaptor, image_paths: Sequence[str],
 def _log(record: Dict[str, Any]) -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
     with open(LOG_PATH, "a", encoding="utf-8") as fh:
+        # Provenance: a record that cannot name the revision that produced it
+        # can only be dated by a commit log (refactor-pass finding 1).
+        record.setdefault("measurement_rev", measurement_rev(ROOT))
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 

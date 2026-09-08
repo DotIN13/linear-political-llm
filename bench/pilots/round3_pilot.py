@@ -31,6 +31,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from bench.adaptors.local_hf import token_scoring, split_probe_id  # noqa: E402
+from bench.store import measurement_rev  # noqa: E402
 from bench.surfaces.generation import (  # noqa: E402
     AGENTIC_ACK, AGENTIC_OPENER, FILENAMES, FILENAMES_LINE, SYSTEM_AGENTIC, TOOLS,
 )
@@ -93,6 +94,8 @@ def phase_items(seed: int = 42) -> None:
     os.makedirs(os.path.dirname(PILOT_ITEMS), exist_ok=True)
     with open(PILOT_ITEMS, "w", encoding="utf-8") as handle:
         for row in picked:
+            # Provenance (refactor-pass finding 1).
+            row.setdefault("measurement_rev", measurement_rev(ROOT_DIR))
             handle.write(json.dumps(row, sort_keys=True) + "\n")
     print(f"[items] wrote {len(picked)} items -> {PILOT_ITEMS}")
     for s in PILOT_STRATA:

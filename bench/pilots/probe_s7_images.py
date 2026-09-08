@@ -59,6 +59,7 @@ import sys
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from bench import registry
+from bench.store import measurement_rev
 from bench.surfaces.generation import build_scheme_messages
 from bench.surfaces.groupchat import render_message
 from bench.types import Conversation, Item, Trial
@@ -241,6 +242,8 @@ def phase_run(limit: int = 0) -> int:
         seed=SEED,
     )
     adaptor.setup()
+    rev = measurement_rev(ROOT, note=f"adaptor={adaptor.name}")
+    print(f"[run] measurement_rev={rev}", flush=True)
     os.makedirs(OUT_DIR, exist_ok=True)
 
     plan: List[Tuple[int, str, str, Dict[str, Any]]] = []
@@ -281,6 +284,9 @@ def phase_run(limit: int = 0) -> int:
                 "item_id": item.item_id, "image_mean": row["image_mean"],
                 "n_photos": len(paths), "n_turns": len(msgs),
                 "text": (resp.text or "").strip(),
+                # Provenance (refactor-pass finding 1): without this the row can
+                # only be dated by a commit log.
+                "measurement_rev": rev,
             }, ensure_ascii=False) + "\n")
             fh.flush()
             n += 1

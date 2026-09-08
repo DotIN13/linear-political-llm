@@ -105,3 +105,31 @@ def test_n_files_is_bound_on_the_no_photos_branch():
     item = Item(item_id="t", images=[], image_paths=[], image_scores=[], stratum=0)
     trial = surface.build(item, "no_photos", {"scheme": "chat"}, seed=1)
     assert trial.meta["n_files"] == 0
+
+
+# --- finding 1: the run recorded no provenance, and dedup was revision-blind ---
+def test_the_dedup_key_includes_the_measurement_revision():
+    """Without it a row written under old code satisfied the dedup forever.
+
+    The run said "already done" and skipped it, and nothing could notice the code
+    underneath had changed -- which defeats the mechanism the dedup key exists for.
+    """
+    from bench.pilots.factorial_three_tasks import _key
+    base = {"task": "s1", "scheme": "chat", "item": 1, "item_id": "x",
+            "condition": "photos", "rep": 1}
+    assert _key({**base, "measurement_rev": "aaa"}) != _key({**base, "measurement_rev": "bbb"})
+    assert _key(base) != _key({**base, "measurement_rev": "aaa"})   # unstamped is its own key
+
+
+def test_every_pilot_that_writes_records_stamps_them():
+    """The check that would have caught this. Six pilots did; the newest did not."""
+    import pathlib
+    import re
+    root = pathlib.Path(__file__).resolve().parents[2] / "bench" / "pilots"
+    unstamped = []
+    for path in sorted(root.glob("*.py")):
+        src = path.read_text(encoding="utf-8")
+        writes = re.search(r"json\.dumps\(.*\)\s*\+\s*['\"]\\n['\"]", src, re.S)
+        if writes and "measurement_rev" not in src:
+            unstamped.append(path.name)
+    assert unstamped == [], f"pilots writing records without measurement_rev: {unstamped}"
