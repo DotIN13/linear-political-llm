@@ -28,6 +28,11 @@ from bench.surfaces.tasks.s3_digest import _S3Surface
 from bench.surfaces.tasks.s7_family_chat import FamilyChatSurface
 from bench.surfaces.tasks.s8_letter_answered import AnsweredLetterSurface
 from bench.surfaces.tasks.s5_letter import _S5Surface
+from bench.surfaces.tasks.s9_neighborhood import _S9Surface
+from bench.surfaces.tasks.s10_groceries import _S10Surface
+from bench.surfaces.tasks.s11_health import _S11Surface
+from bench.surfaces.tasks.s12_explain import _S12Surface
+from bench.surfaces.tasks.s14_outfits import _S14Surface
 from bench.surfaces.tasks.s6_describe import _S6Surface
 from bench.surfaces.shared.surface import GenerationSurface
 
@@ -45,6 +50,13 @@ TASK_PROMPTS: Dict[str, str] = {
 
 # --- the six tasks' surface ids, in board order ------------------------------
 SURFACE_IDS = ["s1_speech", "s2_proposal", "s5_letter", "s3_digest", "s6_describe", "s4_bonus"]
+
+# The five forced-choice surfaces, in the order Tianyi ranked them. Kept as their own
+# list rather than appended to SURFACE_IDS: that name is read by round9_vllm.py and by
+# the prompt-golden test as "the six generation tasks", and widening it silently would
+# change what those two mean.
+CHOICE_SURFACE_IDS = ["s9_neighborhood", "s12_explain", "s11_health",
+                      "s10_groceries", "s14_outfits"]
 
 
 def _make(sid: str, family: str, judge_id: Optional[str] = None,
@@ -94,3 +106,10 @@ def register_all() -> None:
     register_surface("s8_letter_answered")(AnsweredLetterSurface)
     register_surface("s5_letter")(_S5Surface)
     register_surface("s6_describe")(_S6Surface)
+    # The forced-choice five. Each reads its own option pool and its own DV; none has
+    # a judge, because every one of them is read by rule.
+    register_surface("s9_neighborhood")(_S9Surface)
+    register_surface("s12_explain")(_S12Surface)
+    register_surface("s11_health")(_S11Surface)
+    register_surface("s10_groceries")(_S10Surface)
+    register_surface("s14_outfits")(_S14Surface)
