@@ -253,7 +253,9 @@ def test_manifest_records_both_revisions_and_the_variant_space(workspace, capsys
     assert manifest["code_rev"]                       # recorded, but not in the key
     assert manifest["variant_space"]["vote2020"] == [{"phrasing": 0, "order": "ab"},
                                                      {"phrasing": 0, "order": "ba"}]
-    assert "bench/surfaces/choice.py" in manifest["measurement_inputs"]
+    # Surface behaviour, not surface source -- see MEASUREMENT_GLOBS.
+    assert "bench/surfaces/choice.py" not in manifest["measurement_inputs"]
     assert "bench/cli.py" not in manifest["measurement_inputs"]
+    assert "bench/tests/golden/prompts.jsonl" in manifest["measurement_inputs"]
     assert all(r["ok"] for r in manifest["candidate_gate"])
     assert manifest["n_new"] == manifest["n_planned"] == N_ITEMS * 2 * 2 + 4

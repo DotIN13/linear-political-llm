@@ -19,11 +19,44 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence
 
 from bench.types import Conversation, canonical_variant
 
-# Files whose contents can change *what a number means*. Everything else in the
-# repo -- cli.py, sample.py, README, docs, notebooks -- can change freely without
-# invalidating a single trial (task D).
-MEASUREMENT_GLOBS = ("bench/adaptors/**/*.py", "bench/surfaces/**/*.py")
-MEASUREMENT_FILES = ("bench/types.py", "bench/store.py", "bench/data/s3_headlines_v2.json")
+# What a number *means* is decided by two things, and they are hashed differently.
+#
+# 1. How an adaptor turns a conversation into tokens. Hashed BY SOURCE: decoding
+#    behaviour is not visible in the prompt, so there is nothing else to hash.
+# 2. What the surfaces build and read. Hashed BY BEHAVIOUR -- the committed golden
+#    snapshots -- plus every prompt file by content.
+#
+# ``bench/surfaces/**/*.py`` is deliberately NOT here. Moving prompt-building code
+# without changing a prompt used to invalidate 1,404 trials for nothing; now it
+# costs nothing, because what is hashed is the prompts themselves. Rewording a
+# prompt still invalidates them, twice over: the prompt file changes by content,
+# and the snapshot changes when it is regenerated.
+#
+# Everything else in the repo -- cli.py, sample.py, README, docs, notebooks -- can
+# change freely without invalidating a single trial (task D).
+MEASUREMENT_GLOBS = (
+    "bench/adaptors/**/*.py",
+    # Prompt material, wherever it sits and whatever it is: a task's ask, its
+    # templates, its item pool, and that pool's header.
+    "bench/surfaces/**/*.txt",
+    "bench/surfaces/**/*.j2",
+    "bench/surfaces/**/*.json",
+    "bench/surfaces/**/*.jsonl",
+)
+MEASUREMENT_FILES = (
+    "bench/types.py",
+    "bench/store.py",
+    # s3's pool, until it moves into bench/surfaces/tasks/s3_digest/prompts/ and
+    # the globs above pick it up.
+    "bench/data/s3_headlines_v2.json",
+    # Behaviour: every prompt the surfaces can build, and every deterministic
+    # reader's output over a fixed corpus of real responses.
+    # ``bench/tests/test_prompts_golden.py`` fails the moment these disagree with
+    # the code, so a stale snapshot cannot reach dev -- which is what makes it safe
+    # to hash the snapshot instead of the source.
+    "bench/tests/golden/prompts.jsonl",
+    "bench/tests/golden/readers.jsonl",
+)
 
 
 def trial_key(

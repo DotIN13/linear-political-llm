@@ -76,11 +76,16 @@ def _fake_repo(tmp_path):
     """A miniature repo with the same layout measurement_rev walks."""
     import shutil
     root = tmp_path / "repo"
-    for sub in ("bench/adaptors", "bench/surfaces", "bench/tests", "docs/bench"):
+    for sub in ("bench/adaptors", "bench/surfaces", "bench/tests/golden", "docs/bench",
+                "bench/surfaces/tasks/s1_speech/prompts"):
         (root / sub).mkdir(parents=True, exist_ok=True)
     for name in ("bench/types.py", "bench/store.py", "bench/cli.py", "bench/sample.py",
                  "bench/adaptors/local_hf.py", "bench/surfaces/choice.py",
-                 "bench/tests/test_store.py", "README.md", "docs/bench/01.md"):
+                 "bench/tests/test_store.py", "README.md", "docs/bench/01.md",
+                 # what the new policy hashes: prompt material, and behaviour
+                 "bench/surfaces/tasks/s1_speech/prompts/ask.txt",
+                 "bench/tests/golden/prompts.jsonl",
+                 "bench/tests/golden/readers.jsonl"):
         (root / name).write_text(f"# {name}\n")
     (root / "weights.pkl").write_bytes(b"probe-weights-v1")
     return root
@@ -89,21 +94,38 @@ def _fake_repo(tmp_path):
 def test_measurement_rev_ignores_files_that_cannot_change_a_measurement(tmp_path):
     root = _fake_repo(tmp_path)
     before = measurement_rev(str(root))
+    # bench/surfaces/choice.py is in this list on purpose, and it is the headline
+    # property of the current policy: surface *source* no longer decides identity,
+    # so a pure refactor of prompt-building code keeps every trial_key valid.
     for irrelevant in ("README.md", "docs/bench/01.md", "bench/cli.py", "bench/sample.py",
-                       "bench/tests/test_store.py"):
+                       "bench/tests/test_store.py", "bench/surfaces/choice.py"):
         (root / irrelevant).write_text("edited\n")
         assert measurement_rev(str(root)) == before, f"{irrelevant} must not invalidate data"
 
 
-def test_measurement_rev_changes_when_a_surface_changes(tmp_path):
+def test_measurement_rev_changes_when_a_prompt_changes(tmp_path):
+    """Rewording a prompt still invalidates data -- twice over, by design.
+
+    The prompt file changes by content, and the golden snapshot changes when it is
+    regenerated. Either one alone would be enough; both is what makes it hard to
+    reword a prompt by accident.
+    """
     root = _fake_repo(tmp_path)
     before = measurement_rev(str(root))
-    (root / "bench/surfaces/choice.py").write_text("# reworded the question\n")
+    (root / "bench/surfaces/tasks/s1_speech/prompts/ask.txt").write_text("reworded\n")
     assert measurement_rev(str(root)) != before
 
     after = measurement_rev(str(root))
-    (root / "bench/adaptors/local_hf.py").write_text("# different logit read\n")
+    (root / "bench/tests/golden/prompts.jsonl").write_text('{"key":"x"}\n')
     assert measurement_rev(str(root)) != after
+
+    after = measurement_rev(str(root))
+    (root / "bench/tests/golden/readers.jsonl").write_text('{"id":"x"}\n')
+    assert measurement_rev(str(root)) != after, "a changed reader must invalidate too"
+
+    after = measurement_rev(str(root))
+    (root / "bench/adaptors/local_hf.py").write_text("# different logit read\n")
+    assert measurement_rev(str(root)) != after, "decoding is not visible in a prompt"
 
 
 def test_measurement_rev_covers_the_probe_weights(tmp_path):
@@ -123,14 +145,25 @@ def test_measurement_rev_is_short_stable_and_location_independent(tmp_path):
     moved = tmp_path / "elsewhere"
     shutil.copytree(root, moved)
     assert measurement_rev(str(moved)) == rev
-    assert "bench/surfaces/choice.py" in measurement_inputs(str(root))
-    assert "bench/cli.py" not in measurement_inputs(str(root))
+    # The policy changed: surface *source* is no longer hashed, surface
+    # *behaviour* is. So choice.py being absent is the assertion now, and the
+    # golden snapshots being present is what replaced it.
+    inputs = measurement_inputs(str(root))
+    assert "bench/surfaces/choice.py" not in inputs
+    assert "bench/cli.py" not in inputs
+    assert "bench/adaptors/local_hf.py" in inputs
+    assert "bench/tests/golden/prompts.jsonl" in inputs
+    assert "bench/tests/golden/readers.jsonl" in inputs
 
 
 def test_deleting_a_measurement_file_still_changes_the_rev(tmp_path):
+    """Missing files hash as the literal "absent", so a deletion is a change."""
     root = _fake_repo(tmp_path)
     before = measurement_rev(str(root))
-    (root / "bench/surfaces/choice.py").unlink()
+    (root / "bench/surfaces/tasks/s1_speech/prompts/ask.txt").unlink()
+    assert measurement_rev(str(root)) != before
+    before = measurement_rev(str(root))
+    (root / "bench/tests/golden/prompts.jsonl").unlink()
     assert measurement_rev(str(root)) != before
 
 
