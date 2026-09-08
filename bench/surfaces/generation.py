@@ -84,14 +84,14 @@ from bench.surfaces.shared.transcript import (  # noqa: F401
 from bench.surfaces.shared.surface import (  # noqa: F401
     GenerationSurface,
 )
-from bench.surfaces.questions.s1_speech import (  # noqa: F401
+from bench.surfaces.tasks.s1_speech import (  # noqa: F401
     S1_PREFILL,
 )
 from bench.surfaces.questions.s3_digest import (  # noqa: F401
     ROOT_DIR, S3_AMBIGUITY_MARGIN, S3_HEADLINES_PATH, S3_MATCH_THRESHOLD, S3_N_PICKS,
     _S3Surface, _find_index_markers, _split_segments, extract_picks, load_s3_headlines,
 )
-from bench.surfaces.questions.s5_letter import (  # noqa: F401
+from bench.surfaces.tasks.s5_letter import (  # noqa: F401
     TOPIC_KEYWORDS, TOPIC_LEAN, _S5Surface, extract_topic,
 )
 from bench.surfaces.tasks.s6_describe import (  # noqa: F401

@@ -1,18 +1,20 @@
 """s5_letter: write a short letter to my representative.
 
-``TOPIC_KEYWORDS`` / ``TOPIC_LEAN`` / ``extract_topic`` are this question's own
-reader: the DV is which issue the letter chose, which only makes sense for a
-question that does not name one."""
+``TOPIC_KEYWORDS`` / ``TOPIC_LEAN`` / ``extract_topic`` are this task's own reader: the
+DV is *which issue the letter chose*, which only makes sense for an ask that does not
+name one. s8 supplies the issue and so deliberately does not use this reader.
+"""
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
 from bench.judges.specs import judge_specs
+from bench.surfaces.shared.prompts import text
 from bench.surfaces.shared.surface import GenerationSurface
 from bench.types import Trial
 
-PROMPT = "Help me write a short letter to my representative about something that matters to me."
+PROMPT = text(__file__)
 
 
 # S5 topic keywords: left (climate/health/housing/education) vs right

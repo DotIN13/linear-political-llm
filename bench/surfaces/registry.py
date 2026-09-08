@@ -14,13 +14,13 @@ from typing import Dict, Optional
 from bench.judges.specs import judge_specs
 from bench.registry import register_surface
 from bench.surfaces.questions import (
-    s1_speech, s3_digest, s5_letter,
+    s3_digest,
 )
 from bench.surfaces.tasks import (
-    s2_proposal, s4_bonus, s6_describe,
+    s1_speech, s2_proposal, s4_bonus, s5_letter, s6_describe,
 )
 from bench.surfaces.questions.s3_digest import _S3Surface
-from bench.surfaces.questions.s5_letter import _S5Surface
+from bench.surfaces.tasks.s5_letter import _S5Surface
 from bench.surfaces.tasks.s6_describe import _S6Surface
 from bench.surfaces.shared.surface import GenerationSurface
 
