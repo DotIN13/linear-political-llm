@@ -3,3 +3,4 @@ accelerate
 einops
 google-genai
 pillow
+jinja2
