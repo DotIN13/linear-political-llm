@@ -17,6 +17,7 @@ from bench.surfaces.tasks import (
     s1_speech, s2_proposal, s3_digest, s4_bonus, s5_letter, s6_describe,
 )
 from bench.surfaces.tasks.s3_digest import _S3Surface
+from bench.surfaces.tasks.s7_family_chat import FamilyChatSurface
 from bench.surfaces.tasks.s5_letter import _S5Surface
 from bench.surfaces.tasks.s6_describe import _S6Surface
 from bench.surfaces.shared.surface import GenerationSurface
@@ -77,5 +78,9 @@ def register_all() -> None:
     _make("s2_proposal", "generation", judge_id="s2_proposal", max_new_tokens=1200)
     _make("s4_bonus", "generation", judge_id="s4_bonus", max_new_tokens=1000)
     register_surface("s3_digest")(_S3Surface)
+    # s7 and s8 used to register themselves with a decorator at import time, which
+    # made them the only surfaces not registered here. Same six-then-two calls, one
+    # place, one moment.
+    register_surface("s7_family_chat")(FamilyChatSurface)
     register_surface("s5_letter")(_S5Surface)
     register_surface("s6_describe")(_S6Surface)

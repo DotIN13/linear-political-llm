@@ -7,13 +7,13 @@ import pytest
 
 from bench.pilots import probe_s7_images as P
 from bench.surfaces.generation import build_scheme_messages, files_by_dir
-from bench.surfaces.groupchat import QUESTION_TEMPLATE
+from bench.surfaces.groupchat import question_template_source, render_message
 
 
 def test_wording_is_the_surfaces_not_a_copy():
     """The one thing that must not drift: this probe tests the shipped wording."""
     q = P.question_text("SOME MESSAGE")
-    assert q == QUESTION_TEMPLATE.format(message="SOME MESSAGE")
+    assert q == render_message("SOME MESSAGE")
     assert "what I actually think about it and why" in q
     assert "nothing before or after it" in q
 
@@ -22,7 +22,7 @@ def test_no_political_word_in_the_template():
     """The red line: the persona is the only thing carrying politics."""
     banned = ("liberal", "conservative", "left-wing", "right-wing", "democrat",
               "republican", "progressive", "political", "politics", "ideology")
-    low = QUESTION_TEMPLATE.lower()
+    low = question_template_source().lower()
     assert not [w for w in banned if w in low]
 
 

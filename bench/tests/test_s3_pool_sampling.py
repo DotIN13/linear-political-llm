@@ -206,8 +206,8 @@ def _v2():
 def test_v2_covers_exactly_the_twelve_topics_of_the_other_two_tasks():
     """The whole point of v2: one topic list across all three tasks."""
     pool = _v2()["headlines"]
-    with open("bench/data/s7_family_chat_v1.json", encoding="utf-8") as fh:
-        want = {m["topic"] for m in json.load(fh)["messages"]}
+    from bench.surfaces.groupchat import load_dataset
+    want = {m["topic"] for m in load_dataset()["messages"]}
     got = {h["topic"] for h in pool}
     assert got == want, f"missing {sorted(want - got)}, extra {sorted(got - want)}"
     assert "pentagon" not in got, "pentagon is retired: it has no twin topic"

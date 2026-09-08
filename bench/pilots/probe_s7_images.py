@@ -60,14 +60,16 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from bench import registry
 from bench.surfaces.generation import build_scheme_messages
-from bench.surfaces.groupchat import QUESTION_TEMPLATE
+from bench.surfaces.groupchat import render_message
 from bench.types import Conversation, Item, Trial
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT_DIR = os.path.join(ROOT, "runs", "probe_s7_images")
 LOG_PATH = os.path.join(OUT_DIR, "log.jsonl")
 JUDGED_PATH = os.path.join(OUT_DIR, "judged.jsonl")
-MESSAGES_FILE = os.path.join(ROOT, "bench", "data", "s7_family_chat_v1.json")
+# The pool moved into the task. Read it through the surface rather than by
+# path, so this probe cannot drift onto a stale copy of the messages.
+from bench.surfaces.groupchat import DATASET_PATH as MESSAGES_FILE  # noqa: E402
 
 # One items file per arm. The 10-photo file does not exist until the sampler is
 # run with --images-per-item 10; `plan` says so rather than failing obscurely.
@@ -97,12 +99,12 @@ JUDGE_ID = "s2_proposal"
 
 def question_text(message: str) -> str:
     """The surface's own template, formatted. Never a local copy of the wording."""
-    return QUESTION_TEMPLATE.format(message=message)
+    return render_message(message)
 
 
 def load_messages(path: str = MESSAGES_FILE) -> Dict[str, str]:
-    with open(path, encoding="utf-8") as handle:
-        data = json.load(handle)
+    from bench.surfaces.groupchat import load_dataset
+    data = load_dataset(path)
     return {m["mid"]: m["message"] for m in data["messages"]}
 
 

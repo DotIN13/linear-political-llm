@@ -98,12 +98,26 @@ def pool(entry: str, name: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     (``set_mean_slant``, ``null_centered_pick5`` and the rest). ``version`` in
     particular is recorded in every trial, so dropping it would not be a tidy-up.
     """
-    base = _dir(entry)
+    return read_pool(os.path.join(_dir(entry), f"{name}.jsonl"))
+
+
+def read_pool(path: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """``pool`` by explicit path, for a pool that is not the caller's own.
+
+    The header comes from the sibling ``.meta.json`` **if there is one**, and is ``{}``
+    if there is not. That is not a loophole in the real pools -- each ships its header
+    -- it is so that a validation test can hand the loader a two-line fixture without
+    also inventing a design record for it. A pool that lost its header would surface as
+    ``version: "unknown"`` in every trial's meta, which is visible rather than silent.
+    """
     rows: List[Dict[str, Any]] = []
-    with open(os.path.join(base, f"{name}.jsonl"), encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         for line in handle:
             if line.strip():
                 rows.append(json.loads(line))
-    with open(os.path.join(base, f"{name}.meta.json"), encoding="utf-8") as handle:
-        meta = dict(json.load(handle))
+    header_path = path[:-len(".jsonl")] + ".meta.json" if path.endswith(".jsonl") else path
+    meta: Dict[str, Any] = {}
+    if os.path.exists(header_path):
+        with open(header_path, encoding="utf-8") as handle:
+            meta = dict(json.load(handle))
     return rows, meta

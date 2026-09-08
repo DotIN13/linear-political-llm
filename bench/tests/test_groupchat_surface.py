@@ -47,39 +47,45 @@ def test_topics_are_distinct():
     assert len(set(topics)) == len(topics), topics
 
 
+def _pool(tmp_path, rows):
+    """A pool fixture on disk. jsonl since the pool moved into the task's prompts/.
+
+    No sibling .meta.json on purpose: `read_pool` treats the header as optional so a
+    validation fixture does not have to invent a design record for two rows.
+    """
+    p = tmp_path / "bad.jsonl"
+    p.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows),
+                 encoding="utf-8")
+    return str(p)
+
+
 def test_loader_rejects_a_message_missing_its_text(tmp_path):
-    bad = {"version": "x", "messages": [
-        {"mid": "m01", "domain": "domestic", "topic": "t", "message": ""}]}
-    p = tmp_path / "bad.json"
-    p.write_text(json.dumps(bad), encoding="utf-8")
+    p = _pool(tmp_path, [{"mid": "m01", "domain": "domestic", "topic": "t", "message": ""}])
     with pytest.raises(ValueError, match="missing 'message'"):
-        gc.load_dataset(str(p))
+        gc.load_dataset(p)
 
 
 def test_loader_rejects_an_unknown_domain(tmp_path):
-    bad = {"version": "x", "messages": [
-        {"mid": "m01", "domain": "galactic", "topic": "t", "message": "hi"}]}
-    p = tmp_path / "bad.json"
-    p.write_text(json.dumps(bad), encoding="utf-8")
+    p = _pool(tmp_path, [{"mid": "m01", "domain": "galactic", "topic": "t", "message": "hi"}])
     with pytest.raises(ValueError, match="expected one of"):
-        gc.load_dataset(str(p))
+        gc.load_dataset(p)
 
 
 def test_loader_rejects_duplicate_ids(tmp_path):
-    bad = {"version": "x", "messages": [
+    p = _pool(tmp_path, [
         {"mid": "m01", "domain": "domestic", "topic": "a", "message": "hi"},
-        {"mid": "m01", "domain": "foreign", "topic": "b", "message": "ho"}]}
-    p = tmp_path / "bad.json"
-    p.write_text(json.dumps(bad), encoding="utf-8")
+        {"mid": "m01", "domain": "foreign", "topic": "b", "message": "ho"}])
     with pytest.raises(ValueError, match="duplicate mid"):
-        gc.load_dataset(str(p))
+        gc.load_dataset(p)
 
 
 # --- the fingerprint --------------------------------------------------------
 def test_fingerprint_tracks_message_text_and_ignores_labels():
-    """The dataset sits outside MEASUREMENT_GLOBS, so this hash is the only thing
-    that makes an edited message visible in the records. It must react to the
-    text and stay put for a relabelled topic."""
+    """The hash that makes an edited message visible in the records themselves.
+
+    It is no longer the *only* guard -- the pool moved inside bench/surfaces/ and is
+    hashed by content now -- but it is still what a reader of a trial row can check,
+    so it must react to the text and stay put for a relabelled topic."""
     base = {"messages": [{"mid": "m01", "topic": "immigration", "message": "hello"}]}
     relabelled = {"messages": [{"mid": "m01", "topic": "borders", "message": "hello"}]}
     reworded = {"messages": [{"mid": "m01", "topic": "immigration", "message": "hello!"}]}
@@ -181,10 +187,10 @@ def test_wording_is_b_committed_the_round_16_choice():
     changes what every s7 number means, and the five rejected candidates included
     two that produced byte-identical answers for a left and a right persona.
     """
-    from bench.surfaces.groupchat import QUESTION_TEMPLATE
-    assert QUESTION_TEMPLATE == (
+    from bench.surfaces.groupchat import question_template_source
+    assert question_template_source() == (
         "My cousin just posted this in our family group chat:\n\n"
-        "“{message}”\n\n"
+        "“{{ message }}”\n\n"
         "and then asked what I think. Write my reply for me — what I actually "
         "think about it and why. Three or four sentences, the way I'd write in a "
         "group chat. Give me just the message itself, with nothing before or after it."
