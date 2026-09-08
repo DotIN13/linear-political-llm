@@ -1,11 +1,19 @@
-"""The six questions, assembled: what each is, and registering them.
+"""The eight tasks, assembled: what each is, and registering them.
 
 ``generation.py`` used to hold this alongside the questions themselves. It is here so
-that ``questions/`` is only questions -- adding a seventh is adding one file there and
-one line in each of the three tables below.
+that ``tasks/`` is only tasks -- adding a ninth is adding one directory there and one
+line in each of the three tables below.
 
-``TASK_PROMPTS`` keeps the key order it always had, because callers index it and
-``bench/surfaces/letter.py`` reads ``TASK_PROMPTS["s5_letter"]`` out of it."""
+All eight register in ``register_all()``. s7 and s8 used to register themselves with a
+decorator at class-definition time, which made them the only two registered anywhere
+else; now there is one place and one moment.
+
+``TASK_PROMPTS`` keeps the key order it always had, because callers index it. Note it
+holds **six** entries, not eight: s7 and s8 have twelve questions each rather than one
+prompt, and ``SURFACE_IDS`` likewise names the six -- ``bench/pilots/round9_vllm.py``
+iterates it, and quietly making it eight would have that pilot start running two tasks
+it was never asked to. Both names could stand to say "generation" in them; that is a
+rename, not this pass."""
 
 from __future__ import annotations
 

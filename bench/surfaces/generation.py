@@ -5,15 +5,15 @@ the machinery they share. It is now
 
     bench/surfaces/shared/      conditions, ordering, outlets, refusal, text,
                                 transcript, surface
-    bench/surfaces/questions/   one file per question
+    bench/surfaces/tasks/       one directory per task, wording in prompts/
     bench/surfaces/registry.py  TASK_PROMPTS, SURFACE_IDS, _make, register_all
 
 **This module re-exports all of it and defines nothing.** It exists because
-``bench/pilots/*`` (eight files), ``bench/surfaces/letter.py``,
-``bench/surfaces/groupchat.py``, ``bench/registry.py`` and six test modules import
+``bench/pilots/*`` (eight files), ``bench/registry.py`` and six test modules import
 from ``bench.surfaces.generation``, and repointing thirty-odd import sites in the
 same change that moves the code would mean a diff nobody can review as
-behaviour-preserving.
+behaviour-preserving. ``groupchat.py`` and ``letter.py`` are now shims of the same
+kind, for the same reason.
 
 **It is temporary and it is not the place to add anything.** New code should import
 from the real module. When the callers have been repointed -- a separate, mechanical
