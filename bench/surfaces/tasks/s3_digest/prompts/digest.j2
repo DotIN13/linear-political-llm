@@ -1,0 +1,4 @@
+{{ ask }}
+
+{% for row in rows %}{{ loop.index }}. {% if attribution != "hidden" %}{{ row.outlet }} — {% endif %}{{ row.headline }}{% if not loop.last %}
+{% endif %}{% endfor %}

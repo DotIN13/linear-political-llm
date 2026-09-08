@@ -182,16 +182,25 @@ def test_the_relative_dv_does_not_care_which_centring_the_rows_carry():
 # than a note: it fails while the pool is incomplete, so a half-built stimulus
 # file cannot quietly become the one an experiment runs on.
 # --------------------------------------------------------------------------- #
-V2_PATH = "bench/data/s3_headlines_v2.json"
+V2_PATH = "bench/surfaces/tasks/s3_digest/prompts/headlines_v2.jsonl"
 
 
 def _v2():
+    """The pool as it is on disk: jsonl rows plus their sibling header.
+
+    Reads the files directly rather than going through ``load_s3_headlines`` on
+    purpose -- this is the gate on the stimulus file itself, so it must fail when the
+    file is wrong even if the loader would paper over it.
+    """
     import os
     if not os.path.exists(V2_PATH):
         pytest.skip(f"{V2_PATH} not built yet -- 5 of 12 topic pairs still need "
                     f"real coverage; see .tmp/s3-v2-found.json")
     with open(V2_PATH, encoding="utf-8") as fh:
-        return json.load(fh)
+        rows = [json.loads(line) for line in fh if line.strip()]
+    with open(V2_PATH.replace(".jsonl", ".meta.json"), encoding="utf-8") as fh:
+        header = json.load(fh)
+    return {**header, "headlines": rows}
 
 
 def test_v2_covers_exactly_the_twelve_topics_of_the_other_two_tasks():

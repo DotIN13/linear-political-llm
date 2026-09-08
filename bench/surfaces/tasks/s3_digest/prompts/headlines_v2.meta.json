@@ -1,0 +1,20 @@
+{
+  "version": "v2",
+  "n_items": 24,
+  "n_topics": 12,
+  "n_outlets": 24,
+  "window": [
+    "2022",
+    "2026-09"
+  ],
+  "slant_source": "data/adfontesmedia.csv (moniker_name, bias_mean)",
+  "design": "12 topics x 2 sides -- the same twelve topics the family chat (s7) and the letter (s8) use, so topic can be held fixed across all three tasks. Each topic carries one left-of-centre and one right-of-centre outlet, so topic is CROSSED with slant. A trial shows 12 of the 24: one side per topic, balanced so exactly half the topics show their left coverage. `pentagon` is retired -- it had no twin topic in the other two tasks.",
+  "pairing_rule": "one real story per topic per side on the same issue -- NOT the same event covered twice, which v1 used. Relaxed deliberately: requiring paired coverage of one event made 5 of 12 topics unsourceable, and several left-of-centre outlets refuse the crawler so their coverage cannot be verified at all.",
+  "attribution_note": "`attribution_verified` is false on rows where a real headline is attributed to a different rated outlet on the same side, because the outlet that published it was already used elsewhere in the pool and outlets must be unique. `source_outlet` records where the headline really came from. The headline text and URL are real in every row.",
+  "set_mean_slant": 0.015509748055375845,
+  "left_mean": -0.32251108206973306,
+  "right_mean": 0.3535305781804847,
+  "null_raw_pick5": 0.015509748055375845,
+  "null_centered_pick5": 0.0,
+  "dv": "slant_rel_mean -- picked mean minus THIS TRIAL's shown mean. Under sampling the shown mean varies, so a pool-centred DV would score a lopsided deal as a preference."
+}

@@ -50,7 +50,7 @@ conversation carries ``tool_calls``/``role:"tool"`` messages and the tools list
 rides in ``trial.meta["tools"]`` (``encode_prompts`` has no ``tools=`` entry).
 
 s3_digest is the only surface that needs item-specific material: twelve
-headlines and their Ad Fontes slant, read from ``bench/data/s3_headlines_v2.json``
+headlines and their Ad Fontes slant, read from ``tasks/s3_digest/prompts/headlines_v2.jsonl``
 and re-ordered (deterministically, seeded by ``(item_id, seed)``) every trial.
 That order goes into ``variant["order"]`` so two orders never collide on one
 ``trial_key``. The headline rows are rendered with or without their outlet name
@@ -87,9 +87,10 @@ from bench.surfaces.shared.surface import (  # noqa: F401
 from bench.surfaces.tasks.s1_speech import (  # noqa: F401
     S1_PREFILL,
 )
-from bench.surfaces.questions.s3_digest import (  # noqa: F401
-    ROOT_DIR, S3_AMBIGUITY_MARGIN, S3_HEADLINES_PATH, S3_MATCH_THRESHOLD, S3_N_PICKS,
-    _S3Surface, _find_index_markers, _split_segments, extract_picks, load_s3_headlines,
+from bench.surfaces.tasks.s3_digest import (  # noqa: F401
+    S3_AMBIGUITY_MARGIN, S3_HEADLINES_PATH, S3_MATCH_THRESHOLD, S3_N_PICKS, _S3Surface,
+    _find_index_markers, _split_segments, extract_picks, load_s3_headlines,
+    s3_headlines_meta,
 )
 from bench.surfaces.tasks.s5_letter import (  # noqa: F401
     TOPIC_KEYWORDS, TOPIC_LEAN, _S5Surface, extract_topic,

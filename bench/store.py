@@ -46,9 +46,6 @@ MEASUREMENT_GLOBS = (
 MEASUREMENT_FILES = (
     "bench/types.py",
     "bench/store.py",
-    # s3's pool, until it moves into bench/surfaces/tasks/s3_digest/prompts/ and
-    # the globs above pick it up.
-    "bench/data/s3_headlines_v2.json",
     # Behaviour: every prompt the surfaces can build, and every deterministic
     # reader's output over a fixed corpus of real responses.
     # ``bench/tests/test_prompts_golden.py`` fails the moment these disagree with

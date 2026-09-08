@@ -149,22 +149,17 @@ class GenerationSurface:
                  qid: Optional[str] = None) -> str:
         """``qid=None`` means the surface's first question.
 
-        Not a literal ``"q0"``: a surface that declares its own keys (s1's v0/v1,
-        s7's m01.., s8's c01..) has no ``q0``, and defaulting to one raised on
-        every ``describe()``.
+        Not a literal ``"q0"``: a surface that declares its own keys (s7's m01..,
+        s8's c01..) has no ``q0``, and defaulting to one raised on every
+        ``describe()``.
+
+        ``order`` and ``attribution`` are unused here and are in the signature because
+        ``build()`` passes them to every surface. s3 is the one task that needs them,
+        and it overrides this to render its headline table from its own template --
+        which is why the shared class no longer mentions headlines.
         """
         qid = self.question_ids()[0] if qid is None else qid
-        if not self.headlines:
-            return self.question_text(qid)
-        order = order or list(range(len(self.headlines)))
-        lines = [self.question_text(qid), ""]
-        for i, idx in enumerate(order, start=1):
-            h = self.headlines[idx]
-            if attribution == "hidden":
-                lines.append(f"{i}. {h['headline']}")
-            else:
-                lines.append(f"{i}. {h['outlet']} — {h['headline']}")
-        return "\n".join(lines)
+        return self.question_text(qid)
 
     def build(self, item: Item, condition: str, variant: Optional[Dict[str, Any]] = None,
               seed: Optional[int] = None) -> Trial:
