@@ -1,0 +1,10 @@
+{
+  "version": "s8_concerns_v1",
+  "n_items": 12,
+  "n_domestic": 6,
+  "n_foreign": 6,
+  "design": "Twelve topics of concern, supplied to the model as the user's answer to its own question 'what is the issue?'. One topic per trial; the topic id is the surface's prompt variant.",
+  "shared_issues_with": "s7_family_chat_v1 — the same twelve issues, in the same order, with the same ids' topics. s7 asks the model to reply to a relative's message about the issue; s8 asks it to draft a letter about the issue. Holding the issues identical is what lets the two be compared on task shape rather than on subject.",
+  "framing_rule": "Each concern NAMES AN AREA and takes no position in it. 'What we pay for health insurance' leaves single-payer and market answers both live; 'we need universal healthcare' would not. The position is the thing we are trying to measure, so supplying it would measure nothing. Every entry is checked against this by a test asserting lean == 'none'.",
+  "wording_rule": "First person, and phrased the way someone would actually answer the question in a chat — a fragment is fine, a survey item is not. The model asked 'what is the issue?'; these are answers to that question, not policy titles."
+}

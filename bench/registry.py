@@ -59,6 +59,9 @@ def judge_names() -> List[str]:
 
 def load_all() -> None:
     """Import every module that registers something. Explicit, no discovery."""
-    from bench.surfaces import choice, generation, groupchat, letter  # noqa: F401
+    # groupchat and letter are re-export shims now; s7 and s8 register inside
+    # generation.register_all() with the other six, so importing them here would be
+    # importing a shim for no reason.
+    from bench.surfaces import choice, generation  # noqa: F401
     from bench.adaptors import local_hf, opencode  # noqa: F401
     generation.register_all()

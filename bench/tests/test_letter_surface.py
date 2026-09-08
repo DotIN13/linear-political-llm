@@ -52,21 +52,30 @@ def test_issues_match_s7_so_the_two_tasks_are_comparable():
     assert [r["domain"] for r in s8.concerns()] == [r["domain"] for r in s7.messages()]
 
 
+def _pool(tmp_path, rows):
+    """A pool fixture on disk. jsonl since the pool moved into the task's prompts/.
+
+    No sibling .meta.json on purpose: `read_pool` treats the header as optional, so a
+    validation fixture does not have to invent a design record for two rows.
+    """
+    p = tmp_path / "bad.jsonl"
+    p.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows),
+                 encoding="utf-8")
+    return str(p)
+
+
 def test_loader_rejects_a_missing_concern(tmp_path):
-    p = tmp_path / "bad.json"
-    p.write_text(json.dumps({"concerns": [
-        {"cid": "c01", "domain": "domestic", "topic": "t", "concern": ""}]}), encoding="utf-8")
+    p = _pool(tmp_path, [{"cid": "c01", "domain": "domestic", "topic": "t", "concern": ""}])
     with pytest.raises(ValueError, match="missing 'concern'"):
-        lt.load_dataset(str(p))
+        lt.load_dataset(p)
 
 
 def test_loader_rejects_duplicate_ids(tmp_path):
-    p = tmp_path / "bad.json"
-    p.write_text(json.dumps({"concerns": [
+    p = _pool(tmp_path, [
         {"cid": "c01", "domain": "domestic", "topic": "a", "concern": "x"},
-        {"cid": "c01", "domain": "foreign", "topic": "b", "concern": "y"}]}), encoding="utf-8")
+        {"cid": "c01", "domain": "foreign", "topic": "b", "concern": "y"}])
     with pytest.raises(ValueError, match="duplicate cid"):
-        lt.load_dataset(str(p))
+        lt.load_dataset(p)
 
 
 def test_fingerprint_follows_the_concern_text_only():

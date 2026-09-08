@@ -18,6 +18,7 @@ from bench.surfaces.tasks import (
 )
 from bench.surfaces.tasks.s3_digest import _S3Surface
 from bench.surfaces.tasks.s7_family_chat import FamilyChatSurface
+from bench.surfaces.tasks.s8_letter_answered import AnsweredLetterSurface
 from bench.surfaces.tasks.s5_letter import _S5Surface
 from bench.surfaces.tasks.s6_describe import _S6Surface
 from bench.surfaces.shared.surface import GenerationSurface
@@ -82,5 +83,6 @@ def register_all() -> None:
     # made them the only surfaces not registered here. Same six-then-two calls, one
     # place, one moment.
     register_surface("s7_family_chat")(FamilyChatSurface)
+    register_surface("s8_letter_answered")(AnsweredLetterSurface)
     register_surface("s5_letter")(_S5Surface)
     register_surface("s6_describe")(_S6Surface)
