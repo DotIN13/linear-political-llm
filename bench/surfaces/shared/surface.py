@@ -115,8 +115,12 @@ class GenerationSurface:
 
         **It does not for Q.** The bare question has no scaffolding, so `chat`
         and `agentic` produce a byte-identical prompt -- running both would be
-        the same trial twice under two names. C and E carry the scheme's
-        transcript and so differ.
+        the same trial twice under two names. `photos` carries the scheme's
+        transcript and so differs.
+
+        This used to say "C and E carry the scheme's transcript". E raises by
+        design now, and C is spelled `photos`; the sentence was moved verbatim
+        out of generation.py and was already describing a design that had gone.
         """
         condition = normalise_condition(condition)
         if condition not in self.conditions:
@@ -198,6 +202,11 @@ class GenerationSurface:
             # this is the reference point and E is not.
             messages = [{"role": "user", "content": [{"type": "text", "text": question}]}]
             tools = None
+            # Bound on this branch too. The meta dict below reads
+            # `0 if condition == "no_photos" else n_files`, which only avoided a
+            # NameError here through short-circuit evaluation -- correct, and one
+            # inverted ternary away from a crash.
+            n_files = 0
         else:
             # The item's own photo count, not len(image_paths): condition E strips
             # the pixels and must keep the same number of files in the transcript.

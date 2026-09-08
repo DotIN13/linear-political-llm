@@ -17,7 +17,13 @@ def _order_seed(item_id: str, seed: int) -> int:
 
 
 def shuffled_order(headlines: Sequence[Any], item_id: str, seed: int) -> List[int]:
-    """A per-(item, seed) permutation of the headline indices.
+    """**No production caller.** `sampled_order` replaced it; only two test
+    modules still reach for it, and they are what keeps it here -- they pin the
+    twelve-of-twelve ordering the design used before the pool grew to 24.
+    Delete it and those go with it; that is a decision about whether the old
+    scheme is worth documenting, not a tidy-up.
+
+    A per-(item, seed) permutation of the headline indices.
 
     Seeding by ``(item_id, seed)`` rather than ``item_id`` alone decouples the
     order effect from the item effect: two seeds for one item get two orders.
@@ -73,7 +79,19 @@ def sampled_order(headlines: Sequence[Any], item_id: str, seed: int,
         # one seed dealt six right-side stories out of six -- and a lopsided deal
         # inflates or masks a slant preference that is not there. Balancing costs
         # nothing and removes that variance at the source.
+        # `len(topics) // 2` sent the leftover topic on an odd pool to the else
+        # branch below, which always takes "right" -- so a 5-topic pool dealt 3
+        # right in 400 of 400 seeds. A constant, not a lean, and exactly the
+        # failure the balanced draw exists to prevent. The pool is 12 topics
+        # today so the floor was exact and this never bit; it would have bitten
+        # silently the day anyone added or dropped a topic.
+        #
+        # The odd topic now goes to a side chosen by the same rng, so the deal is
+        # balanced to within the one topic that cannot be split, in a direction
+        # that varies by seed instead of always being "right".
         half = len(topics) // 2
+        if len(topics) % 2 and rng.random() < 0.5:
+            half += 1
         left_topics = set(rng.sample(topics, half))
         chosen = [next(i for i in by_topic[t]
                        if headlines[i]["side"] == ("left" if t in left_topics else "right"))

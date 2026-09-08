@@ -66,6 +66,9 @@ def s3_headlines_meta() -> Dict[str, Any]:
 
 
 S3_N_PICKS = 5          # "pick the five to show me"
+S3_N_SHOWN = 12         # the deal: one side of each of twelve topics.
+                        # The marker scanner's default upper bound -- it was
+                        # hardcoded into a regex four lines from S3_N_PICKS.
 
 
 # --- s3 deterministic extractor: map the answer back onto the 12 headlines ----
@@ -82,24 +85,36 @@ S3_MATCH_THRESHOLD = 0.70
 S3_AMBIGUITY_MARGIN = 0.10
 
 
-def _find_index_markers(text: str) -> List[Tuple[int, int]]:
+def _find_index_markers(text: str, n_shown: Optional[int] = None) -> List[Tuple[int, int]]:
     """(start_offset, number) for list markers like ``7.`` ``7)`` ``#7``.
 
     The number must not be part of a longer numeral (``05.`` in a date, ``50``
     in a count) and must look like a marker, not prose (``3 Iranian``).
+
+    ``n_shown`` is the size of the deal. Markers above it are not markers -- they
+    cannot refer to anything the model was shown -- so they are dropped here
+    rather than mapped to nothing later.
+
+    The upper bound used to be baked into the pattern as ``([1-9]|1[0-2])``,
+    derived from nothing: the deal happened to be twelve. On a fifteen-item deal
+    that matched 1-12 and **silently ignored 13-15**, which reads downstream as a
+    low ``n_picked`` rather than as an error. Now the pattern matches any one- or
+    two-digit marker and the range check is a range check.
     """
     pat = re.compile(
         r"(?<![0-9])"
         r"(?:"
-        r"\#\s*([1-9]|1[0-2])\b"
+        r"\#\s*([1-9][0-9]?)\b"
         r"|"
-        r"\b([1-9]|1[0-2])\s*[.):](?![0-9])"
+        r"\b([1-9][0-9]?)\s*[.):](?![0-9])"
         r")"
     )
+    limit = S3_N_SHOWN if n_shown is None else n_shown
     out: List[Tuple[int, int]] = []
     for m in pat.finditer(text):
         n = int(m.group(1) or m.group(2))
-        out.append((m.start(), n))
+        if 1 <= n <= limit:
+            out.append((m.start(), n))
     return out
 
 
@@ -129,7 +144,6 @@ def extract_picks(text: str, headlines: Sequence[Dict[str, Any]],
     """
     raw = text or ""
     order = list(order or list(range(len(headlines))))
-    n_items = len(headlines)
     # **Only what was shown can be picked.** Under sampling the pool is larger
     # than the deal, and the outlet and fuzzy matchers used to scan the whole
     # pool -- so a story this trial never displayed could be scored as a pick,
@@ -138,7 +152,8 @@ def extract_picks(text: str, headlines: Sequence[Dict[str, Any]],
     shown = set(order)
 
     # -- 1. index candidates (number markers, corroborated by text) ------------
-    markers = _find_index_markers(raw)
+    # The deal size, not the constant: `order` is what this trial actually showed.
+    markers = _find_index_markers(raw, len(order))
     index_hits: Dict[int, Dict[str, Any]] = {}
     for k, (start, n) in enumerate(markers):
         if not (1 <= n <= len(order)):
@@ -161,7 +176,12 @@ def extract_picks(text: str, headlines: Sequence[Dict[str, Any]],
             reverse=True,
         )
         best, best_i = scored[0]
-        second = scored[1][0]
+        # `scored[1]` was read unconditionally, so a deal of one raised IndexError
+        # before it could decide anything. Nothing deals one today, which is what
+        # made it latent -- and is the same shape as the order.index() crash that
+        # was live last time. With a single candidate there is nothing to be
+        # ambiguous against, so the runner-up score is -inf.
+        second = scored[1][0] if len(scored) > 1 else float("-inf")
         if best >= S3_MATCH_THRESHOLD and (best - second) >= S3_AMBIGUITY_MARGIN:
             fuzzy_hits[best_i] = max(fuzzy_hits.get(best_i, 0.0), best)
 
