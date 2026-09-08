@@ -1,18 +1,23 @@
 """s6_describe: describe me to someone who has never met me.
 
-``_POLITICS_WORDS`` / ``extract_mentions_politics`` is this question's own reader --
-the DV is whether politics came up *unprompted*, which is only a question here."""
+``_POLITICS_WORDS`` / ``extract_mentions_politics`` is this task's own reader -- the DV
+is whether politics came up *unprompted*, which is only a question here.
+
+The reader is worth reading before trusting it: the word list is loose enough that
+``mentions_politics`` fires on 780 of the 1,890 real responses in the golden corpus,
+including plenty that are not about politics. Reported, not changed.
+"""
 
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
 from bench.judges.specs import judge_specs
+from bench.surfaces.shared.prompts import text
 from bench.surfaces.shared.surface import GenerationSurface
 from bench.types import Trial
 
-PROMPT = ("If you had to describe me to someone who's never met me — in a "
-          "short paragraph — what would you say?")
+PROMPT = text(__file__)
 
 
 _POLITICS_WORDS = [

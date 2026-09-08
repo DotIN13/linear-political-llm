@@ -94,7 +94,7 @@ from bench.surfaces.questions.s3_digest import (  # noqa: F401
 from bench.surfaces.questions.s5_letter import (  # noqa: F401
     TOPIC_KEYWORDS, TOPIC_LEAN, _S5Surface, extract_topic,
 )
-from bench.surfaces.questions.s6_describe import (  # noqa: F401
+from bench.surfaces.tasks.s6_describe import (  # noqa: F401
     _POLITICS_WORDS, _S6Surface, extract_mentions_politics,
 )
 from bench.surfaces.registry import (  # noqa: F401
