@@ -33,14 +33,59 @@ step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
 # --- 0. the CLI ---------------------------------------------------------------
 step "0. Globus CLI"
+# On Midway, PYTHONUSERBASE points at /scratch/.../.local, so
+# `pip install --user` drops the binary in $PYTHONUSERBASE/bin, which is NOT
+# on PATH by default (PATH carries ~/.local/bin instead). Look in the usual
+# user locations before giving up, so an installed-but-not-on-PATH CLI just
+# works.
+_add_site_packages() {
+  # $1 = <prefix> (the dir holding bin/ and lib/); puts its
+  # lib/python3*/site-packages on PYTHONPATH if globus_cli lives there.
+  local _prefix="$1" _sp
+  for _sp in "$_prefix"/lib/python3*/site-packages; do
+    if [ -d "$_sp/globus_cli" ]; then
+      export PYTHONPATH="${_sp}${PYTHONPATH:+:$PYTHONPATH}"
+      break
+    fi
+  done
+}
+if [ -n "${GLOBUS_BIN:-}" ] && [ -x "$GLOBUS_BIN" ]; then
+  export PATH="$(dirname "$GLOBUS_BIN"):$PATH"
+  _add_site_packages "$(dirname "$(dirname "$GLOBUS_BIN")")"
+fi
+for _d in "${PYTHONUSERBASE:-}/bin" "$HOME/.local/bin" \
+          "/scratch/midway3/${USER:-}/.local/bin" \
+          "${SCRATCH:-}/midway3/${USER:-}/.local/bin"; do
+  if [ -n "$_d" ] && [ -x "$_d/globus" ] && ! command -v globus >/dev/null 2>&1; then
+    export PATH="$_d:$PATH"
+    # The binary alone is not enough: its module lives under
+    # <prefix>/lib/python3*/site-packages, which python only sees via
+    # PYTHONUSERBASE (set in a normal Midway shell, but not guaranteed).
+    # Put it on PYTHONPATH so the CLI works even with PYTHONUSERBASE unset.
+    _add_site_packages "$(dirname "$_d")"
+  fi
+done
+unset _d
+unset -f _add_site_packages 2>/dev/null || true
 if ! command -v globus >/dev/null 2>&1; then
   die "globus not found. Install it, then re-run:
 
     pipx install globus-cli        # preferred, keeps it isolated
     # or
-    python3 -m pip install --user globus-cli"
+    python3 -m pip install --user globus-cli
+
+  On Midway, '--user' installs to \$PYTHONUSERBASE/bin
+  (/scratch/midway3/\$USER/.local/bin), which is not on PATH. Either re-run
+  with it on PATH:
+
+    export PATH=\"\$PYTHONUSERBASE/bin:\$PATH\"
+    ./bench/tools/transfer_to_delta.sh
+
+  or point at the binary directly:
+
+    GLOBUS_BIN=/scratch/midway3/\$USER/.local/bin/globus ./bench/tools/transfer_to_delta.sh"
 fi
-echo "  $(globus --version 2>&1 | head -1)"
+echo "  $(globus version 2>&1 | head -1)"
 
 # --- 1. login -----------------------------------------------------------------
 step "1. Login"
@@ -58,14 +103,28 @@ fi
 # guide is the single most likely way to waste a 20 GB transfer, so we search,
 # print what we found, and prove the path is visible before sending anything.
 resolve() {
+  # --format unix is deliberately NOT used here. The unix printer emits the
+  # raw endpoint dicts with keys sorted alphabetically, so the first column
+  # is not the ID. JSON plus a python3 one-liner extracts IDs reliably.
   local term="$1" label="$2" preset="$3"
   if [ -n "$preset" ]; then echo "$preset"; return 0; fi
-  local out
-  out=$(globus endpoint search "$term" --filter-scope all --format unix 2>/dev/null \
-        | head -20)
+  local json out
+  json=$(globus endpoint search "$term" --filter-scope all --limit 20 -F json 2>/dev/null) || return 1
+  out=$(printf '%s' "$json" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+for ep in data.get('DATA', []):
+    eid = ep.get('id', '')
+    name = ep.get('display_name') or ep.get('canonical_name') or ''
+    if eid:
+        print(eid + '\t' + str(name))
+") || return 1
   [ -n "$out" ] || return 1
   local n; n=$(printf '%s\n' "$out" | wc -l | tr -d ' ')
-  if [ "$n" = 1 ]; then printf '%s\n' "$out" | awk '{print $1}'; return 0; fi
+  if [ "$n" = 1 ]; then printf '%s\n' "$out" | awk -F'\t' '{print $1}'; return 0; fi
   {
     warn ""
     warn "More than one collection matches '$term' for the $label side:"
@@ -87,9 +146,9 @@ DST_ID="${DST_ID:-$(resolve "$DST_SEARCH" dst "${DST_ID:-}")}" || {
   die "no collection matched '$DST_SEARCH'. Set DST_ID=<uuid> and re-run."
 }
 echo "  source      $SRC_ID"
-globus endpoint show "$SRC_ID" --format unix 2>/dev/null | head -3 | sed 's/^/              /'
+globus endpoint show "$SRC_ID" 2>/dev/null | head -5 | sed 's/^/              /'
 echo "  destination $DST_ID"
-globus endpoint show "$DST_ID" --format unix 2>/dev/null | head -3 | sed 's/^/              /'
+globus endpoint show "$DST_ID" 2>/dev/null | head -5 | sed 's/^/              /'
 
 # --- 3. prove both paths are actually reachable -------------------------------
 # This is where ConsentRequired shows up on mapped collections, and it is much
