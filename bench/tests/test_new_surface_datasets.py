@@ -1,14 +1,22 @@
-"""Gate for the four new option sets under bench/data/*.jsonl.
+"""Gate for the six option sets under ``bench/surfaces/tasks/*/prompts/``.
 
-These files sit OUTSIDE ``MEASUREMENT_GLOBS`` and outside ``MEASUREMENT_FILES``
-(only ``s3_headlines_v2.json`` is named there), so nothing in the harness
-notices if one of them is edited. That is exactly the hazard ``letter.py``
-solved for s8 with a dataset fingerprint, and it is why these assertions exist:
-they are the only thing standing between a hand-edited option and a dependent
-variable that quietly means something else.
+They used to sit in ``bench/data/``, where nothing hashed them, and this file was
+the only thing standing between a hand-edited coding field and a dependent
+variable that quietly means something else. They have moved, so they are now
+covered twice over by the harness itself -- by content, because a pool is inside
+``bench/surfaces/**/*.jsonl``, and by behaviour, once a surface renders one and
+the golden snapshot moves with it.
 
-Every jsonl here is one ``{"record": "meta"}`` line followed by
-``{"record": "option"}`` lines. Runnable two ways::
+**That does not make these assertions redundant, it changes what they are for.**
+The hash catches a *change*; it cannot tell you the change was wrong. Nothing in
+``measurement_rev`` knows that ``right_c`` must have pool mean 0, that s9's two
+axes must stay orthogonal, that s11 must offer no way to delay care, or that
+exactly one of s13's four patches is correct. Those are properties of the
+design, and this is where they are written down.
+
+Each pool is ``<name>.jsonl`` plus a ``<name>.meta.json`` header, read here with
+``prompts.read_pool`` -- the loader for a pool that is not the caller's own.
+Runnable two ways::
 
     python -m pytest bench/tests/test_new_surface_datasets.py
     python bench/tests/test_new_surface_datasets.py
@@ -16,35 +24,50 @@ Every jsonl here is one ``{"record": "meta"}`` line followed by
 
 from __future__ import annotations
 
-import json
 import statistics as st
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-DATA = Path(__file__).resolve().parent.parent / "data"
+# There is no pytest in the authoring environment, so this module has to run as a
+# plain script too -- and then nothing has put the repo root on the path.
+_ROOT = str(Path(__file__).resolve().parent.parent.parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
+from bench.surfaces.shared.prompts import read_pool, text  # noqa: E402
+
+TASKS = Path(__file__).resolve().parent.parent / "surfaces" / "tasks"
+
+# jsonl file (relative to TASKS) -> the `set` its header must declare
 SETS = {
-    "s9_neighborhoods_v1.jsonl": "s9_neighborhoods",
-    "s12_explain_points_v1.jsonl": "s12_explain_points",
-    "s11_health_options_v1.jsonl": "s11_health_options",
-    "s10_grocery_platforms_v1.jsonl": "s10_grocery_platforms",
-    "s14_outfits_v1.jsonl": "s14_outfits",
-    "s13_patch_choice_v1.jsonl": "s13_patch_choice",
+    "s9_neighborhood/prompts/neighborhoods.jsonl": "s9_neighborhoods",
+    "s12_explain/prompts/points.jsonl": "s12_explain_points",
+    "s11_health/prompts/options.jsonl": "s11_health_options",
+    "s10_groceries/prompts/platforms.jsonl": "s10_grocery_platforms",
+    "s14_outfits/prompts/outfits.jsonl": "s14_outfits",
+    "s13_patch/prompts/patches.jsonl": "s13_patch_choice",
 }
 
 # The two sets that code the SAME two axes over different tasks. Their labour and
 # origin rungs must stay identical, or the cross-surface comparison they exist for
 # stops being a comparison.
-MATCHED_PAIR = ("s10_grocery_platforms_v1.jsonl", "s14_outfits_v1.jsonl")
+MATCHED_PAIR = ("s10_groceries/prompts/platforms.jsonl", "s14_outfits/prompts/outfits.jsonl")
 
 
 def load(name: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-    path = DATA / name
-    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    assert rows and rows[0]["record"] == "meta", f"{name}: first line must be the meta record"
-    options = [r for r in rows[1:] if r["record"] == "option"]
-    assert len(options) == len(rows) - 1, f"{name}: lines after the first must all be options"
-    return rows[0], options
+    """The header and the rows, via the harness's own loader.
+
+    Reading these with ``read_pool`` rather than a json loop of our own is the
+    point: if the pool format ever changes under us, this gate fails with the
+    surfaces rather than passing on a stale reader.
+    """
+    options, meta = read_pool(str(TASKS / name))
+    assert meta, f"{name}: no header -- <name>.meta.json is missing or empty"
+    assert options, f"{name}: no rows"
+    assert meta["n_rows"] == len(options), \
+        f"{name}: header says n_rows={meta['n_rows']} but the file has {len(options)}"
+    return meta, options
 
 
 def _slope(x: List[float], y: List[float]) -> float:
@@ -82,13 +105,14 @@ def test_right_c_is_the_one_shared_sign_convention() -> None:
     for name in SETS:
         meta, options = load(name)
         for o in options:
+            assert "record" not in o, f"{name}: a row still carries the old 'record' key"
             assert "right_c" in o, f"{name}: an option has no right_c"
             assert isinstance(o["right_c"], (int, float)), f"{name}: right_c is not a number"
         total = sum(float(o["right_c"]) for o in options)
-        if name == "s13_patch_choice_v1.jsonl":
+        if name == "s13_patch/prompts/patches.jsonl":
             assert all(float(o["right_c"]) == 0.0 for o in options), \
                 "the negative control carries a political code"
-        elif name == "s12_explain_points_v1.jsonl":
+        elif name == "s12_explain/prompts/points.jsonl":
             # The live topic is centred; the inert topic has no political pole at all.
             live = [o for o in options if o["topic_kind"] == "live"]
             inert = [o for o in options if o["topic_kind"] == "inert"]
@@ -99,7 +123,7 @@ def test_right_c_is_the_one_shared_sign_convention() -> None:
 
 
 def test_s9_is_a_clean_two_by_five_crossing() -> None:
-    meta, options = load("s9_neighborhoods_v1.jsonl")
+    meta, options = load("s9_neighborhood/prompts/neighborhoods.jsonl")
     assert len(options) == 10 and meta["n_picks"] == 3
     density = [o["density_c"] for o in options]
     comp = [o["composition_c"] for o in options]
@@ -122,7 +146,7 @@ def test_s9_is_a_clean_two_by_five_crossing() -> None:
 
 def test_s12_live_and_inert_topics_have_the_same_shape() -> None:
     """The inert topic is only a control if the same DV formula runs on it."""
-    meta, options = load("s12_explain_points_v1.jsonl")
+    meta, options = load("s12_explain/prompts/points.jsonl")
     by_topic: Dict[str, List[Dict[str, Any]]] = {}
     for o in options:
         by_topic.setdefault(o["topic"], []).append(o)
@@ -145,7 +169,7 @@ def test_s12_live_and_inert_topics_have_the_same_shape() -> None:
 
 
 def test_s11_is_benign_and_offers_no_way_to_delay_care() -> None:
-    meta, options = load("s11_health_options_v1.jsonl")
+    meta, options = load("s11_health/prompts/options.jsonl")
     assert meta["safety"]["both_scenarios_benign"] is True
     assert meta["safety"]["no_option_is_delay_or_do_nothing"] is True
     by_scenario: Dict[str, List[Dict[str, Any]]] = {}
@@ -204,7 +228,7 @@ def test_s10_and_s14_are_a_matched_pair_on_the_same_axes() -> None:
 def test_s10_tool_names_are_the_dv_and_are_unambiguous() -> None:
     """The DV is the function name in the emitted call, so the names have to be
     distinct, uniform, and derivable from the row without a lookup table."""
-    meta, options = load("s10_grocery_platforms_v1.jsonl")
+    meta, options = load("s10_groceries/prompts/platforms.jsonl")
     names = [o["tool_name"] for o in options]
     assert len(set(names)) == 8, "tool names are not unique"
     assert len({len(n) for n in names}) == 1, "tool names differ in length"
@@ -221,15 +245,17 @@ def test_s14_holds_the_garment_constant() -> None:
     occasion can be fixed and formal and there is nothing for a photograph to
     match on. If the garment ever starts varying, the surface is back to being
     unreadable and this is the only place that would notice."""
-    meta, options = load("s14_outfits_v1.jsonl")
+    meta, options = load("s14_outfits/prompts/outfits.jsonl")
     assert len({o["garment"] for o in options}) == 1, "the garment is not constant"
     assert len({o["formality"] for o in options}) == 1, "formality is not constant"
     assert options[0]["formality"] == "business_formal"
-    # The garment is stated ONCE, in the prompt, and must not be repeated into the
+    # The garment is stated ONCE, in the ask, and must not be repeated into the
     # eight descriptions -- that produced the same twenty words eight times over.
-    assert options[0]["garment"] in meta["prompt"] or \
-        all(w in meta["prompt"] for w in ("charcoal", "two-button", "white shirt")), \
-        "the garment is not stated in the prompt"
+    # The ask lives in ask.txt now, so this reads the file the surface will read.
+    ask = text(str(TASKS / "s14_outfits" / "__init__.py"))
+    assert all(w in ask for w in ("charcoal", "two-button", "white shirt")), \
+        "the garment is not stated in the ask"
+    assert "Shortlist three" in ask, "the ask no longer asks for three"
     for o in options:
         assert o["garment"] not in o["description"], \
             f"{o['oid']}: the constant garment is repeated into the option"
@@ -250,7 +276,7 @@ def test_s14_holds_the_garment_constant() -> None:
 def test_s13_has_exactly_one_correct_patch_per_bug() -> None:
     """The whole value of the control rests on this. Two right answers and the
     variance it measures is legitimate disagreement rather than instability."""
-    meta, options = load("s13_patch_choice_v1.jsonl")
+    meta, options = load("s13_patch/prompts/patches.jsonl")
     by_bug: Dict[str, List[Dict[str, Any]]] = {}
     for o in options:
         by_bug.setdefault(o["bid"], []).append(o)

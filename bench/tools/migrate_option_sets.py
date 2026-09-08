@@ -14,9 +14,12 @@ a dependent variable that quietly means something else is
 ``bench/tests/test_new_surface_datasets.py``.
 
 Once a set sits in ``tasks/<task>/prompts/`` it is covered twice over, which is
-the property s3 already has: by content, because the pool file is inside the
-globs, and by behaviour, because rendering it changes the golden snapshot and
-that snapshot is a measurement file.
+the property s3's pool now has too: by content, because the pool file is inside
+``bench/surfaces/**/*.jsonl``, and by behaviour, because rendering it changes the
+golden snapshot and that snapshot is a measurement file. (An earlier version of
+this file said s3 was covered only by the snapshot. That was true while
+``s3_headlines_v2.json`` still sat in ``bench/data/``; it moved with the rest of
+the restructure, so it is hashed by content as well.)
 
 ``prompts.pool()`` wants the rows and the header in two files and the ask out of
 the header entirely, so this is a reshaping rather than a copy::
@@ -26,9 +29,12 @@ the header entirely, so this is a reshaping rather than a copy::
          tasks/s9_neighborhood/prompts/neighborhoods.jsonl     <- the option rows
          tasks/s9_neighborhood/prompts/neighborhoods.meta.json <- everything else
 
-One ask per surface becomes ``ask.txt``; two or more become ``asks.json``, keyed
-the way the surface's ``questions`` will be; s13's ask is a template over its
-symptom, so it becomes ``ask.j2``.
+One ask per surface becomes ``ask.txt``. **Two or more become one ``.txt``
+each**, named ``ask_<qid>.txt`` -- not a json map, because the convention
+reserves json for text whose *trailing* whitespace carries meaning, and a
+constant ask has none. One file per ask also means a reworded scenario shows up
+in a diff at file granularity and is hashed on its own. s13's ask is a template
+over the bug's symptom, so it becomes ``ask.j2``.
 
 **Row order is preserved exactly**, because the surfaces fingerprint a pool by
 hashing row order and that fingerprint goes into every trial's
@@ -64,8 +70,8 @@ TASKS = os.path.join(ROOT, "bench", "surfaces", "tasks")
 PLAN: Dict[str, Tuple[str, str, str]] = {
     "s9_neighborhoods_v1.jsonl":      ("s9_neighborhood", "neighborhoods", "txt"),
     "s10_grocery_platforms_v1.jsonl": ("s10_groceries",   "platforms",     "txt"),
-    "s11_health_options_v1.jsonl":    ("s11_health",      "options",       "asks:scenarios"),
-    "s12_explain_points_v1.jsonl":    ("s12_explain",     "points",        "asks:topics"),
+    "s11_health_options_v1.jsonl":    ("s11_health",      "options",       "txt:scenarios"),
+    "s12_explain_points_v1.jsonl":    ("s12_explain",     "points",        "txt:topics"),
     "s13_patch_choice_v1.jsonl":      ("s13_patch",       "patches",       "j2"),
     "s14_outfits_v1.jsonl":           ("s14_outfits",     "outfits",       "txt"),
 }
@@ -92,17 +98,17 @@ def convert(into: str) -> List[str]:
             with open(os.path.join(out, "ask.txt"), "w", encoding="utf-8") as fh:
                 fh.write(header.pop("prompt") + "\n")
             written.append(f"{task}/prompts/ask.txt")
-        elif ask_kind.startswith("asks:"):
+        elif ask_kind.startswith("txt:"):
             key = ask_kind.split(":", 1)[1]
-            with open(os.path.join(out, "asks.json"), "w", encoding="utf-8") as fh:
-                json.dump({qid: cfg["prompt"] for qid, cfg in header[key].items()},
-                          fh, ensure_ascii=False, indent=2)
-                fh.write("\n")
-            # The ask now lives in asks.json. The design notes beside it stay in
-            # the header; duplicating the prompt into both would let them drift.
+            for qid, cfg in header[key].items():
+                with open(os.path.join(out, f"ask_{qid}.txt"), "w", encoding="utf-8") as fh:
+                    fh.write(cfg["prompt"] + "\n")
+                written.append(f"{task}/prompts/ask_{qid}.txt")
+            # The asks now live in their own files. The design notes beside them
+            # stay in the header; duplicating a prompt into both would let the two
+            # copies drift, which is the whole reason s8 imports s5's ask.
             header[key] = {qid: {k: v for k, v in cfg.items() if k != "prompt"}
                            for qid, cfg in header[key].items()}
-            written.append(f"{task}/prompts/asks.json")
         elif ask_kind == "j2":
             tmpl = header.pop("prompt_template").replace("{symptom}", "{{ symptom }}")
             with open(os.path.join(out, "ask.j2"), "w", encoding="utf-8") as fh:
@@ -142,14 +148,22 @@ def check(into: str) -> bool:
     for fname, (task, pool_name, ask_kind) in PLAN.items():
         entry = os.path.join(into, task, "__init__.py")
         try:
-            rows, meta = prompts.pool(entry, pool_name)
+            # read_pool, not pool: this is somebody else's pool from here, and
+            # that is exactly the case read_pool(path) exists for. The surface
+            # itself will call pool(__file__, name).
+            rows, meta = prompts.read_pool(
+                os.path.join(into, task, "prompts", f"{pool_name}.jsonl"))
             assert meta.get("version"), "the header has no version"
             assert meta["n_rows"] == len(rows), "n_rows disagrees with the row count"
             if ask_kind == "txt":
                 ask = prompts.text(entry)
                 assert ask and not ask.endswith("\n"), "ask.txt kept a trailing newline"
-            elif ask_kind.startswith("asks:"):
-                assert len(prompts.strings(entry, "asks.json")) >= 2, "expected several asks"
+            elif ask_kind.startswith("txt:"):
+                qids = sorted(meta[ask_kind.split(":", 1)[1]])
+                assert len(qids) >= 2, "expected several asks"
+                for qid in qids:
+                    one = prompts.text(entry, f"ask_{qid}.txt")
+                    assert one and not one.endswith("\n"), f"ask_{qid}.txt kept a newline"
             else:
                 out = prompts.template(entry, "ask.j2").render(symptom="x")
                 assert "{{" not in out, "the template did not render"

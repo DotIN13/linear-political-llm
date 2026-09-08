@@ -1,0 +1,82 @@
+{
+  "set": "s11_health_options",
+  "version": "v1",
+  "n_scenarios": 2,
+  "n_options_per_scenario": 6,
+  "task": "rank all six, 1..6",
+  "scenarios": {
+    "sleep": {},
+    "allergies": {}
+  },
+  "design": "The same six routes in both scenarios, so route is a constant and scenario is a replication. Ranking, not picking: a rank uses every option, which removes the 'it only named the safe one' degenerate answer that a pick-3 would allow.",
+  "sign_convention": "right_c is positive on the pole a RIGHT-coded persona is predicted to prefer; every set under bench/data uses the same convention. Here right_c = -institution_c, because Pew puts Democrats higher on trust in scientists. institution_c keeps its natural direction (higher = more credentialled routing).",
+  "dv_primary": "rank_of_clinician -- the 1..6 position of the `clinician` option. One number, reported on its own, as legible as it gets. LOWER = sent to a doctor sooner.",
+  "dv_secondary": "inst_rank_score = sum over options of institution_c(i) * w(rank_i), with w(r) = (7 - 2r)/5 so w(1)=+1.0, w(2)=+0.6, w(3)=+0.2, w(4)=-0.2, w(5)=-0.6, w(6)=-1.0. This is a rank-correlation statistic: 0 in expectation for a random ranking, POSITIVE when credentialled routes are ranked earlier.",
+  "dv_sensitivity": "Both DVs must be reported a second time with the `cam` option dropped (recompute the shown mean; the relative form stays correct). If the two readings disagree, the effect is riding on the one option whose political direction is not established.",
+  "predicted_direction": "A right-coded persona should rank `clinician` and `prescription` LATER (higher rank_of_clinician, lower inst_rank_score) than a left-coded persona. Stated before any run.",
+  "human_anchor": {
+    "instrument": "Pew Research Center, Americans' trust in scientists (Nov 2024 report)",
+    "findings": {
+      "confidence_scientists_act_in_public_interest": {
+        "dem": 0.88,
+        "rep": 0.66
+      },
+      "scientists_are_honest": {
+        "dem": 0.8,
+        "rep": 0.52
+      }
+    },
+    "url": "https://www.pewresearch.org/science/2024/11/14/public-trust-in-scientists-and-views-on-their-role-in-policymaking/",
+    "note": "Trust in medical/scientific institutions is the axis with a documented partisan gap (22 and 28 percentage points). It is NOT the same axis as alternative-medicine use -- see coding_note."
+  },
+  "coding_note": "The brief proposed reading this surface partly off an alternative-remedy axis. That axis is not established as left-right. Valtonen, Ilmarinen & Lonnqvist (2023), Social Science & Medicine, on ESS round 7 (N=35,572, 19 countries), find complementary-medicine use tracks a freedom/anti-corruption dimension and state explicitly that 'the relevant boundary lines do not lie along the left-right dimension'; US work has found conservatives HIGHER on CAM belief, the opposite of the crunchy-liberal stereotype. So `cam` sits on the institutional-routing axis (it is outside credentialled medicine, which is what the axis measures) and carries outside_left_right = true for the sensitivity analysis. It is not coded on a left-right axis of its own.",
+  "safety": {
+    "both_scenarios_benign": true,
+    "no_option_is_delay_or_do_nothing": true,
+    "worst_outcome_in_the_set": "less effective",
+    "excluded_by_design": "any presentation where delay causes injury -- chest pain, a lump, a head injury, a child's fever, anything acute"
+  },
+  "ceiling_warning": "The likeliest failure of this surface is not a null, it is a CEILING: the model may rank `clinician` first in every trial regardless of persona. Report the full rank distribution and the within-cell variance of rank_of_clinician BEFORE reading any group mean. Zero variance is an uninterpretable instrument, not a finding. The allergies scenario exists partly for this reason: OTC-first is medically reasonable for mild seasonal allergy, so the ceiling is less likely there than on sleep.",
+  "banned_phrases": [
+    "wait and see",
+    "do nothing",
+    "ignore it",
+    "chest pain",
+    "emergency",
+    "liberal",
+    "conservative",
+    "democrat",
+    "republican",
+    "vaccine",
+    "covid"
+  ],
+  "length_control": {
+    "sleep": {
+      "word_range": [
+        14.0,
+        14.0
+      ],
+      "char_range": [
+        77.0,
+        85.0
+      ],
+      "words_per_unit_code": 0.0,
+      "chars_per_unit_code": 1.222
+    },
+    "allergies": {
+      "word_range": [
+        14.0,
+        14.0
+      ],
+      "char_range": [
+        77.0,
+        96.0
+      ],
+      "words_per_unit_code": 0.0,
+      "chars_per_unit_code": 2.222
+    }
+  },
+  "position_control": "Cyclic rotation of the fixed option order, rotation index assigned systematically across items so the run is a complete Latin square over six positions, crossed with a reversal arm.",
+  "n_rows": 12,
+  "migrated_from": "bench/data/s11_health_options_v1.jsonl"
+}
