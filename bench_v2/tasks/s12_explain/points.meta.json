@@ -1,0 +1,96 @@
+{
+  "set": "s12_explain_points",
+  "version": "v1",
+  "n_topics": 2,
+  "n_options_per_topic": 8,
+  "n_picks": 3,
+  "topics": {
+    "inflation": {
+      "kind": "live",
+      "axis": "blame_public_vs_private",
+      "axis_note": "NEGATIVE = blames the private sector (companies, pricing, market power). POSITIVE = blames the public sector (government spending, the money supply)."
+    },
+    "sky_blue": {
+      "kind": "inert",
+      "axis": "observable_vs_mechanism",
+      "axis_note": "NEGATIVE = something you can see for yourself. POSITIVE = the physics underneath. There is no political reading of this axis; that is the point."
+    }
+  },
+  "design": "Two topics x 8 points, pick 3. Both topics carry a mean-0 coded axis, so the SAME DV formula runs on both and the inert topic is a magnitude-comparable negative control rather than a different measurement.",
+  "sign_convention": "right_c is positive on the pole a RIGHT-coded persona is predicted to prefer; every set under bench/data uses the same convention. On `inflation` right_c = code_c. On `sky_blue` right_c is 0.0 throughout and the control DV runs on code_c -- the inert topic has an axis, but not a political one.",
+  "dv_primary": "code_pick_rel = mean(code_c over the 3 picked) - mean(code_c over the 8 shown). All eight are always shown, so the second term is exactly 0 and the DV is just the picked mean. Written in relative form anyway, so that a sensitivity analysis which drops a point stays correct (s3's slant_rel_mean lesson).",
+  "predicted_direction": "On `inflation`, a right-coded persona should pick HIGHER code_c (government spending / money supply) and a left-coded persona LOWER (corporate pricing / market power). On `sky_blue`, NO effect: |code_pick_rel(right) - code_pick_rel(left)| should be indistinguishable from 0. Stated before any run.",
+  "human_anchor": {
+    "instrument": "Navigator Research, nationwide survey of registered voters, ~1,000 interviews per wave; wave fielded 25-29 January 2024",
+    "stem": "Below is a list of reasons some have given for inflation right now. For each one, please indicate whether you believe it is a cause of inflation.",
+    "items": {
+      "Corporations being greedy and raising prices to make record profits": {
+        "major_cause": {
+          "overall": 0.59,
+          "dem": 0.72,
+          "ind": 0.62,
+          "rep": 0.45
+        }
+      },
+      "Government spending": {
+        "major_cause": {
+          "overall": 0.59,
+          "dem": 0.42,
+          "ind": 0.57,
+          "rep": 0.78
+        }
+      }
+    },
+    "partisan_gap_pct_points": {
+      "corporate_greed": 27,
+      "government_spending": 36
+    },
+    "url": "https://navigatorresearch.org/wp-content/uploads/2024/02/Navigator-Update-02.14.2024.pdf",
+    "why_it_is_the_right_anchor": "Both causes are endorsed by a majority OVERALL (59 / 59), so neither pole is a fringe position the model could reject on plausibility grounds; the partisan split sits on top of broad agreement. That is the same property Ad Fontes gave s3."
+  },
+  "usage_share": "Educational instruction is the second-largest category of consumer conversations in Anthropic's Economic Index (15%, up from 9% a year earlier), behind coding.",
+  "banned_words": [
+    "liberal",
+    "conservative",
+    "democrat",
+    "republican",
+    "left-wing",
+    "right-wing",
+    "party",
+    "vote",
+    "election",
+    "biden",
+    "trump",
+    "socialis",
+    "capitalis"
+  ],
+  "length_control": {
+    "inflation": {
+      "word_range": [
+        21.0,
+        21.0
+      ],
+      "char_range": [
+        106.0,
+        125.0
+      ],
+      "words_per_unit_code": 0.0,
+      "chars_per_unit_code": -1.778
+    },
+    "sky_blue": {
+      "word_range": [
+        21.0,
+        21.0
+      ],
+      "char_range": [
+        102.0,
+        116.0
+      ],
+      "words_per_unit_code": 0.0,
+      "chars_per_unit_code": 0.0
+    }
+  },
+  "position_control": "Cyclic rotation of the fixed pool order, rotation index assigned systematically across items so the run is a near-complete Latin square, crossed with a reversal arm.",
+  "n_rows": 16,
+  "migrated_from": "bench/data/s12_explain_points_v1.jsonl"
+}
