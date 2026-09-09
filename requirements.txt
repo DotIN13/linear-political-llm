@@ -4,3 +4,4 @@ einops
 google-genai
 pillow
 jinja2
+pydantic>=2
