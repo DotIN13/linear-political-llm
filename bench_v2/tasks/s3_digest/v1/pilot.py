@@ -51,6 +51,9 @@ ASK = render(TASK_DIR / "ask.j2")
 HEADLINES, HEADLINES_META = load_pool(TASK_DIR / "headlines_v2.jsonl")
 CONDITIONS: tuple[str, ...] = ("photos", "no_photos")
 SCHEMES: tuple[str, ...] = ("chat", "agentic")
+BUCKETS: tuple[str, ...] = ("low", "mid", "high")
+BUCKET_ABBREV: dict[str, str] = {"low": "lo", "mid": "mid", "high": "hi"}
+BUCKET_BY_STRATUM: dict[int, str] = {-1: "low", 0: "mid", 1: "high"}
 QUESTION_IDS: tuple[str, ...] = ("q0",)
 MAX_NEW_TOKENS = 900
 RANDOMIZES_PER_ITEM = True
@@ -312,6 +315,19 @@ def is_scheme_invariant(condition: str) -> bool:
     return check_condition(condition) == "no_photos"
 
 
+def item_bucket(item: Item) -> str:
+    """The image bucket (low/mid/high) the sampler froze onto the item.
+
+    The bucket is the primary independent variable of the sampler (``stratum``
+    -1/0/+1); it is read from the item's covariates, or derived from the stratum
+    for older rows that predate the covariate.
+    """
+    bucket = (item.covariates or {}).get("bucket")
+    if bucket in BUCKETS:
+        return str(bucket)
+    return BUCKET_BY_STRATUM.get(item.stratum, "mid")
+
+
 def variants() -> list[dict[str, Any]]:
     """Scheme x question x persona variant (no_memory / memory)."""
     return [{"scheme": scheme, "question": qid, "clause": persona}
@@ -366,6 +382,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--scheme", action="append", default=None, help="repeatable; default all")
     parser.add_argument("--condition", action="append", default=None,
                         help="repeatable; default all (photos, no_photos)")
+    parser.add_argument("--bucket", action="append", default=None,
+                        help="repeatable; default all (low, mid, high)")
     parser.add_argument("--adaptor", default="local_hf")
     parser.add_argument("--model", default=None)
     parser.add_argument("--seed", type=int, default=42)
@@ -378,6 +396,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # --- stage 1: load the items ---------------------------------------------
     items, synthetic = read_items(args.items, args.limit)
+    if args.bucket:
+        items = [item for item in items if item_bucket(item) in args.bucket]
 
     # --- stage 2: enumerate the cells (condition x variant x item) -----------
     chosen_conditions = tuple(c for c in CONDITIONS
@@ -392,6 +412,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {len(items)} items x {len(chosen_conditions)} conditions x "
               f"{len(chosen_variants)} variants -> {len(cells)} trials"
               + ("  (synthetic, no images)" if synthetic else ""))
+        bucket_counts = {b: sum(1 for item in items if item_bucket(item) == b)
+                         for b in BUCKETS}
+        print("  buckets: " + "  ".join(f"{b}={bucket_counts[b]}" for b in BUCKETS))
         condition, variant, item = cells[0]
         trial = build(item, condition, dict(variant), seed=args.seed)
         print(f"  example: condition={condition} variant={trial.variant_key}")
@@ -422,13 +445,22 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         rows = [json.loads(line) for line in trials.read_text(encoding="utf-8").splitlines()
                 if line.strip()]
-        by_condition: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for row in rows:
-            by_condition[row.get("condition")].append(row)
-        print(f"{TITLE}  [{SURFACE}/{VERSION}]  {len(rows)} records")
-        print(f"{'condition':<16}{'n':>6}{'parsed':>8}{'slant':>10}{'rel':>10}")
-        for condition in sorted(by_condition, key=str):
-            group = by_condition[condition]
+
+        # item_id -> image bucket, from the frozen items; fall back to the
+        # bucket abbrev the item_id itself carries (lvis3_lo_ / _mid_ / _hi_).
+        items, _ = read_items(DEFAULT_ITEMS)
+        bucket_by_item = {item.item_id: item_bucket(item) for item in items}
+
+        def bucket_of(row: dict[str, Any]) -> str:
+            item_id = str(row.get("item_id", ""))
+            if item_id in bucket_by_item:
+                return bucket_by_item[item_id]
+            for bucket, abbrev in BUCKET_ABBREV.items():
+                if f"_{abbrev}_" in item_id:
+                    return bucket
+            return "?"
+
+        def means(group: list[dict[str, Any]]) -> tuple[int, int, Optional[float], Optional[float]]:
             extras = [r["outcome"]["extra"] for r in group
                       if r.get("outcome") and r["outcome"].get("extra")]
             parsed = sum(1 for e in extras if e.get("parse_ok"))
@@ -436,9 +468,65 @@ def main(argv: list[str] | None = None) -> int:
                       if e.get("slant_c_mean") is not None]
             rels = [e.get("slant_rel_mean") for e in extras
                     if e.get("slant_rel_mean") is not None]
-            smean = f"{sum(slants) / len(slants):+.4f}" if slants else "-"
-            rmean = f"{sum(rels) / len(rels):+.4f}" if rels else "-"
-            print(f"{str(condition):<16}{len(group):>6}{parsed:>8}{smean:>10}{rmean:>10}")
+            return (len(group), parsed,
+                    sum(slants) / len(slants) if slants else None,
+                    sum(rels) / len(rels) if rels else None)
+
+        def fmt(value: Optional[float]) -> str:
+            return f"{value:+.4f}" if value is not None else "-"
+
+        print(f"{TITLE}  [{SURFACE}/{VERSION}]  {len(rows)} records")
+
+        # by condition (the run-level view)
+        by_condition: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            by_condition[row.get("condition")].append(row)
+        print(f"{'condition':<16}{'n':>6}{'parsed':>8}{'slant':>10}{'rel':>10}")
+        for condition in sorted(by_condition, key=str):
+            n, parsed, smean, rmean = means(by_condition[condition])
+            print(f"{str(condition):<16}{n:>6}{parsed:>8}{fmt(smean):>10}{fmt(rmean):>10}")
+
+        # the factorial: scheme x persona variant x image bucket
+        by_cell: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            variant = row.get("variant") or {}
+            by_cell[(str(variant.get("scheme")), str(variant.get("clause")),
+                     bucket_of(row))].append(row)
+        print()
+        print(f"{'scheme':<9}{'variant':<8}{'bucket':<7}{'n':>5}{'parsed':>8}"
+              f"{'slant':>10}{'rel':>10}")
+        for scheme in SCHEMES:
+            for clause in PERSONA_VARIANTS:
+                for bucket in BUCKETS:
+                    group = by_cell.get((scheme, clause, bucket), [])
+                    if not group:
+                        continue
+                    n, parsed, smean, rmean = means(group)
+                    print(f"{scheme:<9}{clause:<8}{bucket:<7}{n:>5}{parsed:>8}"
+                          f"{fmt(smean):>10}{fmt(rmean):>10}")
+
+        # paired memory - bare, per scheme x bucket
+        by_item: dict[tuple[str, str, str], dict[str, Optional[float]]] = defaultdict(dict)
+        for row in rows:
+            variant = row.get("variant") or {}
+            extra = (row.get("outcome") or {}).get("extra") or {}
+            by_item[(str(variant.get("scheme")), bucket_of(row),
+                     str(row.get("item_id")))][str(variant.get("clause"))] = \
+                extra.get("slant_rel_mean")
+        print()
+        print("paired rel(memory - bare), per scheme x bucket:")
+        for scheme in SCHEMES:
+            for bucket in BUCKETS:
+                deltas = [v["memory"] - v["bare"]
+                          for (s, b, _), v in by_item.items()
+                          if s == scheme and b == bucket
+                          and v.get("memory") is not None and v.get("bare") is not None]
+                if not deltas:
+                    continue
+                mean = sum(deltas) / len(deltas)
+                var = sum((d - mean) ** 2 for d in deltas) / len(deltas)
+                se = (var / len(deltas)) ** 0.5
+                print(f"  {scheme:<9}{bucket:<7}{mean:+.4f}  (se {se:.4f}, n={len(deltas)})")
 
     return 0
 
