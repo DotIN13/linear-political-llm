@@ -33,13 +33,13 @@ if str(ROOT) not in sys.path:
 from bench_v2 import registry
 from bench_v2.helpers import run as run_helper
 from bench_v2.helpers.dataset import read_items
+from bench_v2.helpers.generation import build_base
 from bench_v2.helpers.prompts import load_json, render
 from bench_v2.helpers.readers import detect_refusal, refusal_match, word_count
-from bench_v2.helpers.transcript import build_scheme_messages
 from bench_v2.judge import aggregate_labels, attach_judge, judge_run
 from bench_v2.paths import items_dir, runs_dir
 from bench_v2.tasks.s1_speech.judge_spec import JUDGE
-from bench_v2.types import Conversation, Item, Outcome, ProbePoint, Response, Trial
+from bench_v2.types import Item, Outcome, Response, Trial
 
 TASK = "s1_speech"
 VERSION = "v1"
@@ -82,58 +82,10 @@ def question() -> str:
 def build(item: Item, condition: str, variant: dict[str, Any] | None = None,
           seed: int = 42) -> Trial:
     condition = check_condition(condition)
-    variant = dict(variant or {"scheme": "chat"})
-    scheme = str(variant.get("scheme", "chat"))
-    qid = str(variant.get("question", "q0"))
-    variant["question"] = qid
-    variant["attribution"] = str(variant.get("attribution", "shown"))
-    variant["clause"] = str(variant.get("clause", "bare"))
-    clause = variant["clause"]
-
-    with_images = condition == "photos"
-    image_paths = list(item.image_paths) if with_images else []
-    q = question()
-    if condition == "no_photos":
-        # The bare task: no share line, no memory directories, no filenames.
-        messages = [{"role": "user", "content": [{"type": "text", "text": q}]}]
-        tools = None
-        n_files = 0
-    else:
-        n_files = len(item.image_paths) or 3
-        messages, tools = build_scheme_messages(scheme, image_paths, q, n_files, clause)
-
-    return Trial(
-        surface=SURFACE,
-        item_id=item.item_id,
-        condition=condition,
-        conversation=Conversation(messages=messages, images=image_paths),
-        candidates=[],
-        probe_points=[
-            ProbePoint(name="s_pre", kind="prefix_end", reduce="last"),
-            ProbePoint(name="s_gen", kind="generated_tokens", reduce="mean"),
-            ProbePoint(name="s_img", kind="image_tokens", reduce="mean"),
-        ],
-        max_new_tokens=MAX_NEW_TOKENS,
-        variant=variant,
-        meta={
-            "family": "generation",
-            "scheme": scheme,
-            "clause": clause,
-            "question_id": qid,
-            "prefill": PREFILL,
-            "question": q,
-            "tools": tools,
-            "prefix_n_messages": len(messages) - 1,
-            "condition_desc": {
-                "photos": "the persona's photos, delivered per conversation scheme",
-                "no_photos": "the question on its own, no persona framing -- once per question",
-            }[condition],
-            "n_images": len(image_paths),
-            "n_files": 0 if condition == "no_photos" else n_files,
-            "item_invariant": is_item_invariant(condition),
-            "scheme_invariant": is_scheme_invariant(condition),
-            "judge": JUDGE.id if JUDGE else None,
-        },
+    return build_base(
+        surface=SURFACE, item=item, condition=condition, variant=variant, seed=seed,
+        question_fn=lambda qid, order, attribution: question(),
+        max_new_tokens=MAX_NEW_TOKENS, prefill=PREFILL, judge=JUDGE.id,
     )
 
 
