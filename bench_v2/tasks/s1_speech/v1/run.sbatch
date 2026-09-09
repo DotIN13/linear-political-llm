@@ -1,7 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=benchv2-s1-vllm
-#SBATCH --partition=jevans-gpu
-#SBATCH --account=pi-jevans
+#SBATCH --partition=ssd-gpu
+#SBATCH --account=ssd
+#SBATCH --qos=ssd
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
@@ -21,9 +22,13 @@
 # http://127.0.0.1:8000/v1 and the pilot passes it no base_url, so the server
 # has to be on the port the adaptor already expects.
 #
-# No --constraint: round 16 measured an H200 job pending while two H100s sat
-# free in this partition; both are Hopper/sm90, so either serves. The node name
-# is printed.
+# Partition ssd-gpu, not jevans-gpu. On 2026-09-09 the jevans-gpu submission
+# (57993776) sat at Reason=Resources: its only free GPU was on a node with 7
+# free CPUs against the 16-CPU request. `gpu` had zero idle GPUs and `ssd-gpu`
+# had a fully idle node, so this is the partition that can actually run. The
+# directives are only defaults -- override them on the command line if it moves:
+#   sbatch --partition=jevans-gpu --account=pi-jevans --qos=jevans-gpu run.sbatch
+# No --constraint: the 8B model fits on any GPU here and the node name is logged.
 #
 # Usage: sbatch run.sbatch [LIMIT] [CELLS]
 #   LIMIT=1 -> 1 item x 2 conditions x 2 schemes = 4 cells
