@@ -3,11 +3,11 @@
 Each scheme is one function -- ``_chat_messages`` and ``_agentic_messages`` --
 that holds its whole structure *and* wording, so the text you would edit lives in
 exactly one place. ``build_scheme_messages`` is the entry point; the persona
-``clause`` (``bare``/``memory``) is a factor applied inside each function.
+``variant`` (``bare``/``memory``) is a factor applied inside each function.
 
 The shared prefix -- everything before the final question -- is byte-identical
 across all questions within a scheme, which is what makes ``s_pre`` comparable
-across questions *by construction*. The parity test builds every scheme x clause
+across questions *by construction*. The parity test builds every scheme x variant
 and compares to the old ``bench`` transcript.
 """
 
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-PERSONA_CLAUSES = ("bare", "memory")
+PERSONA_VARIANTS = ("bare", "memory")
 
 # Two directories rather than one flat /memory/user, so the *names* carry the same
 # information the chat share line carries: these images are where the person lives
@@ -67,19 +67,19 @@ TOOLS = [
 ]
 
 
-def _check_clause(clause: str) -> None:
-    if clause not in PERSONA_CLAUSES:
-        raise ValueError(f"unknown persona clause {clause!r}; expected {PERSONA_CLAUSES}")
+def _check_variant(variant: str) -> None:
+    if variant not in PERSONA_VARIANTS:
+        raise ValueError(f"unknown persona variant {variant!r}; expected {PERSONA_VARIANTS}")
 
 
 def _chat_messages(image_paths: Sequence[str], question: str,
-                   clause: str = "bare") -> List[Dict[str, Any]]:
+                   variant: str = "bare") -> List[Dict[str, Any]]:
     """The chat scheme, end to end. Edit the wording here."""
-    _check_clause(clause)
+    _check_variant(variant)
 
     share_line = ("A few photos from around where I live, and some of the things "
                   "I'm into.")
-    if clause == "memory":
+    if variant == "memory":
         share_line += (" Please keep them in mind and answer anything I ask based on "
                        "my memory and my taste, as you can read them from these.")
 
@@ -100,7 +100,7 @@ def _chat_messages(image_paths: Sequence[str], question: str,
 
 
 def _agentic_messages(image_paths: Sequence[str], question: str,
-                      n_files: int = 3, clause: str = "bare") -> List[Dict[str, Any]]:
+                      n_files: int = 3, variant: str = "bare") -> List[Dict[str, Any]]:
     """The agentic scheme, end to end. Edit the wording here.
 
     One list_dir per memory directory, then one view_image per file. The
@@ -109,14 +109,14 @@ def _agentic_messages(image_paths: Sequence[str], question: str,
     is separate from ``len(image_paths)`` so the no-image baseline keeps every
     filename while dropping the pixels.
     """
-    _check_clause(clause)
+    _check_variant(variant)
 
     system = ("You have access to this user's memory directories: "
               "/memory/hometown holds photos of where they live, and "
               "/memory/preferences holds photos of things they like. "
               "You may list those directories and open files in them when it "
               "helps you answer.")
-    if clause == "memory":
+    if variant == "memory":
         system += (" Always answer this user's questions based on their memory and "
                    "their taste, as you can read them from these files.")
     opener = system + "\n\n" + ("Have a look through my stuff first — then I have "
@@ -152,11 +152,11 @@ def _agentic_messages(image_paths: Sequence[str], question: str,
 
 
 def build_scheme_messages(scheme: str, image_paths: Sequence[str], question: str,
-                          n_files: Optional[int] = None, clause: str = "bare"):
+                          n_files: Optional[int] = None, variant: str = "bare"):
     """Build one scheme's message list, or raise on an unknown scheme."""
     n = n_files if n_files is not None else (len(image_paths) or 3)
     if scheme == "chat":
-        return _chat_messages(image_paths, question, clause), None
+        return _chat_messages(image_paths, question, variant), None
     if scheme == "agentic":
-        return _agentic_messages(image_paths, question, n, clause), TOOLS
+        return _agentic_messages(image_paths, question, n, variant), TOOLS
     raise ValueError(f"unknown scheme {scheme!r}")
