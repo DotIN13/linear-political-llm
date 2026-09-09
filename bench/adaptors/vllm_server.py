@@ -157,6 +157,16 @@ def build_payload(trial: Trial, model: str, *, seed: int,
     if logprobs:
         payload["logprobs"] = True
         payload["top_logprobs"] = int(logprobs)
+    # `api_tools`, NOT `tools`. meta["tools"] is the agentic scheme's transcript
+    # documentation -- those calls are written into the message text by hand and
+    # have never been sent as a request parameter. Sending them now would change
+    # the agentic manipulation on every surface that uses it, and invalidate s1-s8
+    # along with it. A surface that wants real function calling says so with its
+    # own key.
+    api_tools = (trial.meta or {}).get("api_tools")
+    if api_tools:
+        payload["tools"] = list(api_tools)
+        payload["tool_choice"] = (trial.meta or {}).get("tool_choice") or "required"
     return payload
 
 
@@ -258,6 +268,11 @@ class VLLMServerAdaptor(BaseAdaptor):
         # smoke run sent none at all and nothing in the data said so -- it took
         # rebuilding the payload by hand to see it. Now the record says.
         usage["prefill_applied"] = bool(payload.get("continue_final_message"))
+        # A real tool call does not appear in `content` at all -- it comes back
+        # structured, and the first run of s10_groceries read 0 of 72 because it
+        # was searching the text for a function name that was never there.
+        calls = (choice.get("message") or {}).get("tool_calls") or []
+        usage["tool_calls"] = [((c.get("function") or {}).get("name")) for c in calls]
         return Response(
             text=text,
             logprobs=self._flatten_logprobs(choice),

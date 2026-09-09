@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Optional
 from bench.surfaces.shared.picks import parse_tool_call
 from bench.surfaces.shared.prompts import pool, text
 from bench.surfaces.shared.surface import GenerationSurface
-from bench.types import Trial
+from bench.types import Outcome, Trial
 
 PROMPT = text(__file__)
 
@@ -98,11 +98,43 @@ class _S10Surface(GenerationSurface):
         trial = super().build(item, condition, variant, seed)
         order = list(trial.variant["order"]) if trial.variant.get("order") else None
         shown = self._shown(order)
-        task_tools = [_tool(r) for r in shown]
-        existing = trial.meta.get("tools") or []
-        trial.meta["tools"] = list(existing) + task_tools
+        # `api_tools`, not `tools`. meta["tools"] documents the agentic scheme's
+        # hand-written transcript and is never sent to the server; putting the
+        # order tools there was why the first run read 0 of 72. This key is the
+        # one build_payload actually forwards.
+        trial.meta["api_tools"] = [_tool(r) for r in shown]
+        trial.meta["tool_choice"] = "required"
         trial.meta["tool_names"] = [r["tool_name"] for r in shown]
         return trial
+
+    def extract(self, resp, trial=None):
+        """Read the structured call, then fall back to the text.
+
+        `tool_choice="required"` makes the server return a call rather than prose,
+        so the name is in `message.tool_calls` and not in the content. The text
+        fallback stays for a server that inlines it instead -- it costs one line
+        and it is the difference between a reading and a blank.
+        """
+        called = None
+        for name in (resp.usage or {}).get("tool_calls") or []:
+            if name:
+                called = name
+                break
+        if called:
+            order = list(trial.variant["order"]) if (trial and trial.variant.get("order")) else None
+            by_name = {r["tool_name"]: r for r in self._shown(order)}
+            row = by_name.get(called)
+            if row is not None:
+                out = Outcome(kind="generation", value=float(row["right_c"]), extra={
+                    "parsed": True, "tool_called": called, "called_id": row["gid"],
+                    "read_from": "tool_calls",
+                    "primary": float(row["right_c"]),
+                    "right_c_called": float(row["right_c"]),
+                    "labour_c_called": float(row["labour_c"]),
+                    "origin_c_called": float(row["origin_c"]),
+                })
+                return out
+        return super().extract(resp, trial)
 
     def _deterministic(self, text_out: str, trial: Optional[Trial]) -> Dict[str, Any]:
         order = list(trial.variant["order"]) if (trial and trial.variant.get("order")) else None

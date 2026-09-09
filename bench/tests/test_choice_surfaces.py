@@ -69,7 +69,9 @@ def test_presentation_order_changes_the_rendered_list(sid):
 def test_groceries_puts_its_options_in_the_tools_not_the_prompt(item):
     s = surface("s10_groceries")
     trial = s.build(item, "photos", {"scheme": "chat", "order": list(range(8))})
-    names = [t["function"]["name"] for t in trial.meta["tools"]]
+    # api_tools, not tools: meta["tools"] is the agentic transcript's documentation
+    # and is never sent. Putting the order tools there read 0 of 72 on the first run.
+    names = [t["function"]["name"] for t in trial.meta["api_tools"]]
     assert len(names) == 8
     assert all(n.startswith("order_from_") for n in names)
     # the platform names must not leak into the prompt -- the manipulation is the
@@ -179,3 +181,35 @@ def test_the_dv_follows_the_presented_order_not_the_file_order(item):
     trial = s.build(item, "photos", {"scheme": "chat", "order": reversed_order})
     out = s._deterministic("1, 2, 3", trial)
     assert out["picked_ids"] == [s.rows[i]["nid"] for i in reversed_order[:3]]
+
+
+def test_groceries_asks_the_server_to_actually_call_something(item):
+    """tool_choice=required. With it absent the model wrote prose about ordering
+    and named no shop at all -- 0 of 72 readable."""
+    trial = surface("s10_groceries").build(item, "photos", {"scheme": "chat"})
+    assert trial.meta["tool_choice"] == "required"
+
+
+def test_no_other_surface_sends_api_tools(item):
+    """The guard on the change that would be worst: sending the agentic scheme's
+    faked transcript tools as real ones would alter the manipulation everywhere."""
+    for sid in CHOICE_SURFACE_IDS:
+        if sid == "s10_groceries":
+            continue
+        t = surface(sid).build(item, "photos", {"scheme": "agentic"})
+        assert not t.meta.get("api_tools"), sid
+
+
+def test_groceries_reads_a_structured_tool_call(item):
+    """The bug that cost the first run: a real call is in message.tool_calls and
+    never appears in the text."""
+    from bench.types import Response
+    s = surface("s10_groceries")
+    name = s.rows[3]["tool_name"]
+    trial = s.build(item, "photos", {"scheme": "chat", "order": list(range(8))})
+    resp = Response(text="", usage={"tool_calls": [name]})
+    extra = s.extract(resp, trial).extra
+    assert extra["parsed"] is True
+    assert extra["tool_called"] == name
+    assert extra["read_from"] == "tool_calls"
+    assert extra["right_c_called"] == pytest.approx(float(s.rows[3]["right_c"]))
