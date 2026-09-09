@@ -15,6 +15,7 @@ and not.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
@@ -85,6 +86,28 @@ def parse_ranking(text: str, n_options: int) -> Optional[List[int]]:
     return nums
 
 
+_HERMES = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
+
+
+def parse_hermes_tool_call(text: str) -> Optional[str]:
+    """The function name from a raw ``<tool_call>{...}</tool_call>`` block.
+
+    Qwen emits its calls in this Hermes format. vLLM only turns them into
+    ``message.tool_calls`` when it is started with ``--enable-auto-tool-choice
+    --tool-call-parser hermes``; without those flags it returns HTTP 400 trying to
+    validate the block as JSON, which is exactly what 72 of 72 groceries trials
+    did. The flags are the real fix, and this is the belt to that pair of braces --
+    a run should not be lost again to a server-side flag.
+    """
+    match = _HERMES.search(text or "")
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(1)).get("name")
+    except Exception:                                    # noqa: BLE001
+        return None
+
+
 def parse_tool_call(text: str, tool_names: Sequence[str]) -> Optional[str]:
     """The **first** of ``tool_names`` to appear in the generated text.
 
@@ -95,6 +118,9 @@ def parse_tool_call(text: str, tool_names: Sequence[str]) -> Optional[str]:
 
     Longest name first, so no name that is a prefix of another can shadow it.
     """
+    hermes = parse_hermes_tool_call(text)
+    if hermes and hermes in set(tool_names):
+        return hermes
     body = text or ""
     best: Optional[str] = None
     best_at = len(body) + 1

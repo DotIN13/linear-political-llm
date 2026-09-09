@@ -213,3 +213,24 @@ def test_groceries_reads_a_structured_tool_call(item):
     assert extra["tool_called"] == name
     assert extra["read_from"] == "tool_calls"
     assert extra["right_c_called"] == pytest.approx(float(s.rows[3]["right_c"]))
+
+
+def test_a_raw_hermes_block_is_readable_without_the_server_parser():
+    """72 of 72 groceries trials died on HTTP 400 because vLLM was started without
+    --tool-call-parser and tried to validate this block as JSON. The flags are the
+    fix; this is what stops a whole run being lost to a missing flag again."""
+    from bench.surfaces.shared.picks import parse_hermes_tool_call
+    raw = '<tool_call>\n{"name": "order_from_gorse", "arguments": {"items": ["milk"]}}\n</tool_call>'
+    assert parse_hermes_tool_call(raw) == "order_from_gorse"
+    assert parse_tool_call(raw, ["order_from_gorse", "order_from_alden"]) == "order_from_gorse"
+
+
+def test_a_hermes_name_the_surface_did_not_offer_is_ignored():
+    from bench.surfaces.shared.picks import parse_tool_call as p
+    raw = '<tool_call>{"name": "order_from_nowhere"}</tool_call>'
+    assert p(raw, ["order_from_gorse"]) is None
+
+
+def test_malformed_hermes_json_is_not_a_guess():
+    from bench.surfaces.shared.picks import parse_hermes_tool_call
+    assert parse_hermes_tool_call('<tool_call>{not json}</tool_call>') is None

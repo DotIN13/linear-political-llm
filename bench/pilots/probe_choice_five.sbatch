@@ -17,6 +17,12 @@
 # client is 504 sequential requests against a server on the same node, so splitting
 # them across two jobs would buy nothing and cost a second GPU allocation.
 #
+# --enable-auto-tool-choice + --tool-call-parser hermes are required for
+# s10_groceries. Without them the model emits a perfectly good Hermes-style
+# <tool_call>{"name": ...}</tool_call> and the server returns HTTP 400 trying to
+# validate that string as JSON -- which is what 72 of 72 groceries trials did.
+# Qwen3-VL emits Hermes format; the parser turns it into message.tool_calls.
+#
 # SIF is pinned, not "newest by mtime". round9_vllm.sbatch derived newest and it bit
 # us: a v0.28.0-cu129.sif landed after round 9's data was collected and its api_server
 # had dropped --disable-log-requests, so "newest" silently became "broken".
@@ -72,6 +78,8 @@ echo "[sbatch] starting vLLM server on 0.0.0.0:$PORT (host $(hostname))" >&2
     --max-model-len 8192 \
     --limit-mm-per-prompt '{"image":4}' \
     --gpu-memory-utilization 0.90 \
+    --enable-auto-tool-choice \
+    --tool-call-parser hermes \
     --disable-log-requests \
   > "$OUT/vllm-server-$SLURM_JOB_ID.log" 2>&1 &
 SERVER_PID=$!
