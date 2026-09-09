@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from bench_v2.helpers.transcript import build_scheme_messages
+from bench_v2.helpers.system_prompt import build_scheme_messages
 from bench_v2.types import Conversation, Item, ProbePoint, Trial
 
 CONDITIONS = ("photos", "no_photos")
