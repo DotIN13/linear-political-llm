@@ -38,6 +38,7 @@ from bench_v2.helpers.prompts import load_pool, render
 from bench_v2.helpers.readers import (
     detect_refusal, norm_tokens, refusal_match, token_set_similarity, word_count,
 )
+from bench_v2.helpers.system_prompt import PERSONA_VARIANTS
 from bench_v2.paths import items_dir, runs_dir
 from bench_v2.types import Item, Outcome, Response, Trial
 
@@ -312,8 +313,10 @@ def is_scheme_invariant(condition: str) -> bool:
 
 
 def variants() -> list[dict[str, Any]]:
-    return [{"scheme": scheme, "question": qid}
-            for scheme in SCHEMES for qid in QUESTION_IDS]
+    """Scheme x question x persona variant (no_memory / memory)."""
+    return [{"scheme": scheme, "question": qid, "clause": persona}
+            for scheme in SCHEMES for qid in QUESTION_IDS
+            for persona in PERSONA_VARIANTS]
 
 
 def question(order: Optional[List[int]] = None, attribution: str = "shown",
@@ -361,6 +364,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--items", default=DEFAULT_ITEMS)
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     parser.add_argument("--scheme", action="append", default=None, help="repeatable; default all")
+    parser.add_argument("--condition", action="append", default=None,
+                        help="repeatable; default all (photos, no_photos)")
     parser.add_argument("--adaptor", default="local_hf")
     parser.add_argument("--model", default=None)
     parser.add_argument("--seed", type=int, default=42)
@@ -374,15 +379,17 @@ def main(argv: list[str] | None = None) -> int:
     # --- stage 1: load the items ---------------------------------------------
     items, synthetic = read_items(args.items, args.limit)
 
-    # --- stage 2: enumerate the cells (condition x scheme x item) ------------
+    # --- stage 2: enumerate the cells (condition x variant x item) -----------
+    chosen_conditions = tuple(c for c in CONDITIONS
+                              if not args.condition or c in args.condition)
     chosen_variants = [v for v in variants()
                        if not args.scheme or str(v.get("scheme")) in args.scheme]
-    cells = run_helper.cell_plan(CONDITIONS, chosen_variants, items, is_item_invariant)
+    cells = run_helper.cell_plan(chosen_conditions, chosen_variants, items, is_item_invariant)
 
     if args.phase == "plan":
         # --- stage 2b: print what would run, and one example question (CPU) ---
         print(f"{TITLE}  [{SURFACE}/{VERSION}]")
-        print(f"  {len(items)} items x {len(CONDITIONS)} conditions x "
+        print(f"  {len(items)} items x {len(chosen_conditions)} conditions x "
               f"{len(chosen_variants)} variants -> {len(cells)} trials"
               + ("  (synthetic, no images)" if synthetic else ""))
         condition, variant, item = cells[0]
