@@ -28,7 +28,10 @@ class DummyAdaptor:
         return {"name": self.name, "model": self.model}
 
     def run(self, trial):
-        return Response(text="Here's an outline for your stump speech: jobs, health, schools.")
+        return Response(
+            text="Here's an outline for your stump speech: jobs, health, schools.",
+            probe={"s_pre": [1.0, 2.0]}, timing_ms=12.5, cost_usd=0.0,
+        )
 
 
 def test_run_cells_writes_and_resumes(tmp_path):
@@ -52,6 +55,22 @@ def test_run_cells_writes_and_resumes(tmp_path):
     assert len(rows) == len(cells)
     assert all(row["outcome"]["extra"]["word_count"] == 10 for row in rows)
     assert all(row["response"]["text"] for row in rows)
+
+    # meta and metrics ride along, so a row says what it was and what it cost.
+    for row in rows:
+        assert row["meta"]["scheme"] in {"chat", "agentic"}
+        assert row["meta"]["judge"] == "s1_speech"
+        assert row["metrics"]["timing_ms"] == 12.5
+        assert row["metrics"]["n_messages"] > 0
+        assert row["metrics"]["probe"] == {"s_pre": [1.0, 2.0]}
+
+    # transcripts.jsonl carries the conversation that was sent, not just its sha.
+    transcripts = [json.loads(line) for line in
+                   open(os.path.join(out, "transcripts.jsonl")) if line.strip()]
+    assert len(transcripts) == len(cells)
+    assert all(t["messages"] and t["response_text"] for t in transcripts)
+    assert all(t["conversation_sha"] for t in transcripts)
+
     assert os.path.exists(os.path.join(out, "manifest.json"))
     assert os.path.exists(os.path.join(out, "conversations"))
 

@@ -4,10 +4,20 @@ A pilot supplies three things and nothing else: the cells it wants, a ``build``
 that turns a cell into a ``Trial``, and a ``read`` that turns a ``Response`` into
 an ``Outcome``. This module owns resume, the trial key, the record shape and the
 manifest, so all 14 pilots cannot drift apart on those.
+
+Three artifacts come out of a run, so nothing measured is only in memory:
+
+* ``trials.jsonl`` -- one row per trial, carrying ``meta`` (what the trial was),
+  ``metrics`` (timing, cost, probe) and ``outcome`` (the dependent variable).
+* ``transcripts.jsonl`` -- the conversation that was actually sent, plus the
+  response text, so a row can be read without chasing its sha.
+* ``conversations/<sha2>/<sha>.json`` -- the content-addressed copy, so two
+  trials that share a conversation share one file.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -51,6 +61,7 @@ def run_cells(*, surface: str, cells: Sequence[Cell], build: Build, read: Read,
     out_dir = Path(out_dir)
     rev = measurement_rev(note=f"adaptor={adaptor.name}" + (f" {note}" if note else ""))
     store = RunStore(str(out_dir), conversations_dir=str(out_dir / "conversations"))
+    transcripts_path = out_dir / "transcripts.jsonl"
     planned = cells[:limit_cells] if limit_cells else cells
     if verbose:
         print(f"[run] measurement_rev={rev}  {len(planned)} planned, "
@@ -60,29 +71,50 @@ def run_cells(*, surface: str, cells: Sequence[Cell], build: Build, read: Read,
     started = time.time()
     n = 0
     try:
-        for condition, variant, item in planned:
-            trial = build(item, condition, dict(variant), seed)
-            key = trial_key(surface, item.item_id, condition, trial.variant,
-                            adaptor.name, str(adaptor.model), seed, rev)
-            if store.has(key):
-                continue
-            store.put_conversation(trial.conversation)
-            resp = run_agent(adaptor, trial) if run_agent else adaptor.run(trial)
-            outcome = read(resp, trial)
-            record = {
-                "trial_key": key, "measurement_rev": rev, "surface": surface,
-                "condition": condition, "variant": trial.variant,
-                "item_id": item.item_id, "is_baseline": item.item_id == "__baseline__",
-                "adaptor": adaptor.name, "model": str(adaptor.model),
-                "seed": seed, "conversation_sha": trial.conversation.sha,
-                "response": resp.to_dict(),
-                "outcome": outcome.to_dict() if hasattr(outcome, "to_dict") else dict(outcome),
-                "error": resp.error,
-            }
-            store.append(record)
-            n += 1
-            if verbose and n % 10 == 0:
-                print(f"  [{n}/{len(planned)}]", flush=True)
+        with transcripts_path.open("a", encoding="utf-8") as transcripts:
+            for condition, variant, item in planned:
+                trial = build(item, condition, dict(variant), seed)
+                key = trial_key(surface, item.item_id, condition, trial.variant,
+                                adaptor.name, str(adaptor.model), seed, rev)
+                if store.has(key):
+                    continue
+                store.put_conversation(trial.conversation)
+                resp = run_agent(adaptor, trial) if run_agent else adaptor.run(trial)
+                outcome = read(resp, trial)
+
+                record = {
+                    "trial_key": key, "measurement_rev": rev, "surface": surface,
+                    "condition": condition, "variant": trial.variant,
+                    "item_id": item.item_id, "is_baseline": item.item_id == "__baseline__",
+                    "adaptor": adaptor.name, "model": str(adaptor.model),
+                    "seed": seed, "conversation_sha": trial.conversation.sha,
+                    "meta": dict(trial.meta),
+                    "metrics": {
+                        "timing_ms": resp.timing_ms,
+                        "cost_usd": resp.cost_usd,
+                        "n_messages": len(trial.conversation.messages),
+                        "n_images": len(trial.conversation.images),
+                        "probe": resp.probe,
+                    },
+                    "response": resp.to_dict(),
+                    "outcome": outcome.to_dict() if hasattr(outcome, "to_dict") else dict(outcome),
+                    "error": resp.error,
+                }
+                store.append(record)
+                transcripts.write(json.dumps({
+                    "trial_key": key, "surface": surface, "condition": condition,
+                    "variant": trial.variant, "item_id": item.item_id,
+                    "conversation_sha": trial.conversation.sha,
+                    "prefill": (trial.meta or {}).get("prefill"),
+                    "messages": trial.conversation.messages,
+                    "images": trial.conversation.images,
+                    "response_text": resp.text,
+                    "error": resp.error,
+                }, ensure_ascii=False, sort_keys=True) + "\n")
+                transcripts.flush()
+                n += 1
+                if verbose and n % 10 == 0:
+                    print(f"  [{n}/{len(planned)}]", flush=True)
     finally:
         adaptor.teardown()
 
@@ -93,4 +125,5 @@ def run_cells(*, surface: str, cells: Sequence[Cell], build: Build, read: Read,
     )
     if verbose:
         print(f"[run] wrote {n} new records -> {store.trials_path}")
+        print(f"[run] transcripts -> {transcripts_path}")
     return n
