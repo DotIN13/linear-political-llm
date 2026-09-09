@@ -159,7 +159,15 @@ def phase_run(limit: int = 0) -> int:
             trial = entry["trial"]
             try:
                 resp = adaptor.run(trial)
-                text_out, err = resp.text, None
+                # `run` RETURNS Response(error=...) rather than raising -- a payload
+                # that will not build, an HTTP error, a timeout. The first version of
+                # this loop set err=None unconditionally and threw that away, so 504
+                # payload-build failures were written to disk as clean empty records
+                # with error=None. Read the field.
+                text_out, err = resp.text, resp.error
+                if err:
+                    n_err += 1
+                    resp = None
             except Exception as exc:                        # noqa: BLE001
                 text_out, err, resp = "", f"{type(exc).__name__}: {exc}", None
                 n_err += 1
@@ -190,6 +198,14 @@ def phase_run(limit: int = 0) -> int:
                       flush=True)
 
     print(f"[run] done. errors={n_err} unparsed={n_unparsed} -> {out_path}", flush=True)
+    if plan and n_err == len(plan):
+        print("[run] EVERY trial errored -- this is a broken run, not a result.",
+              file=sys.stderr, flush=True)
+        return 2
+    if plan and n_unparsed == len(plan):
+        print("[run] NOTHING parsed. Check the first record's text before believing "
+              "any of this.", file=sys.stderr, flush=True)
+        return 2
     return 1 if n_err else 0
 
 

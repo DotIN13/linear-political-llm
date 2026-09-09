@@ -106,3 +106,43 @@ def test_no_module_reads_image_paths_off_a_raw_dict():
     assert offenders == [], (
         "these read image_paths off a raw dict instead of going through "
         f"Item.from_dict: {offenders}")
+
+
+# --- the fallback, which a whole 504-trial run paid for ------------------------
+def test_a_frozen_path_that_exists_is_used_when_the_record_name_path_does_not(tmp_path, monkeypatch):
+    """The bug: on midway the images are content-hash filenames, so resolving the
+    record name gives a path that does not exist and every trial fails to build."""
+    from bench.paths import resolve_image
+    real = tmp_path / "7dd68ba8.jpg"
+    real.write_bytes(b"pixels")
+    monkeypatch.setenv("LPL_IMAGES_ROOT", str(tmp_path / "staged"))
+    assert resolve_image("train2017/000000363606.jpg", str(real)) == str(real)
+
+
+def test_the_record_name_path_wins_when_it_exists(tmp_path, monkeypatch):
+    from bench.paths import resolve_image
+    staged = tmp_path / "staged" / "train2017"
+    staged.mkdir(parents=True)
+    (staged / "x.jpg").write_bytes(b"a")
+    stale = tmp_path / "stale.jpg"
+    stale.write_bytes(b"b")
+    monkeypatch.setenv("LPL_IMAGES_ROOT", str(tmp_path / "staged"))
+    assert resolve_image("train2017/x.jpg", str(stale)) == str(staged / "x.jpg")
+
+
+def test_when_neither_exists_the_error_names_the_intended_place(tmp_path, monkeypatch):
+    """Not the stale one -- a missing-file error should point where it should be."""
+    from bench.paths import resolve_image
+    monkeypatch.setenv("LPL_IMAGES_ROOT", str(tmp_path / "staged"))
+    got = resolve_image("train2017/x.jpg", "/nowhere/stale.jpg")
+    assert got == str(tmp_path / "staged" / "train2017" / "x.jpg")
+
+
+def test_from_dict_end_to_end_falls_back_to_the_frozen_path(tmp_path, monkeypatch):
+    from bench.types import Item
+    real = tmp_path / "hash.jpg"
+    real.write_bytes(b"p")
+    monkeypatch.setenv("LPL_IMAGES_ROOT", str(tmp_path / "staged"))
+    item = Item.from_dict({"item_id": "x", "stratum": 0, "image_scores": [0.0],
+                           "images": ["train2017/a.jpg"], "image_paths": [str(real)]})
+    assert item.image_paths == [str(real)]

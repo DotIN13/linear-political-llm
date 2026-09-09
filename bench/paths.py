@@ -88,35 +88,54 @@ def judge_cache_path() -> str:
     return os.path.join(REPO_ROOT, "judge_cache", "judge.sqlite")
 
 
-def resolve_image(record_name: str) -> str:
+def resolve_image(record_name: str, frozen: Optional[str] = None) -> str:
     """``train2017/000000000030.jpg`` -> an absolute path under the images root.
 
-    **This is the function that makes the project portable.** Items on disk carry
-    two fields: ``images`` (record names) and ``image_paths`` ("resolved on-disk
-    paths" -- its own comment). The resolved ones were written by whichever
-    machine sampled the set, so they are wrong everywhere else, and they are the
-    reason a worktree could not share an image directory.
+    **This is the function that makes the project portable**, and it has one
+    subtlety that cost a whole 504-trial run to find.
 
-    Record names are stable. Resolve them here, at load, and one items file is
-    correct on midway, on Delta, and in ten worktrees at once.
+    Items carry two fields: ``images`` (record names) and ``image_paths`` (the
+    resolved paths written by whichever machine sampled the set). Resolving the
+    record name against ``LPL_IMAGES_ROOT`` is what lets one items file work on
+    any machine -- but **it only works where the images are laid out by record
+    name**, and on midway they are not: they are content-hash filenames under
+    ``results/token_scoring/.../_resized_images_800/``, and the hash is not
+    derivable from the record name.
+
+    So the record-name path is preferred and the frozen path is the fallback,
+    *used only when it exists and the preferred one does not*. That is what makes
+    an unset ``LPL_IMAGES_ROOT`` genuinely inert, which is the property the whole
+    migration rests on -- and which I claimed without this fallback, wrongly. The
+    test I wrote asserted the path was *constructed* the old way; it did not
+    assert the file was there, so it passed while every trial failed.
+
+    When neither exists, the record-name path is returned, so the error names the
+    place the image was *meant* to be rather than a stale one.
     """
     if os.path.isabs(record_name):
         return record_name
-    return os.path.join(images_root(), record_name)
+    preferred = os.path.join(images_root(), record_name)
+    if os.path.exists(preferred):
+        return preferred
+    if frozen and os.path.exists(frozen):
+        return frozen
+    return preferred
 
 
 def image_paths_of(row) -> list:
     """The resolved image paths for one items-file **row** (a dict, not an Item).
 
-    Same rule as ``Item.from_dict``: prefer the record names, fall back to the
-    frozen field only when a set has none. Pilots reach into rows directly all
-    over the place, and every one of those was a place the project silently
-    pointed at nothing the moment the images moved -- a missing image does not
-    raise, it just produces an answer with fewer pixels behind it.
+    Same rule as ``Item.from_dict``: prefer the record name resolved against the
+    images root, fall back to the frozen path when that file is not there. Pilots
+    reach into rows directly all over the place, and every one of those was a place
+    the project silently pointed at nothing the moment the images moved -- a missing
+    image does not raise, it produces an answer with fewer pixels behind it.
 
     ``test_no_module_reads_image_paths_off_a_raw_dict`` keeps it that way.
     """
     records = (row.get("images") if hasattr(row, "get") else None) or []
+    frozen = list((row.get("image_paths") if hasattr(row, "get") else None) or [])
     if records:
-        return [resolve_image(r) for r in records]
-    return list((row.get("image_paths") if hasattr(row, "get") else None) or [])
+        padded = frozen + [None] * max(0, len(records) - len(frozen))
+        return [resolve_image(r, f) for r, f in zip(records, padded)]
+    return frozen

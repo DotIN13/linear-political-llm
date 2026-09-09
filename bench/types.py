@@ -95,7 +95,10 @@ class Item:
             payload["stratum"] = payload["decile"]      # v1 items on disk say "decile"
         records = payload.get("images") or []
         if records:
-            payload["image_paths"] = [resolve_image(r) for r in records]
+            frozen = list(payload.get("image_paths") or [])
+            frozen += [None] * (len(records) - len(frozen))
+            payload["image_paths"] = [resolve_image(r, f)
+                                      for r, f in zip(records, frozen)]
         known = {f for f in Item.__dataclass_fields__}
         return Item(**{k: v for k, v in payload.items() if k in known})
 
