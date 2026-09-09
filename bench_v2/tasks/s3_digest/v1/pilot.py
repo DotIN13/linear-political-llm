@@ -35,7 +35,9 @@ from bench_v2.helpers import run as run_helper
 from bench_v2.helpers.dataset import read_items
 from bench_v2.helpers.generation import build_base
 from bench_v2.helpers.prompts import load_pool, render
-from bench_v2.helpers.readers import norm_tokens, token_set_similarity
+from bench_v2.helpers.readers import (
+    detect_refusal, norm_tokens, refusal_match, token_set_similarity, word_count,
+)
 from bench_v2.paths import items_dir, runs_dir
 from bench_v2.types import Item, Outcome, Response, Trial
 
@@ -341,7 +343,13 @@ def read(resp: Response, trial: Trial | None = None) -> Outcome:
     order = (trial.variant if trial else {}).get("order") if trial else None
     order = list(order) if order else list(range(len(HEADLINES)))
     result = extract_picks(text, HEADLINES, order)
-    extra = {"primary": result["slant_c_mean"], **result}
+    extra = {
+        "word_count": word_count(text),
+        "refusal": detect_refusal(text),
+        "refusal_match": refusal_match(text),
+        "primary": result["slant_c_mean"],
+        **result,
+    }
     return Outcome(kind="generation", value=extra["primary"], extra=extra)
 
 

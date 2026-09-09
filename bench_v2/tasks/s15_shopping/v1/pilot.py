@@ -221,7 +221,8 @@ def build(item: Item, condition: str, variant: dict[str, Any] | None = None,
 def read(resp: Response, trial: Trial | None = None) -> Outcome:
     calls = (resp.usage or {}).get("agent_calls") or []
     extra = read_recommendation(calls)
-    return Outcome(kind="generation", value=extra.get("primary"), extra=extra)
+    # The old AgentSurface.extract hardcodes value=None; the DV rides in extra.
+    return Outcome(kind="generation", value=None, extra=extra)
 
 
 def run_agent_cells(adaptor: Any, trial: Trial, env: _ShoppingEnv) -> Response:

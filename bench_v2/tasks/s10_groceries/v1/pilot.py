@@ -33,7 +33,9 @@ from bench_v2.helpers import run as run_helper
 from bench_v2.helpers.dataset import read_items
 from bench_v2.helpers.generation import build_base
 from bench_v2.helpers.prompts import load_pool, render
-from bench_v2.helpers.readers import parse_tool_call
+from bench_v2.helpers.readers import (
+    detect_refusal, parse_tool_call, refusal_match, word_count,
+)
 from bench_v2.paths import items_dir, runs_dir
 from bench_v2.types import Item, Outcome, Response, Trial
 
@@ -152,11 +154,16 @@ def read(resp: Response, trial: Trial | None = None) -> Outcome:
                      **tool_extra(row)}
             return Outcome(kind="generation", value=extra["primary"], extra=extra)
     called = parse_tool_call((resp.text or "").strip(), list(by_name))
+    base = {
+        "word_count": word_count((resp.text or "").strip()),
+        "refusal": detect_refusal((resp.text or "").strip()),
+        "refusal_match": refusal_match((resp.text or "").strip()),
+    }
     if called is None:
         return Outcome(kind="generation", value=None,
-                       extra={"parsed": False, "tool_called": None})
+                       extra={**base, "parsed": False, "tool_called": None})
     row = by_name[called]
-    extra = {"parsed": True, "tool_called": called, **tool_extra(row)}
+    extra = {**base, "parsed": True, "tool_called": called, **tool_extra(row)}
     return Outcome(kind="generation", value=extra["primary"], extra=extra)
 
 
