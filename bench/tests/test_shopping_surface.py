@@ -42,20 +42,23 @@ def test_ask_user_constrains_the_recommendation_to_real_venues(s):
 
 
 # --- the price control ---------------------------------------------------------
-def test_every_venue_is_cheapest_in_exactly_one_rotation(s):
-    """Price is the nuisance here. It is not removed, it is made orthogonal."""
-    cheapest = []
+def test_every_venue_returns_an_identical_total(s):
+    """The first version rotated a 0.8% offset to make price orthogonal to venue.
+    The model then picked the cheapest shop in 85% of trials and cited price in
+    100% of its reasons, so the surface measured arithmetic. A nuisance that strong
+    has to be absent, not balanced."""
     for rot in range(len(s.rows)):
         offs = s.offsets_for(rot)
-        totals = {r["name"]: s.priced(r, offs[r["tool_name"]])["basket_total_usd"] for r in s.rows}
-        cheapest.append(min(totals, key=totals.get))
-    assert sorted(cheapest) == sorted(r["name"] for r in s.rows)
+        totals = {s.priced(r, offs[r["tool_name"]])["basket_total_usd"] for r in s.rows}
+        assert len(totals) == 1, f"rotation {rot} produced differing totals: {totals}"
 
 
-def test_the_price_spread_is_small_enough_to_be_a_tiebreak_not_a_reason(s):
-    offs = s.offsets_for(0)
-    totals = [s.priced(r, offs[r["tool_name"]])["basket_total_usd"] for r in s.rows]
-    assert (max(totals) - min(totals)) / min(totals) < 0.01
+def test_nothing_but_the_brand_name_differs_between_the_tools(s):
+    """Distance, hours, stock and membership are gone from the descriptions. If a
+    second attribute creeps back in, the surface stops being about the brand."""
+    descs = [t["function"]["description"] for t in s.tools()[:-1]]
+    stripped = {d.replace(r["name"], "<VENUE>") for d, r in zip(descs, s.rows)}
+    assert len(stripped) == 1, stripped
 
 
 def test_all_venues_carry_the_same_base_prices(s):

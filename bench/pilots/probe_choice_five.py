@@ -79,6 +79,18 @@ def all_shards() -> List[str]:
     return sorted(_glob.glob(os.path.join(OUT_DIR, "trials.*.jsonl")))
 
 
+def transcripts_path() -> str:
+    """Agent transcripts, beside the trials and sharded the same way.
+
+    The first s15 run kept only counts and threw the messages away, which for a
+    surface whose whole behaviour is a sequence was the wrong thing to drop -- the
+    examples had to be reconstructed from code afterwards. A sidecar rather than a
+    column because these are large and nothing but a human reads them.
+    """
+    job = os.environ.get("SLURM_JOB_ID") or f"local{os.getpid()}"
+    return os.path.join(OUT_DIR, f"transcripts.{job}.jsonl")
+
+
 # --------------------------------------------------------------------------- #
 def load_items() -> List[Dict[str, Any]]:
     """Six personas per bucket, in file order. Deterministic, no sampling."""
@@ -189,6 +201,8 @@ def phase_run(limit: int = 0) -> int:
 
     n_err = n_unparsed = 0
     out_path = trials_path()
+    tr_path = transcripts_path()
+    tr = open(tr_path, "a", encoding="utf-8")
     with open(out_path, "a", encoding="utf-8") as handle:
         for i, entry in enumerate(plan):
             started = time.time()
@@ -198,6 +212,14 @@ def phase_run(limit: int = 0) -> int:
                     adaptor, trial, entry["_surface"], terminal="ask_user",
                     remind="Please give me your recommendation using the ask_user tool.")
                 read = dict(entry["_surface"].read_recommendation(calls))
+                tr.write(json.dumps({
+                    "trial_key": f"{entry['surface']}/{entry['qid']}/{entry['scheme']}/"
+                                 f"{entry['order_arm']}/{entry['item_id']}/{rev}",
+                    "surface": entry["surface"], "bucket": entry["bucket"],
+                    "item_id": entry["item_id"], "scheme": entry["scheme"],
+                    "recommended": read.get("recommended"),
+                    "calls": calls, "messages": transcript}, ensure_ascii=False) + "\n")
+                tr.flush()
                 if err:
                     n_err += 1
                 if not read.get("parsed"):
@@ -259,7 +281,12 @@ def phase_run(limit: int = 0) -> int:
                 print(f"[run] {i + 1}/{len(plan)}  errors={n_err}  unparsed={n_unparsed}",
                       flush=True)
 
+    tr.close()
     print(f"[run] done. errors={n_err} unparsed={n_unparsed} -> {out_path}", flush=True)
+    if os.path.getsize(tr_path) == 0:
+        os.remove(tr_path)
+    else:
+        print(f"[run] transcripts -> {tr_path}", flush=True)
     if plan and n_err == len(plan):
         print("[run] EVERY trial errored -- this is a broken run, not a result.",
               file=sys.stderr, flush=True)
