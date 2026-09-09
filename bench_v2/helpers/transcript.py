@@ -5,11 +5,12 @@ across all questions within a scheme, which is what makes ``s_pre`` comparable
 across questions *by construction*. That invariant is the reason this is one shared
 module and not a copy per question.
 
-The wording lives in ``templates/transcript.j2``, rendered with the persona
-``clause`` (``bare``/``memory``). The message *structure* -- which turns, in which
-order, with which images and tool calls -- stays here, because it is code, not
-prose. A wording edit is a template edit; the parity test builds every scheme x
-clause and compares to the old ``bench`` transcript.
+The wording lives in ``templates/chat.j2`` and ``templates/agentic.j2``, each
+rendered with the persona ``clause`` (``bare``/``memory``). The message
+*structure* -- which turns, in which order, with which images and tool calls --
+stays here, because it is code, not prose. A wording edit is a template edit; the
+parity test builds every scheme x clause and compares to the old ``bench``
+transcript.
 """
 
 from __future__ import annotations
@@ -20,33 +21,33 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from bench_v2.helpers.prompts import render
 
-_TEMPLATE = Path(__file__).resolve().parent / "templates" / "transcript.j2"
+_TEMPLATES = Path(__file__).resolve().parent / "templates"
 PERSONA_CLAUSES = ("bare", "memory")
 
 
-def _strings(clause: str = "bare") -> Dict[str, str]:
-    """The transcript wording for one persona clause, from the template."""
+def _strings(path: Path, clause: str = "bare") -> Dict[str, str]:
+    """One scheme's wording for one persona clause, from its own template."""
     if clause not in PERSONA_CLAUSES:
         raise ValueError(f"unknown persona clause {clause!r}; expected {PERSONA_CLAUSES}")
-    return json.loads(render(_TEMPLATE, clause=clause))
+    return json.loads(render(path, clause=clause))
 
 
 def share_line(clause: str = "bare") -> str:
-    return _strings(clause)["share_line"]
+    return _strings(_TEMPLATES / "chat.j2", clause)["share_line"]
 
 
 def system_agentic(clause: str = "bare") -> str:
-    return _strings(clause)["system_agentic"]
+    return _strings(_TEMPLATES / "agentic.j2", clause)["system"]
 
 
 # Back-compat module constants (clause="bare"); the old round pilots import these.
-SHARE_LINE = _strings("bare")["share_line"]
-SYSTEM_AGENTIC = _strings("bare")["system_agentic"]
-ASSISTANT_TURN_1 = _strings("bare")["assistant_turn_1"]
-CHAT_USER_TURN_2 = _strings("bare")["chat_user_turn_2"]
-ASSISTANT_TURN_2 = _strings("bare")["assistant_turn_2"]
-AGENTIC_OPENER = _strings("bare")["agentic_opener"]
-AGENTIC_ACK = _strings("bare")["agentic_ack"]
+SHARE_LINE = _strings(_TEMPLATES / "chat.j2")["share_line"]
+ASSISTANT_TURN_1 = _strings(_TEMPLATES / "chat.j2")["assistant_turn_1"]
+CHAT_USER_TURN_2 = _strings(_TEMPLATES / "chat.j2")["chat_user_turn_2"]
+ASSISTANT_TURN_2 = _strings(_TEMPLATES / "chat.j2")["assistant_turn_2"]
+SYSTEM_AGENTIC = _strings(_TEMPLATES / "agentic.j2")["system"]
+AGENTIC_OPENER = _strings(_TEMPLATES / "agentic.j2")["opener"]
+AGENTIC_ACK = _strings(_TEMPLATES / "agentic.j2")["ack"]
 
 
 # --- agentic scheme layout ---------------------------------------------------
@@ -117,7 +118,7 @@ def _tool_call(name: str, path: str) -> Dict[str, Any]:
 
 def _chat_messages(image_paths: Sequence[str], question: str,
                    clause: str = "bare") -> List[Dict[str, Any]]:
-    s = _strings(clause)
+    s = _strings(_TEMPLATES / "chat.j2", clause)
     first = [{"type": "image", "image": p} for p in image_paths]
     first.append({"type": "text", "text": s["share_line"]})
     return [
@@ -138,9 +139,9 @@ def _agentic_messages(image_paths: Sequence[str], question: str,
     `n_files` is separate from `len(image_paths)` so the no-image baseline keeps
     every filename while dropping the pixels.
     """
-    s = _strings(clause)
+    s = _strings(_TEMPLATES / "agentic.j2", clause)
     files = files_by_dir(n_files)
-    opener = s["system_agentic"] + "\n\n" + s["agentic_opener"]
+    opener = s["system"] + "\n\n" + s["opener"]
     msgs: List[Dict[str, Any]] = [{"role": "user", "content": [{"type": "text", "text": opener}]}]
     for directory, names in files:
         msgs.append(_tool_call("list_dir", directory))
@@ -155,7 +156,7 @@ def _agentic_messages(image_paths: Sequence[str], question: str,
             content.append({"type": "text", "text": fname})
             msgs.append({"role": "tool", "content": content})
             i += 1
-    msgs.append({"role": "assistant", "content": [{"type": "text", "text": s["agentic_ack"]}]})
+    msgs.append({"role": "assistant", "content": [{"type": "text", "text": s["ack"]}]})
     msgs.append({"role": "user", "content": [{"type": "text", "text": question}]})
     return msgs
 
