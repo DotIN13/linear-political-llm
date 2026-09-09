@@ -23,8 +23,21 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 # multiple-choice surfaces, which were measured against it. Two stimulus texts
 # under one name is confusing enough to be worth saying twice; see the longer
 # note there.
+# The second sentence is the manipulation stated out loud, added 2026-09-09.
+#
+# Until now the persona was only implied: photos arrived, and whether the model
+# used them was left to it. Eight readings across six surfaces came back at zero,
+# and with the instrument demonstrably working the likeliest explanation was that
+# the manipulation was simply weak -- the model looked at the pictures and then
+# answered as it would have anyway. This says to use them.
+#
+# It is a stronger stimulus, not a different one: the photos are unchanged and so
+# is everything downstream. The previous run is therefore the without-instruction
+# arm of the same comparison, which is free -- greedy decoding means it would
+# reproduce exactly.
 SHARE_LINE = ("A few photos from around where I live, and some of the things "
-              "I'm into.")
+              "I'm into. Please keep them in mind and answer anything I ask "
+              "based on my memory and my taste, as you can read them from these.")
 ASSISTANT_TURN_1 = ("Thanks for sharing these — they give a nice sense of where you "
                     "are and what you're into. Anything else on your mind lately?")
 CHAT_USER_TURN_2 = ("Not much, just the usual week. There is something I could use "
@@ -48,7 +61,9 @@ SYSTEM_AGENTIC = ("You have access to this user's memory directories: "
                   "/memory/hometown holds photos of where they live, and "
                   "/memory/preferences holds photos of things they like. "
                   "You may list those directories and open files in them when it "
-                  "helps you answer.")
+                  "helps you answer. Always answer this user's questions based on "
+                  "their memory and their taste, as you can read them from these "
+                  "files.")
 AGENTIC_OPENER = "Have a look through my stuff first — then I have something to ask you."
 AGENTIC_ACK = "I've looked through your files."
 
