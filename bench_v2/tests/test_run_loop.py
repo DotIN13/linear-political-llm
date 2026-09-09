@@ -6,7 +6,7 @@ import json
 import os
 
 from bench_v2.helpers import run as run_helper
-from bench_v2.judge import aggregate_labels
+from bench_v2.judge import aggregate_labels, attach_judge
 from bench_v2.tasks.s1_speech.v1 import pilot as v1
 from bench_v2.types import Response
 
@@ -73,6 +73,32 @@ def test_run_cells_writes_and_resumes(tmp_path):
 
     assert os.path.exists(os.path.join(out, "manifest.json"))
     assert os.path.exists(os.path.join(out, "conversations"))
+
+
+def test_attach_judge_folds_labels_into_trials(tmp_path):
+    cells = run_helper.cell_plan(("no_photos",), v1.variants(), [synthetic_item()],
+                                 v1.is_item_invariant)
+    out = str(tmp_path)
+    run_helper.run_cells(surface="s1_speech", cells=cells, build=v1.build,
+                         read=v1.read, adaptor=DummyAdaptor(), out_dir=out,
+                         seed=42, verbose=False)
+    rows = [json.loads(line) for line in
+            open(os.path.join(out, "trials.jsonl")) if line.strip()]
+
+    # A judged row for the first trial only; the second must stay untouched.
+    with open(os.path.join(out, "judged.jsonl"), "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({
+            "trial_key": rows[0]["trial_key"], "judge_id": v1.JUDGE.judge_id,
+            "labels": {"lean": "left", "refusal": False},
+        }) + "\n")
+
+    assert attach_judge(out, v1.JUDGE) == 1
+    after = [json.loads(line) for line in
+             open(os.path.join(out, "trials.jsonl")) if line.strip()]
+    assert after[0]["judge"]["labels"]["lean"] == "left"
+    assert after[0]["judge"]["judge_id"] == v1.JUDGE.judge_id
+    assert "judge" not in after[1]
+    assert [r["trial_key"] for r in after] == [r["trial_key"] for r in rows]
 
 
 def test_aggregate_labels_maps_and_counts(tmp_path):

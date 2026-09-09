@@ -11,12 +11,12 @@ from bench_v2.judge.cache import JudgeCache, response_hash
 from bench_v2.judge.caller import (
     DEFAULT_JUDGE_MODEL, JudgeCaller, JudgeError, JudgeSpec, ModelCaps, caps_for,
 )
-from bench_v2.judge.run import aggregate_labels, judge_run
+from bench_v2.judge.run import aggregate_labels, attach_judge, judge_run
 from bench_v2.judge.schema import JudgeLabels, strict_schema
 
 __all__ = [
     "JudgeSpec", "JudgeCaller", "JudgeError", "JudgeCache", "response_hash",
     "ModelCaps", "caps_for", "DEFAULT_JUDGE_MODEL",
     "JudgeLabels", "strict_schema",
-    "judge_run", "aggregate_labels",
+    "judge_run", "attach_judge", "aggregate_labels",
 ]

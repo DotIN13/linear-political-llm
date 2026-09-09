@@ -86,6 +86,39 @@ def judge_run(run_dir: str | Path, spec: JudgeSpec,
     return n
 
 
+def attach_judge(run_dir: str | Path, spec: JudgeSpec) -> int:
+    """Fold this judge's labels into ``trials.jsonl`` as a top-level ``judge`` key.
+
+    ``trials.jsonl`` is append-only while a run is live; this runs after the run
+    has finished and rewrites it atomically (temp file + ``os.replace``), so a
+    crash mid-rewrite leaves the original intact. Trial keys are unchanged, so
+    resume still works. Returns the number of rows that gained labels.
+    """
+    run_dir = Path(run_dir)
+    trials_path = run_dir / "trials.jsonl"
+    rows = _read_jsonl(trials_path)
+    if not rows:
+        return 0
+    judged = {
+        rec.get("trial_key"): rec["labels"]
+        for rec in _read_jsonl(run_dir / "judged.jsonl")
+        if rec.get("judge_id") == spec.judge_id and rec.get("labels")
+    }
+    changed = 0
+    for row in rows:
+        labels = judged.get(row.get("trial_key"))
+        if labels is not None:
+            row["judge"] = {"judge_id": spec.judge_id, "labels": labels}
+            changed += 1
+    if changed:
+        tmp = trials_path.with_suffix(".jsonl.tmp")
+        with tmp.open("w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        tmp.replace(trials_path)
+    return changed
+
+
 def aggregate_labels(run_dir: str | Path, spec: JudgeSpec) -> dict[str, dict[str, Any]]:
     """Mean of every mapped label field over the judged rows.
 

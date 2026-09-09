@@ -36,7 +36,7 @@ from bench_v2.helpers.dataset import read_items
 from bench_v2.helpers.prompts import load_json, render
 from bench_v2.helpers.readers import detect_refusal, refusal_match, word_count
 from bench_v2.helpers.transcript import build_scheme_messages
-from bench_v2.judge import aggregate_labels, judge_run
+from bench_v2.judge import aggregate_labels, attach_judge, judge_run
 from bench_v2.paths import items_dir, runs_dir
 from bench_v2.tasks.s1_speech.judge_spec import JUDGE
 from bench_v2.types import Conversation, Item, Outcome, ProbePoint, Response, Trial
@@ -203,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.phase in {"judge", "all"}:
         # --- stage 4: judge the answers (needs an API key) -------------------
         judge_run(OUT_DIR, JUDGE, limit=args.limit)
+        attach_judge(OUT_DIR, JUDGE)   # fold the labels into trials.jsonl
 
     if args.phase in {"summary", "all"}:
         # --- stage 5: summarize the dependent variable ----------------------
