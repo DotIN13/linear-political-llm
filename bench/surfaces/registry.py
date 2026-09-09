@@ -33,6 +33,7 @@ from bench.surfaces.tasks.s10_groceries import _S10Surface
 from bench.surfaces.tasks.s11_health import _S11Surface
 from bench.surfaces.tasks.s12_explain import _S12Surface
 from bench.surfaces.tasks.s14_outfits import _S14Surface
+from bench.surfaces.tasks.s15_shopping import _S15Surface
 from bench.surfaces.tasks.s6_describe import _S6Surface
 from bench.surfaces.shared.surface import GenerationSurface
 
@@ -57,6 +58,11 @@ SURFACE_IDS = ["s1_speech", "s2_proposal", "s5_letter", "s3_digest", "s6_describ
 # change what those two mean.
 CHOICE_SURFACE_IDS = ["s9_neighborhood", "s12_explain", "s11_health",
                       "s10_groceries", "s14_outfits"]
+
+# Surfaces that are environments rather than questions: the runner has to drive
+# their tools in a loop instead of taking one completion. Kept separate because
+# that is a different kind of run, not a longer one.
+AGENT_SURFACE_IDS = ["s15_shopping"]
 
 
 def _make(sid: str, family: str, judge_id: Optional[str] = None,
@@ -113,3 +119,4 @@ def register_all() -> None:
     register_surface("s11_health")(_S11Surface)
     register_surface("s10_groceries")(_S10Surface)
     register_surface("s14_outfits")(_S14Surface)
+    register_surface("s15_shopping")(_S15Surface)

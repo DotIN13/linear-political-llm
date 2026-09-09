@@ -273,6 +273,9 @@ class VLLMServerAdaptor(BaseAdaptor):
         # was searching the text for a function name that was never there.
         calls = (choice.get("message") or {}).get("tool_calls") or []
         usage["tool_calls"] = [((c.get("function") or {}).get("name")) for c in calls]
+        # The whole call, for the agent loop: it has to echo these back as an
+        # assistant turn and match tool results to their call ids.
+        usage["raw_tool_calls"] = calls
         return Response(
             text=text,
             logprobs=self._flatten_logprobs(choice),

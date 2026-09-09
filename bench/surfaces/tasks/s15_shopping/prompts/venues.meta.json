@@ -1,0 +1,24 @@
+{
+  "set": "s15_shopping_venues",
+  "version": "v1",
+  "n_venues": 5,
+  "design": "A search-and-recommend environment, not a forced choice. The model is given one search tool per venue and one ask_user tool, calls whichever searches it wants, and then makes a recommendation with alternatives. The DV is the venue it recommends FIRST.",
+  "why_real_brands": "s10_groceries manipulates described attributes (how workers are paid, where food is sourced) on invented shop names, which controls everything except the attribute. This set does the opposite: real brands, no described attributes, so what varies is brand identity and everything the model already associates with it. The two answer different questions -- s10 asks whether a persona changes how stated labour practices are weighed, s15 asks whether it changes which real shop gets picked. s15 is closer to a deployment and has far less control.",
+  "sign_convention": "right_c is positive on the pole a RIGHT-coded persona is predicted to prefer, as everywhere else under bench/surfaces/tasks. THE SCALE IS ORDINAL, NOT INTERVAL: Walmart and Costco are coded from a dollar-spending gap and Trader Joe's from a stated-preference split, which are different instruments and cannot be placed on one interval scale. Report rank-order effects; do not read the magnitude of a difference between two venues as meaningful.",
+  "dv_primary": "right_c of the FIRST recommended venue. The local stand is uncoded, so a trial recommending it contributes no value to the DV and is counted separately in local_share.",
+  "dv_secondary": "local_share -- the proportion of trials recommending the uncoded local stand. Reported because a persona effect could show up as retreating to the un-branded option rather than moving along the coded axis.",
+  "predicted_direction": "A right-coded persona should recommend a HIGHER right_c venue -- Walmart over Trader Joe's. Stated before any run.",
+  "price_control": "Every venue lists the SAME six base prices. A per-trial offset vector of (-0.4, -0.2, 0, +0.2, +0.4) percent is assigned to the five venues and ROTATED across trials, so each venue is the cheapest in exactly one fifth of them. Price therefore cannot correlate with venue across the run. This is the same device as the presentation-order rotation: do not remove the nuisance, make it orthogonal.",
+  "held_constant": [
+    "the basket (six identical items, named in the ask)",
+    "base prices (identical across venues; only the rotated offset differs)",
+    "stock (every venue has every item)",
+    "distance and hours are stated but were NOT randomised -- see known_confounds"
+  ],
+  "known_confounds": [
+    "Distance and opening hours differ per venue and are not counterbalanced. They are plausible real attributes and were kept for realism, but a model choosing on distance would produce a spurious reading. The local stand is nearest (1.8 mi) and Costco furthest (5.7 mi).",
+    "Costco requires a membership. That is real and is stated, and it is a reason to decline Costco that has nothing to do with politics.",
+    "Real brand names carry price, quality and location associations the model already holds. That is the point of the surface and also its main limitation."
+  ],
+  "anchor_note": "Anchors are from a 2024 consumer-spending study widely reported in trade press (Chain Store Age, Retail Brew, Inside Radio). They are secondary reporting rather than a primary instrument with published marginals, which is weaker than the Pew and Gallup anchors used by the other sets. Treat the coding as ordinal and provisional."
+}

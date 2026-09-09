@@ -45,8 +45,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from bench.paths import items_dir, runs_dir
 from bench.registry import get_surface
+from bench.surfaces.shared.agentloop import run_agent
 from bench.store import measurement_rev
-from bench.surfaces.registry import register_all
+from bench.surfaces.registry import AGENT_SURFACE_IDS, register_all
 from bench.types import Item
 
 register_all()
@@ -56,6 +57,11 @@ BUCKETS = ("low", "mid", "high")
 ITEMS_PER_BUCKET = 6
 SCHEMES = ("chat", "agentic")
 SURFACES = ["s9_neighborhood", "s12_explain", "s11_health", "s10_groceries", "s14_outfits"]
+# s15_shopping is an environment, not a question: the runner drives its tools in a
+# loop. Kept out of SURFACES so `--phase run` stays the five-surface run, and added
+# with --with-agent.
+AGENT_SURFACES = list(AGENT_SURFACE_IDS)
+PRICE_ROTATIONS = 5          # s15: each venue is cheapest in exactly one fifth
 
 ITEMS_FILE = os.path.join(items_dir(), "explore_bucket_v1.jsonl")
 OUT_DIR = runs_dir("probe_choice_five")
@@ -109,9 +115,10 @@ def pool_size(surface: Any, qid: str) -> int:
     return len(surface.by_scenario[qid])
 
 
-def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def build_plan(items: Sequence[Dict[str, Any]],
+               surfaces: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
     plan: List[Dict[str, Any]] = []
-    for sid in SURFACES:
+    for sid in (surfaces if surfaces is not None else SURFACES):
         surface = get_surface(sid)()
         for qid in surface.question_ids():
             orders = matched_orders(pool_size(surface, qid))
@@ -132,6 +139,32 @@ def build_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return plan
 
 
+def build_agent_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """s15_shopping. Same personas and schemes; the extra factor is the price
+    rotation, which is what makes price orthogonal to venue across the run."""
+    plan: List[Dict[str, Any]] = []
+    for sid in AGENT_SURFACES:
+        surface = get_surface(sid)()
+        n = len(surface.rows)
+        orders = matched_orders(n)
+        for scheme in SCHEMES:
+            for row in items:
+                item = Item.from_dict(row)
+                peers = [r["item_id"] for r in items if r["bucket"] == row["bucket"]]
+                idx = peers.index(item.item_id)
+                for order, arm in (orders[idx * 2], orders[idx * 2 + 1]):
+                    rot = (idx * 2 + (0 if arm == "fwd" else 1)) % PRICE_ROTATIONS
+                    trial = surface.build(item, "photos", {
+                        "scheme": scheme, "order": list(order), "price_rotation": rot})
+                    plan.append({
+                        "surface": sid, "qid": "recommend", "scheme": scheme,
+                        "order_arm": arm, "bucket": row["bucket"], "item_id": item.item_id,
+                        "image_mean": item.image_mean, "trial": trial,
+                        "_surface": surface, "_agent": True, "price_rotation": rot,
+                    })
+    return plan
+
+
 # --------------------------------------------------------------------------- #
 def phase_run(limit: int = 0) -> int:
     from bench.adaptors.vllm_server import VLLMServerAdaptor
@@ -146,7 +179,10 @@ def phase_run(limit: int = 0) -> int:
     rev = measurement_rev(note=f"adaptor={adaptor.name}")
     print(f"[run] measurement_rev={rev}", flush=True)
 
-    plan = build_plan(load_items())
+    items = load_items()
+    plan = build_plan(items)
+    if WITH_AGENT[0]:
+        plan += build_agent_plan(items)
     if limit:
         plan = plan[:limit]
     print(f"[run] {len(plan)} trials -> {trials_path()}", flush=True)
@@ -157,6 +193,31 @@ def phase_run(limit: int = 0) -> int:
         for i, entry in enumerate(plan):
             started = time.time()
             trial = entry["trial"]
+            if entry.get("_agent"):
+                calls, transcript, err = run_agent(
+                    adaptor, trial, entry["_surface"], terminal="ask_user")
+                read = dict(entry["_surface"].read_recommendation(calls))
+                if err:
+                    n_err += 1
+                if not read.get("parsed"):
+                    n_unparsed += 1
+                handle.write(json.dumps({
+                    "surface": entry["surface"], "qid": entry["qid"], "scheme": entry["scheme"],
+                    "order_arm": entry["order_arm"], "bucket": entry["bucket"],
+                    "item_id": entry["item_id"], "image_mean": entry["image_mean"],
+                    "order": list(trial.variant.get("order") or []),
+                    "price_rotation": entry["price_rotation"],
+                    "n_turns": len(transcript), "error": err,
+                    "ms": (time.time() - started) * 1000.0, "measurement_rev": rev,
+                    "adaptor": adaptor.name, "model": adaptor.model, "seed": SEED,
+                    "trial_key": f"{entry['surface']}/{entry['qid']}/{entry['scheme']}/"
+                                 f"{entry['order_arm']}/{entry['item_id']}/{rev}",
+                    **read}, ensure_ascii=False) + "\n")
+                handle.flush()
+                if (i + 1) % 25 == 0 or i + 1 == len(plan):
+                    print(f"[run] {i + 1}/{len(plan)}  errors={n_err}  unparsed={n_unparsed}",
+                          flush=True)
+                continue
             try:
                 resp = adaptor.run(trial)
                 # `run` RETURNS Response(error=...) rather than raising -- a payload
@@ -209,9 +270,15 @@ def phase_run(limit: int = 0) -> int:
     return 1 if n_err else 0
 
 
+WITH_AGENT = [False]
+
+
 def phase_plan() -> int:
     """Build every trial and print the shape. No GPU, no model."""
-    plan = build_plan(load_items())
+    items = load_items()
+    plan = build_plan(items)
+    if WITH_AGENT[0]:
+        plan += build_agent_plan(items)
     counts: Dict[Tuple[str, str], int] = defaultdict(int)
     for e in plan:
         counts[(e["surface"], e["qid"])] += 1
@@ -236,7 +303,10 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--phase", default="plan", help="plan | run | report")
     p.add_argument("--limit", type=int, default=0)
+    p.add_argument("--with-agent", action="store_true",
+                   help="also run s15_shopping, which drives its tools in a loop")
     a = p.parse_args()
+    WITH_AGENT[0] = bool(a.with_agent)
     codes = []
     for phase in a.phase.split(","):
         phase = phase.strip()

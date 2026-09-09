@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=01:30:00
+#SBATCH --time=02:00:00
 #SBATCH --output=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/probe_choice_five/slurm-%j.out
 #SBATCH --error=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/probe_choice_five/slurm-%j.err
 #
@@ -108,8 +108,9 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 
 PY=${PY:-/home/tzhang3/envs/linear-probe/bin/python}
-echo "[sbatch] client: $PY -m bench.pilots.probe_choice_five --phase run" >&2
-"$PY" -m bench.pilots.probe_choice_five --phase run
+echo "[sbatch] client: $PY -m bench.pilots.probe_choice_five --phase run ${PHASE_ARGS:---with-agent}" >&2
+PHASE_ARGS=${PHASE_ARGS:---with-agent}
+"$PY" -m bench.pilots.probe_choice_five --phase run $PHASE_ARGS
 RC=$?
 
 echo "[sbatch] client exited rc=$RC" >&2
