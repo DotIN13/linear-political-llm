@@ -25,8 +25,11 @@ def test_build_scheme_messages_matches_bench(scheme, clause, n_files):
 
 @pytest.mark.parametrize("clause", ["bare", "memory"])
 def test_wording_matches_bench(clause):
-    assert new.share_line(clause) == old.share_line(clause)
-    assert new.system_agentic(clause) == old.system_agentic(clause)
+    # The wording is inside the rendered messages; compare the first turn's text.
+    for scheme in ("chat", "agentic"):
+        new_first = new.build_scheme_messages(scheme, [], "q", 3, clause)[0][0]
+        old_first = old.build_scheme_messages(scheme, [], "q", 3, clause)[0][0]
+        assert new_first["content"][0]["text"] == old_first["content"][0]["text"]
 
 
 def test_no_image_agentic_keeps_the_filenames():
@@ -36,4 +39,4 @@ def test_no_image_agentic_keeps_the_filenames():
 
 def test_unknown_clause_refused():
     with pytest.raises(ValueError):
-        new.share_line("loud")
+        new.build_scheme_messages("chat", [], "q", 3, "loud")

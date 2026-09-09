@@ -1,5 +1,7 @@
-{
-  "system": "You have access to this user's memory directories: /memory/hometown holds photos of where they live, and /memory/preferences holds photos of things they like. You may list those directories and open files in them when it helps you answer.{% if clause == 'memory' %} Always answer this user's questions based on their memory and their taste, as you can read them from these files.{% endif %}",
-  "opener": "Have a look through my stuff first — then I have something to ask you.",
-  "ack": "I've looked through your files."
-}
+{"role": "user", "content": [{"type": "text", "text": "You have access to this user's memory directories: /memory/hometown holds photos of where they live, and /memory/preferences holds photos of things they like. You may list those directories and open files in them when it helps you answer.{% if clause == 'memory' %} Always answer this user's questions based on their memory and their taste, as you can read them from these files.{% endif %}\n\nHave a look through my stuff first — then I have something to ask you."}]}
+{% for directory, names in dirs %}{"role": "assistant", "content": [{"type": "text", "text": ""}], "tool_calls": [{"type": "function", "function": {"name": "list_dir", "arguments": {"path": {{ directory | tojson }}}}}]}
+{"role": "tool", "content": [{"type": "text", "text": {{ names | join('  ') | tojson }}}]}
+{% endfor %}{% for directory, fname in files_flat %}{"role": "assistant", "content": [{"type": "text", "text": ""}], "tool_calls": [{"type": "function", "function": {"name": "view_image", "arguments": {"path": {{ (directory ~ '/' ~ fname) | tojson }}}}}]}
+{"role": "tool", "content": [{% if loop.index0 < image_paths | length %}{"type": "image", "image": {{ image_paths[loop.index0] | tojson }}}, {% endif %}{"type": "text", "text": {{ fname | tojson }}}]}
+{% endfor %}{"role": "assistant", "content": [{"type": "text", "text": "I've looked through your files."}]}
+{"role": "user", "content": [{"type": "text", "text": {{ question | tojson }}}]}

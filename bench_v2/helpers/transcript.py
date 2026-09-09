@@ -1,16 +1,15 @@
 """How the persona is delivered: the chat scheme and the agentic scheme.
 
+The whole conversation structure lives in ``templates/chat.j2`` and
+``templates/agentic.j2``, one JSON object per line. This module only fills in the
+data a template cannot know: the images, the question, the persona clause, and
+which files sit in which memory directory. Roles, turn order and wording are the
+template's.
+
 The shared prefix -- everything before the final question -- is byte-identical
 across all questions within a scheme, which is what makes ``s_pre`` comparable
-across questions *by construction*. That invariant is the reason this is one shared
-module and not a copy per question.
-
-The wording lives in ``templates/chat.j2`` and ``templates/agentic.j2``, each
-rendered with the persona ``clause`` (``bare``/``memory``). The message
-*structure* -- which turns, in which order, with which images and tool calls --
-stays here, because it is code, not prose. A wording edit is a template edit; the
-parity test builds every scheme x clause and compares to the old ``bench``
-transcript.
+across questions *by construction*. The parity test builds every scheme x clause
+and compares to the old ``bench`` transcript.
 """
 
 from __future__ import annotations
@@ -24,55 +23,22 @@ from bench_v2.helpers.prompts import render
 _TEMPLATES = Path(__file__).resolve().parent / "templates"
 PERSONA_CLAUSES = ("bare", "memory")
 
-
-def _strings(path: Path, clause: str = "bare") -> Dict[str, str]:
-    """One scheme's wording for one persona clause, from its own template."""
-    if clause not in PERSONA_CLAUSES:
-        raise ValueError(f"unknown persona clause {clause!r}; expected {PERSONA_CLAUSES}")
-    return json.loads(render(path, clause=clause))
-
-
-def share_line(clause: str = "bare") -> str:
-    return _strings(_TEMPLATES / "chat.j2", clause)["share_line"]
-
-
-def system_agentic(clause: str = "bare") -> str:
-    return _strings(_TEMPLATES / "agentic.j2", clause)["system"]
-
-
-# Back-compat module constants (clause="bare"); the old round pilots import these.
-SHARE_LINE = _strings(_TEMPLATES / "chat.j2")["share_line"]
-ASSISTANT_TURN_1 = _strings(_TEMPLATES / "chat.j2")["assistant_turn_1"]
-CHAT_USER_TURN_2 = _strings(_TEMPLATES / "chat.j2")["chat_user_turn_2"]
-ASSISTANT_TURN_2 = _strings(_TEMPLATES / "chat.j2")["assistant_turn_2"]
-SYSTEM_AGENTIC = _strings(_TEMPLATES / "agentic.j2")["system"]
-AGENTIC_OPENER = _strings(_TEMPLATES / "agentic.j2")["opener"]
-AGENTIC_ACK = _strings(_TEMPLATES / "agentic.j2")["ack"]
-
-
-# --- agentic scheme layout ---------------------------------------------------
 # Two directories rather than one flat /memory/user, so the *names* carry the same
 # information the chat share line carries: these images are where the person lives
-# and what they like. The split is a label we attach, not a property of the photo:
-# the first two files go in hometown, the third in preferences, the same way for
-# every persona.
+# and what they like. The split is a label we attach, not a property of the photo.
 MEMORY_DIRS = ["/memory/hometown", "/memory/preferences"]
 
-# The filenames are fixed strings, not generated, so that a transcript is
-# reproducible from the file rather than from a random seed. Order is the order
-# the item's `image_paths` are attached in, so pool position i always names image i.
+# Fixed filenames, not generated, so a transcript is reproducible from the file.
 _FILENAME_POOL = ["img_0417.jpg", "img_0903.jpg", "img_3011.jpg",
                   "img_1188.jpg", "img_2274.jpg", "img_0655.jpg",
                   "img_3902.jpg", "img_1461.jpg", "img_2830.jpg",
                   "img_0247.jpg"]
-# Two thirds of the photos go in hometown, rounded -- 3 -> 2+1, 10 -> 7+3. The
-# 2:1 shape is held across image counts so that changing *how many* photos the
-# model sees does not also change *how they are labelled*.
+# Two thirds of the photos go in hometown, rounded -- 3 -> 2+1, 10 -> 7+3.
 HOMETOWN_SHARE = 2 / 3
 
 
 def files_by_dir(n_files: int = 3) -> List[Tuple[str, List[str]]]:
-    """Which filenames sit in which memory directory, for `n_files` photos."""
+    """Which filenames sit in which memory directory, for ``n_files`` photos."""
     if not 1 <= n_files <= len(_FILENAME_POOL):
         raise ValueError(
             f"n_files={n_files} outside 1..{len(_FILENAME_POOL)}; add names to "
@@ -82,9 +48,9 @@ def files_by_dir(n_files: int = 3) -> List[Tuple[str, List[str]]]:
     n_home = round(n_files * HOMETOWN_SHARE)
     n_home = max(1, min(n_home, n_files - 1)) if n_files > 1 else 1
     names = _FILENAME_POOL[:n_files]
-    out = [("/memory/hometown", names[:n_home])]
+    out = [(MEMORY_DIRS[0], names[:n_home])]
     if n_files > 1:
-        out.append(("/memory/preferences", names[n_home:]))
+        out.append((MEMORY_DIRS[1], names[n_home:]))
     return out
 
 
@@ -107,63 +73,33 @@ TOOLS = [
 ]
 
 
-def _tool_call(name: str, path: str) -> Dict[str, Any]:
-    return {
-        "role": "assistant",
-        "content": [{"type": "text", "text": ""}],
-        "tool_calls": [{"type": "function",
-                        "function": {"name": name, "arguments": {"path": path}}}],
-    }
+def _messages(path: Path, **context: Any) -> List[Dict[str, Any]]:
+    """Render a template to one JSON message per line."""
+    rendered = render(path, **context)
+    return [json.loads(line) for line in rendered.splitlines() if line.strip()]
 
 
 def _chat_messages(image_paths: Sequence[str], question: str,
                    clause: str = "bare") -> List[Dict[str, Any]]:
-    s = _strings(_TEMPLATES / "chat.j2", clause)
-    first = [{"type": "image", "image": p} for p in image_paths]
-    first.append({"type": "text", "text": s["share_line"]})
-    return [
-        {"role": "user", "content": first},
-        {"role": "assistant", "content": [{"type": "text", "text": s["assistant_turn_1"]}]},
-        {"role": "user", "content": [{"type": "text", "text": s["chat_user_turn_2"]}]},
-        {"role": "assistant", "content": [{"type": "text", "text": s["assistant_turn_2"]}]},
-        {"role": "user", "content": [{"type": "text", "text": question}]},
-    ]
+    if clause not in PERSONA_CLAUSES:
+        raise ValueError(f"unknown persona clause {clause!r}; expected {PERSONA_CLAUSES}")
+    return _messages(_TEMPLATES / "chat.j2", image_paths=list(image_paths),
+                     question=question, clause=clause)
 
 
 def _agentic_messages(image_paths: Sequence[str], question: str,
-                     n_files: int = 3, clause: str = "bare") -> List[Dict[str, Any]]:
-    """One list_dir per memory directory, then one view_image per file.
-
-    The transcript is scripted -- the model does not choose to look -- because
-    that is the only way to hold the images constant against the chat scheme.
-    `n_files` is separate from `len(image_paths)` so the no-image baseline keeps
-    every filename while dropping the pixels.
-    """
-    s = _strings(_TEMPLATES / "agentic.j2", clause)
-    files = files_by_dir(n_files)
-    opener = s["system"] + "\n\n" + s["opener"]
-    msgs: List[Dict[str, Any]] = [{"role": "user", "content": [{"type": "text", "text": opener}]}]
-    for directory, names in files:
-        msgs.append(_tool_call("list_dir", directory))
-        msgs.append({"role": "tool", "content": [{"type": "text", "text": "  ".join(names)}]})
-    i = 0
-    for directory, names in files:
-        for fname in names:
-            msgs.append(_tool_call("view_image", f"{directory}/{fname}"))
-            content: List[Dict[str, Any]] = []
-            if i < len(image_paths):
-                content.append({"type": "image", "image": image_paths[i]})
-            content.append({"type": "text", "text": fname})
-            msgs.append({"role": "tool", "content": content})
-            i += 1
-    msgs.append({"role": "assistant", "content": [{"type": "text", "text": s["ack"]}]})
-    msgs.append({"role": "user", "content": [{"type": "text", "text": question}]})
-    return msgs
+                      n_files: int = 3, clause: str = "bare") -> List[Dict[str, Any]]:
+    if clause not in PERSONA_CLAUSES:
+        raise ValueError(f"unknown persona clause {clause!r}; expected {PERSONA_CLAUSES}")
+    dirs = files_by_dir(n_files)
+    files_flat = [[directory, fname] for directory, names in dirs for fname in names]
+    return _messages(_TEMPLATES / "agentic.j2", image_paths=list(image_paths),
+                     question=question, clause=clause, dirs=dirs, files_flat=files_flat)
 
 
 def build_scheme_messages(scheme: str, image_paths: Sequence[str], question: str,
                           n_files: Optional[int] = None, clause: str = "bare"):
-    """Build one scheme's message list."""
+    """Build one scheme's message list, or raise on an unknown scheme."""
     n = n_files if n_files is not None else (len(image_paths) or 3)
     if scheme == "chat":
         return _chat_messages(image_paths, question, clause), None
