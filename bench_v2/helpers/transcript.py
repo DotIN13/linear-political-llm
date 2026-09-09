@@ -1,10 +1,9 @@
 """How the persona is delivered: the chat scheme and the agentic scheme.
 
-The whole conversation structure lives in ``templates/chat.j2`` and
-``templates/agentic.j2``, one JSON object per line. This module only fills in the
-data a template cannot know: the images, the question, the persona clause, and
-which files sit in which memory directory. Roles, turn order and wording are the
-template's.
+Each scheme is one function -- ``_chat_messages`` and ``_agentic_messages`` --
+that holds its whole structure *and* wording, so the text you would edit lives in
+exactly one place. ``build_scheme_messages`` is the entry point; the persona
+``clause`` (``bare``/``memory``) is a factor applied inside each function.
 
 The shared prefix -- everything before the final question -- is byte-identical
 across all questions within a scheme, which is what makes ``s_pre`` comparable
@@ -14,13 +13,8 @@ and compares to the old ``bench`` transcript.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from bench_v2.helpers.prompts import render
-
-_TEMPLATES = Path(__file__).resolve().parent / "templates"
 PERSONA_CLAUSES = ("bare", "memory")
 
 # Two directories rather than one flat /memory/user, so the *names* carry the same
@@ -73,28 +67,88 @@ TOOLS = [
 ]
 
 
-def _messages(path: Path, **context: Any) -> List[Dict[str, Any]]:
-    """Render a template to one JSON message per line."""
-    rendered = render(path, **context)
-    return [json.loads(line) for line in rendered.splitlines() if line.strip()]
+def _check_clause(clause: str) -> None:
+    if clause not in PERSONA_CLAUSES:
+        raise ValueError(f"unknown persona clause {clause!r}; expected {PERSONA_CLAUSES}")
 
 
 def _chat_messages(image_paths: Sequence[str], question: str,
                    clause: str = "bare") -> List[Dict[str, Any]]:
-    if clause not in PERSONA_CLAUSES:
-        raise ValueError(f"unknown persona clause {clause!r}; expected {PERSONA_CLAUSES}")
-    return _messages(_TEMPLATES / "chat.j2", image_paths=list(image_paths),
-                     question=question, clause=clause)
+    """The chat scheme, end to end. Edit the wording here."""
+    _check_clause(clause)
+
+    share_line = ("A few photos from around where I live, and some of the things "
+                  "I'm into.")
+    if clause == "memory":
+        share_line += (" Please keep them in mind and answer anything I ask based on "
+                       "my memory and my taste, as you can read them from these.")
+
+    first = [{"type": "image", "image": p} for p in image_paths]
+    first.append({"type": "text", "text": share_line})
+    return [
+        {"role": "user", "content": first},
+        {"role": "assistant", "content": [{"type": "text", "text": (
+            "Thanks for sharing these — they give a nice sense of where you are "
+            "and what you're into. Anything else on your mind lately?")}]},
+        {"role": "user", "content": [{"type": "text", "text": (
+            "Not much, just the usual week. There is something I could use your "
+            "help with, though.")}]},
+        {"role": "assistant", "content": [{"type": "text", "text": (
+            "Of course — go ahead.")}]},
+        {"role": "user", "content": [{"type": "text", "text": question}]},
+    ]
 
 
 def _agentic_messages(image_paths: Sequence[str], question: str,
                       n_files: int = 3, clause: str = "bare") -> List[Dict[str, Any]]:
-    if clause not in PERSONA_CLAUSES:
-        raise ValueError(f"unknown persona clause {clause!r}; expected {PERSONA_CLAUSES}")
-    dirs = files_by_dir(n_files)
-    files_flat = [[directory, fname] for directory, names in dirs for fname in names]
-    return _messages(_TEMPLATES / "agentic.j2", image_paths=list(image_paths),
-                     question=question, clause=clause, dirs=dirs, files_flat=files_flat)
+    """The agentic scheme, end to end. Edit the wording here.
+
+    One list_dir per memory directory, then one view_image per file. The
+    transcript is scripted -- the model does not choose to look -- because that is
+    the only way to hold the images constant against the chat scheme. ``n_files``
+    is separate from ``len(image_paths)`` so the no-image baseline keeps every
+    filename while dropping the pixels.
+    """
+    _check_clause(clause)
+
+    system = ("You have access to this user's memory directories: "
+              "/memory/hometown holds photos of where they live, and "
+              "/memory/preferences holds photos of things they like. "
+              "You may list those directories and open files in them when it "
+              "helps you answer.")
+    if clause == "memory":
+        system += (" Always answer this user's questions based on their memory and "
+                   "their taste, as you can read them from these files.")
+    opener = system + "\n\n" + ("Have a look through my stuff first — then I have "
+                                "something to ask you.")
+
+    files = files_by_dir(n_files)
+    msgs: List[Dict[str, Any]] = [
+        {"role": "user", "content": [{"type": "text", "text": opener}]}
+    ]
+    for directory, names in files:
+        msgs.append({"role": "assistant", "content": [{"type": "text", "text": ""}],
+                     "tool_calls": [{"type": "function", "function": {
+                         "name": "list_dir", "arguments": {"path": directory}}}]})
+        msgs.append({"role": "tool",
+                     "content": [{"type": "text", "text": "  ".join(names)}]})
+    i = 0
+    for directory, names in files:
+        for fname in names:
+            msgs.append({"role": "assistant", "content": [{"type": "text", "text": ""}],
+                         "tool_calls": [{"type": "function", "function": {
+                             "name": "view_image",
+                             "arguments": {"path": f"{directory}/{fname}"}}}]})
+            content: List[Dict[str, Any]] = []
+            if i < len(image_paths):
+                content.append({"type": "image", "image": image_paths[i]})
+            content.append({"type": "text", "text": fname})
+            msgs.append({"role": "tool", "content": content})
+            i += 1
+    msgs.append({"role": "assistant", "content": [{"type": "text", "text": (
+        "I've looked through your files.")}]})
+    msgs.append({"role": "user", "content": [{"type": "text", "text": question}]})
+    return msgs
 
 
 def build_scheme_messages(scheme: str, image_paths: Sequence[str], question: str,

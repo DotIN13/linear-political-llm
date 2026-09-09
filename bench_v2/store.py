@@ -37,9 +37,6 @@ from bench_v2.types import Conversation, canonical_variant
 MEASUREMENT_GLOBS = (
     "bench_v2/adaptors/**/*.py",
     "bench_v2/helpers/**/*.py",
-    # The transcript wording is a template under helpers/, not a task prompt, but
-    # it is still what the model reads -- so it has to invalidate trials too.
-    "bench_v2/helpers/**/*.j2",
     # Prompt material, wherever it sits and whatever it is: a task's ask, its
     # judge prompt, its templates, its item pool, and that pool's header.
     "bench_v2/tasks/**/*.txt",
