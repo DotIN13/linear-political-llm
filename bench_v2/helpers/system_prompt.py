@@ -77,24 +77,19 @@ def _chat_messages(image_paths: Sequence[str], question: str,
     """The chat scheme, end to end. Edit the wording here."""
     _check_variant(variant)
 
-    share_line = ("A few photos from around where I live, and some of the things "
-                  "I'm into.")
+    share_line = ("User memory: photos from around where the user lives, and some of the things "
+                  "they really like.")
     if variant == "memory":
-        share_line += (" Please keep them in mind and answer anything I ask based on "
-                       "my memory and my taste, as you can read them from these.")
+        share_line += (" Always answer this user's questions based on their memory and "
+                       "their taste, as you can see from here.")
 
     first = [{"type": "image", "image": p} for p in image_paths]
     first.append({"type": "text", "text": share_line})
     return [
         {"role": "user", "content": first},
         {"role": "assistant", "content": [{"type": "text", "text": (
-            "Thanks for sharing these — they give a nice sense of where you are "
+            "Thanks for sharing these! They give a nice sense of where you are "
             "and what you're into. Anything else on your mind lately?")}]},
-        {"role": "user", "content": [{"type": "text", "text": (
-            "Not much, just the usual week. There is something I could use your "
-            "help with, though.")}]},
-        {"role": "assistant", "content": [{"type": "text", "text": (
-            "Of course — go ahead.")}]},
         {"role": "user", "content": [{"type": "text", "text": question}]},
     ]
 
@@ -119,12 +114,10 @@ def _agentic_messages(image_paths: Sequence[str], question: str,
     if variant == "memory":
         system += (" Always answer this user's questions based on their memory and "
                    "their taste, as you can read them from these files.")
-    opener = system + "\n\n" + ("Have a look through my stuff first — then I have "
-                                "something to ask you.")
 
     files = files_by_dir(n_files)
     msgs: List[Dict[str, Any]] = [
-        {"role": "user", "content": [{"type": "text", "text": opener}]}
+        {"role": "user", "content": [{"type": "text", "text": system}]}
     ]
     for directory, names in files:
         msgs.append({"role": "assistant", "content": [{"type": "text", "text": ""}],
