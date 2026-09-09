@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=01:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/bench_v2/s3_digest/v1/slurm-%j.out
 #SBATCH --error=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/bench_v2/s3_digest/v1/slurm-%j.err
 #
@@ -30,10 +30,10 @@
 #   sbatch --partition=jevans-gpu --account=pi-jevans --qos=jevans-gpu run.sbatch
 # No --constraint: the 8B model fits on any GPU here and the node name is logged.
 #
-# Usage: sbatch run.sbatch [LIMIT] [CELLS]
-#   LIMIT=1 -> 1 item x 2 conditions x 2 schemes = 4 cells
-#   (s3 re-deals its headlines per item, so no_photos is NOT item-invariant:
-#    it runs per item too)
+# Usage: sbatch run.sbatch [LIMIT]
+#   LIMIT=0 -> every persona (198) x 1 condition (photos) x 4 variants = 792 cells
+#   LIMIT=4 -> the 4-persona smoke (16 cells)
+# The 4 variants are scheme (chat/agentic) x persona variant (no_memory/memory).
 set -uo pipefail
 
 REPO=/project/jevans/tzhang3/dotty-project/linear-political-llm
@@ -45,8 +45,7 @@ MODEL_DIR="$MODELS/Qwen3-VL-8B-Instruct"
 SERVED=qwen3-vl-8b-instruct
 PORT=${PORT:-8000}
 OUT="$REPO/runs/bench_v2/s3_digest/v1"
-LIMIT=${1:-1}
-CELLS=${2:-4}
+LIMIT=${1:-0}
 
 [ -f "$SIF" ] || { echo "[sbatch] no SIF at $SIF" >&2; exit 1; }
 [ -d "$MODEL_DIR" ] || { echo "[sbatch] no model at $MODEL_DIR" >&2; exit 1; }
@@ -108,9 +107,9 @@ for i in $(seq 1 180); do
 done
 [ "$READY" = 1 ] || { echo "[sbatch] server never became ready" >&2; exit 1; }
 
-echo "[sbatch] pilot run: limit=$LIMIT cells=$CELLS" >&2
+echo "[sbatch] pilot run: limit=$LIMIT condition=photos" >&2
 "$PY" -m bench_v2.tasks.s3_digest.v1.pilot run \
-  --adaptor vllm --limit "$LIMIT" --limit-cells "$CELLS" \
+  --adaptor vllm --limit "$LIMIT" --condition photos \
   --items items/explore_bucket_v1.jsonl \
   || { echo "[sbatch] pilot run failed" >&2; exit 1; }
 
