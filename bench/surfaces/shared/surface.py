@@ -95,7 +95,7 @@ class GenerationSurface:
         # the variant because ``trial_key`` dedups on it -- without it a second
         # reading of an identical cell is silently dropped as already-done, which
         # is why no round before this one could measure its own repeatability.
-        unknown = set(variant) - {"scheme", "question", "order", "attribution",
+        unknown = set(variant) - {"scheme", "question", "order", "attribution", "clause",
                                   "order_arm", "rep"}
         if unknown:
             problems.append(f"variant has unknown keys {sorted(unknown)}")
@@ -182,6 +182,13 @@ class GenerationSurface:
             variant["rep"] = int(variant["rep"])
         attribution = str(variant.get("attribution", "shown"))
         variant["attribution"] = attribution
+        # The persona clause: `bare` is the original stimulus, `memory` adds the
+        # instruction to answer from the user's memory and taste. In the variant
+        # because it is an experimental factor, so it lands in the trial key and
+        # two arms of the same persona are different trials rather than the same
+        # one measured twice.
+        clause = str(variant.get("clause", "bare"))
+        variant["clause"] = clause
         # A caller-supplied order wins over the seeded shuffle. That is what makes
         # order an explicit, enumerable factor instead of a hidden per-item random
         # draw -- which s3 needs, because the position-1 selection rate measured
@@ -211,7 +218,8 @@ class GenerationSurface:
             # The item's own photo count, not len(image_paths): condition E strips
             # the pixels and must keep the same number of files in the transcript.
             n_files = len(item.image_paths) or 3
-            messages, tools = build_scheme_messages(scheme, image_paths, question, n_files)
+            messages, tools = build_scheme_messages(scheme, image_paths, question,
+                                                    n_files, clause)
         # Applied whenever the surface has one. No handle, no on/off.
         prefill_text = self.prefill_text
 
@@ -227,6 +235,7 @@ class GenerationSurface:
             meta={
                 "family": self.family,
                 "scheme": scheme,
+                "clause": clause,
                 "question_id": qid,
                 "prefill": prefill_text,
                 "question": question,

@@ -234,3 +234,38 @@ def test_a_hermes_name_the_surface_did_not_offer_is_ignored():
 def test_malformed_hermes_json_is_not_a_guess():
     from bench.surfaces.shared.picks import parse_hermes_tool_call
     assert parse_hermes_tool_call('<tool_call>{not json}</tool_call>') is None
+
+
+# --- the persona clause as a factor --------------------------------------------
+@pytest.mark.parametrize("clause,present", [("bare", False), ("memory", True)])
+def test_the_persona_clause_is_a_factor_not_a_setting(clause, present, item):
+    """Crossed inside one run so both arms share personas and order rotations by
+    construction, and the contrast can be read within persona."""
+    from bench.surfaces.shared.transcript import share_line
+    t = surface("s9_neighborhood").build(item, "photos", {"scheme": "chat", "clause": clause})
+    said = t.conversation.messages[0]["content"][-1]["text"]
+    assert said == share_line(clause)
+    assert ("my memory and my taste" in said) is present
+    assert t.meta["clause"] == clause
+
+
+def test_the_clause_reaches_the_agentic_scheme_too(item):
+    from bench.surfaces.shared.transcript import system_agentic
+    t = surface("s9_neighborhood").build(item, "photos", {"scheme": "agentic", "clause": "memory"})
+    assert system_agentic("memory") in t.conversation.messages[0]["content"][-1]["text"]
+
+
+def test_the_two_clauses_are_different_trials(item):
+    """Not the same trial measured twice -- the key has to separate them or the
+    store would dedup one arm away."""
+    s = surface("s9_neighborhood")
+    a = s.build(item, "photos", {"scheme": "chat", "clause": "bare"})
+    b = s.build(item, "photos", {"scheme": "chat", "clause": "memory"})
+    assert a.variant["clause"] != b.variant["clause"]
+    assert a.conversation.messages[0] != b.conversation.messages[0]
+
+
+def test_an_unknown_clause_is_refused(item):
+    from bench.surfaces.shared.transcript import share_line
+    with pytest.raises(ValueError, match="unknown persona clause"):
+        share_line("whatever")

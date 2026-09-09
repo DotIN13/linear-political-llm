@@ -54,8 +54,16 @@ register_all()
 
 SEED = 20260908
 BUCKETS = ("low", "mid", "high")
-ITEMS_PER_BUCKET = 6
 SCHEMES = ("chat", "agentic")
+# The persona clause, crossed. `bare` is the original stimulus; `memory` tells the
+# model to answer from the user's memory and taste. Crossed inside one run so the
+# two arms share personas and order rotations by construction.
+CLAUSES = ("bare", "memory")
+# Raised from 6 on 2026-09-09. The standard error falls with the square root, so
+# 6 -> 22 per bucket cuts it by about 1.9x. The items file holds 66 per bucket, so
+# this is a third of what is available and can go further if it needs to.
+ITEMS_PER_BUCKET_DEFAULT = 22
+ITEMS_PER_BUCKET = ITEMS_PER_BUCKET_DEFAULT
 SURFACES = ["s9_neighborhood", "s12_explain", "s11_health", "s10_groceries", "s14_outfits"]
 # s15_shopping is an environment, not a question: the runner drives its tools in a
 # loop. Kept out of SURFACES so `--phase run` stays the five-surface run, and added
@@ -135,19 +143,22 @@ def build_plan(items: Sequence[Dict[str, Any]],
         for qid in surface.question_ids():
             orders = matched_orders(pool_size(surface, qid))
             for scheme in SCHEMES:
-                for row in items:
-                    item = Item.from_dict(row)
-                    peers = [r["item_id"] for r in items if r["bucket"] == row["bucket"]]
-                    idx = peers.index(item.item_id)
-                    for order, arm in (orders[idx * 2], orders[idx * 2 + 1]):
-                        trial = surface.build(item, "photos", {
-                            "scheme": scheme, "question": qid, "order": list(order)})
-                        plan.append({
-                            "surface": sid, "qid": qid, "scheme": scheme, "order_arm": arm,
-                            "bucket": row["bucket"], "item_id": item.item_id,
-                            "image_mean": item.image_mean, "trial": trial,
-                            "_surface": surface,
-                        })
+                for clause in CLAUSES:
+                    for row in items:
+                        item = Item.from_dict(row)
+                        peers = [r["item_id"] for r in items if r["bucket"] == row["bucket"]]
+                        idx = peers.index(item.item_id)
+                        for order, arm in (orders[idx * 2], orders[idx * 2 + 1]):
+                            trial = surface.build(item, "photos", {
+                                "scheme": scheme, "question": qid, "clause": clause,
+                                "order": list(order)})
+                            plan.append({
+                                "surface": sid, "qid": qid, "scheme": scheme,
+                                "clause": clause, "order_arm": arm,
+                                "bucket": row["bucket"], "item_id": item.item_id,
+                                "image_mean": item.image_mean, "trial": trial,
+                                "_surface": surface,
+                            })
     return plan
 
 
@@ -160,20 +171,23 @@ def build_agent_plan(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
         n = len(surface.rows)
         orders = matched_orders(n)
         for scheme in SCHEMES:
-            for row in items:
-                item = Item.from_dict(row)
-                peers = [r["item_id"] for r in items if r["bucket"] == row["bucket"]]
-                idx = peers.index(item.item_id)
-                for order, arm in (orders[idx * 2], orders[idx * 2 + 1]):
-                    rot = (idx * 2 + (0 if arm == "fwd" else 1)) % PRICE_ROTATIONS
-                    trial = surface.build(item, "photos", {
-                        "scheme": scheme, "order": list(order), "price_rotation": rot})
-                    plan.append({
-                        "surface": sid, "qid": "recommend", "scheme": scheme,
-                        "order_arm": arm, "bucket": row["bucket"], "item_id": item.item_id,
-                        "image_mean": item.image_mean, "trial": trial,
-                        "_surface": surface, "_agent": True, "price_rotation": rot,
-                    })
+            for clause in CLAUSES:
+                for row in items:
+                    item = Item.from_dict(row)
+                    peers = [r["item_id"] for r in items if r["bucket"] == row["bucket"]]
+                    idx = peers.index(item.item_id)
+                    for order, arm in (orders[idx * 2], orders[idx * 2 + 1]):
+                        rot = (idx * 2 + (0 if arm == "fwd" else 1)) % PRICE_ROTATIONS
+                        trial = surface.build(item, "photos", {
+                            "scheme": scheme, "clause": clause,
+                            "order": list(order), "price_rotation": rot})
+                        plan.append({
+                            "surface": sid, "qid": "recommend", "scheme": scheme,
+                            "clause": clause, "order_arm": arm, "bucket": row["bucket"],
+                            "item_id": item.item_id, "image_mean": item.image_mean,
+                            "trial": trial, "_surface": surface, "_agent": True,
+                            "price_rotation": rot,
+                        })
     return plan
 
 
@@ -214,7 +228,7 @@ def phase_run(limit: int = 0) -> int:
                 read = dict(entry["_surface"].read_recommendation(calls))
                 tr.write(json.dumps({
                     "trial_key": f"{entry['surface']}/{entry['qid']}/{entry['scheme']}/"
-                                 f"{entry['order_arm']}/{entry['item_id']}/{rev}",
+                                 f"{entry['clause']}/{entry['order_arm']}/{entry['item_id']}/{rev}",
                     "surface": entry["surface"], "bucket": entry["bucket"],
                     "item_id": entry["item_id"], "scheme": entry["scheme"],
                     "recommended": read.get("recommended"),
@@ -226,6 +240,7 @@ def phase_run(limit: int = 0) -> int:
                     n_unparsed += 1
                 handle.write(json.dumps({
                     "surface": entry["surface"], "qid": entry["qid"], "scheme": entry["scheme"],
+                    "clause": entry["clause"],
                     "order_arm": entry["order_arm"], "bucket": entry["bucket"],
                     "item_id": entry["item_id"], "image_mean": entry["image_mean"],
                     "order": list(trial.variant.get("order") or []),
@@ -234,7 +249,7 @@ def phase_run(limit: int = 0) -> int:
                     "ms": (time.time() - started) * 1000.0, "measurement_rev": rev,
                     "adaptor": adaptor.name, "model": adaptor.model, "seed": SEED,
                     "trial_key": f"{entry['surface']}/{entry['qid']}/{entry['scheme']}/"
-                                 f"{entry['order_arm']}/{entry['item_id']}/{rev}",
+                                 f"{entry['clause']}/{entry['order_arm']}/{entry['item_id']}/{rev}",
                     **read}, ensure_ascii=False) + "\n")
                 handle.flush()
                 if (i + 1) % 25 == 0 or i + 1 == len(plan):
@@ -265,6 +280,7 @@ def phase_run(limit: int = 0) -> int:
 
             rec = {
                 "surface": entry["surface"], "qid": entry["qid"], "scheme": entry["scheme"],
+                "clause": entry["clause"],
                 "order_arm": entry["order_arm"], "bucket": entry["bucket"],
                 "item_id": entry["item_id"], "image_mean": entry["image_mean"],
                 "order": list(trial.variant.get("order") or []),
@@ -272,7 +288,7 @@ def phase_run(limit: int = 0) -> int:
                 "measurement_rev": rev, "adaptor": adaptor.name, "model": adaptor.model,
                 "seed": SEED,
                 "trial_key": f"{entry['surface']}/{entry['qid']}/{entry['scheme']}/"
-                             f"{entry['order_arm']}/{entry['item_id']}/{rev}",
+                             f"{entry['clause']}/{entry['order_arm']}/{entry['item_id']}/{rev}",
                 **read,
             }
             handle.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -331,10 +347,13 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--phase", default="plan", help="plan | run | report")
     p.add_argument("--limit", type=int, default=0)
+    p.add_argument("--items-per-bucket", type=int, default=ITEMS_PER_BUCKET_DEFAULT)
     p.add_argument("--with-agent", action="store_true",
                    help="also run s15_shopping, which drives its tools in a loop")
     a = p.parse_args()
     WITH_AGENT[0] = bool(a.with_agent)
+    global ITEMS_PER_BUCKET
+    ITEMS_PER_BUCKET = int(a.items_per_bucket)
     codes = []
     for phase in a.phase.split(","):
         phase = phase.strip()

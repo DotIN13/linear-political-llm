@@ -6,9 +6,13 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=02:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/probe_choice_five/slurm-%j.out
 #SBATCH --error=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/probe_choice_five/slurm-%j.err
+#
+# Six surfaces, persona clause crossed, 22 personas per bucket: 4,224 trials.
+# ~2.5-3h at the measured 1.85 s/trial, so 6h walltime with room for the agent
+# surface's multi-turn loop.
 #
 # The five forced-choice surfaces: neighbourhood, education, medicine, groceries,
 # clothing. 504 generations, no judge calls -- every DV is read by rule.

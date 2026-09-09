@@ -23,21 +23,38 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 # multiple-choice surfaces, which were measured against it. Two stimulus texts
 # under one name is confusing enough to be worth saying twice; see the longer
 # note there.
-# The second sentence is the manipulation stated out loud, added 2026-09-09.
+# --- the persona clause, an experimental factor ------------------------------
 #
-# Until now the persona was only implied: photos arrived, and whether the model
-# used them was left to it. Eight readings across six surfaces came back at zero,
-# and with the instrument demonstrably working the likeliest explanation was that
-# the manipulation was simply weak -- the model looked at the pictures and then
-# answered as it would have anyway. This says to use them.
+# `bare` is the original stimulus: photos arrive and nothing says to use them.
+# `memory` adds an explicit instruction to answer from the user's memory and taste.
 #
-# It is a stronger stimulus, not a different one: the photos are unchanged and so
-# is everything downstream. The previous run is therefore the without-instruction
-# arm of the same comparison, which is free -- greedy decoding means it would
-# reproduce exactly.
+# It is a FACTOR, not a setting. Comparing two runs would have worked -- greedy
+# decoding makes them reproducible -- but crossing it inside one run means the two
+# arms share the same personas, the same order rotations and the same everything
+# else by construction rather than by argument, and the contrast can be read
+# within persona instead of between runs.
+PERSONA_CLAUSES = ("bare", "memory")
+_MEMORY_CLAUSE = (" Please keep them in mind and answer anything I ask based on my "
+                  "memory and my taste, as you can read them from these.")
+_MEMORY_CLAUSE_AGENTIC = (" Always answer this user's questions based on their memory "
+                          "and their taste, as you can read them from these files.")
+
 SHARE_LINE = ("A few photos from around where I live, and some of the things "
-              "I'm into. Please keep them in mind and answer anything I ask "
-              "based on my memory and my taste, as you can read them from these.")
+              "I'm into.")
+
+
+def share_line(clause: str = "bare") -> str:
+    if clause not in PERSONA_CLAUSES:
+        raise ValueError(f"unknown persona clause {clause!r}; expected {PERSONA_CLAUSES}")
+    return SHARE_LINE + (_MEMORY_CLAUSE if clause == "memory" else "")
+
+
+def system_agentic(clause: str = "bare") -> str:
+    if clause not in PERSONA_CLAUSES:
+        raise ValueError(f"unknown persona clause {clause!r}; expected {PERSONA_CLAUSES}")
+    return SYSTEM_AGENTIC + (_MEMORY_CLAUSE_AGENTIC if clause == "memory" else "")
+
+
 ASSISTANT_TURN_1 = ("Thanks for sharing these — they give a nice sense of where you "
                     "are and what you're into. Anything else on your mind lately?")
 CHAT_USER_TURN_2 = ("Not much, just the usual week. There is something I could use "
@@ -61,9 +78,7 @@ SYSTEM_AGENTIC = ("You have access to this user's memory directories: "
                   "/memory/hometown holds photos of where they live, and "
                   "/memory/preferences holds photos of things they like. "
                   "You may list those directories and open files in them when it "
-                  "helps you answer. Always answer this user's questions based on "
-                  "their memory and their taste, as you can read them from these "
-                  "files.")
+                  "helps you answer.")
 AGENTIC_OPENER = "Have a look through my stuff first — then I have something to ask you."
 AGENTIC_ACK = "I've looked through your files."
 
@@ -140,9 +155,10 @@ def _tool_call(name: str, path: str) -> Dict[str, Any]:
     }
 
 
-def _chat_messages(image_paths: Sequence[str], question: str) -> List[Dict[str, Any]]:
+def _chat_messages(image_paths: Sequence[str], question: str,
+                   clause: str = "bare") -> List[Dict[str, Any]]:
     first = [{"type": "image", "image": p} for p in image_paths]
-    first.append({"type": "text", "text": SHARE_LINE})
+    first.append({"type": "text", "text": share_line(clause)})
     return [
         {"role": "user", "content": first},
         {"role": "assistant", "content": [{"type": "text", "text": ASSISTANT_TURN_1}]},
@@ -153,7 +169,7 @@ def _chat_messages(image_paths: Sequence[str], question: str) -> List[Dict[str, 
 
 
 def _agentic_messages(image_paths: Sequence[str], question: str,
-                     n_files: int = 3) -> List[Dict[str, Any]]:
+                     n_files: int = 3, clause: str = "bare") -> List[Dict[str, Any]]:
     """One list_dir per memory directory, then one view_image per file.
 
     The transcript is scripted -- the model does not choose to look, we insert it
@@ -170,7 +186,7 @@ def _agentic_messages(image_paths: Sequence[str], question: str,
     across `n_files` carries that.
     """
     files = files_by_dir(n_files)
-    opener = SYSTEM_AGENTIC + "\n\n" + AGENTIC_OPENER
+    opener = system_agentic(clause) + "\n\n" + AGENTIC_OPENER
     msgs: List[Dict[str, Any]] = [{"role": "user", "content": [{"type": "text", "text": opener}]}]
     for directory, names in files:
         msgs.append(_tool_call("list_dir", directory))
@@ -193,7 +209,7 @@ def _agentic_messages(image_paths: Sequence[str], question: str,
 
 
 def build_scheme_messages(scheme: str, image_paths: Sequence[str], question: str,
-                          n_files: Optional[int] = None):
+                          n_files: Optional[int] = None, clause: str = "bare"):
     """Build one scheme's message list.
 
     `n_files` defaults to the number of paths given, falling back to 3 when there
@@ -202,7 +218,7 @@ def build_scheme_messages(scheme: str, image_paths: Sequence[str], question: str
     """
     n = n_files if n_files is not None else (len(image_paths) or 3)
     if scheme == "chat":
-        return _chat_messages(image_paths, question), None
+        return _chat_messages(image_paths, question, clause), None
     if scheme == "agentic":
-        return _agentic_messages(image_paths, question, n), TOOLS
+        return _agentic_messages(image_paths, question, n, clause), TOOLS
     raise ValueError(f"unknown scheme {scheme!r}")

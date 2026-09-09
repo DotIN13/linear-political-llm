@@ -148,19 +148,16 @@ def test_the_two_share_lines_are_both_pinned():
     from bench.surfaces.base import SHARE_LINE as CHOICE_SHARE_LINE
     from bench.surfaces.shared.transcript import SHARE_LINE as GENERATION_SHARE_LINE
 
-    # The generation line gained an explicit instruction on 2026-09-09, after eight
-    # readings across six surfaces came back at zero with the instrument
-    # demonstrably working. Deliberate, and re-pinned here rather than loosened --
-    # the point of the test is that the next change is deliberate too.
+    # The generation line is back to its original wording. The memory instruction
+    # that was briefly baked in here is now an experimental factor -- see
+    # transcript.share_line() and PERSONA_CLAUSES -- so the base string is the
+    # `bare` arm and the instruction is appended for the `memory` arm.
     #
-    # The CHOICE line is untouched. The eight multiple-choice surfaces were
-    # measured against it and are not in this pilot, so changing it would
-    # invalidate them for no gain.
+    # The CHOICE line is untouched. The eight multiple-choice surfaces were measured
+    # against it and are not in this pilot.
     assert CHOICE_SHARE_LINE == "These are some photos I took recently."
-    assert GENERATION_SHARE_LINE == (
-        "A few photos from around where I live, and some of the things I'm into. "
-        "Please keep them in mind and answer anything I ask based on my memory and "
-        "my taste, as you can read them from these.")
+    assert GENERATION_SHARE_LINE == ("A few photos from around where I live, "
+                                     "and some of the things I'm into.")
     assert CHOICE_SHARE_LINE != GENERATION_SHARE_LINE
 
 
