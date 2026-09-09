@@ -33,8 +33,9 @@ def _arguments(call: Dict[str, Any]) -> Dict[str, Any]:
         return {}
 
 
-def run_agent(adaptor, trial, surface, *, terminal: str,
-              max_turns: int = MAX_TURNS) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Optional[str]]:
+def run_agent(adaptor, trial, surface, *, terminal: str, max_turns: int = MAX_TURNS,
+              remind: Optional[str] = None
+              ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Optional[str]]:
     """Run the tool loop.
 
     Returns ``(calls, transcript, error)``:
@@ -45,12 +46,14 @@ def run_agent(adaptor, trial, surface, *, terminal: str,
       without re-running anything.
     * ``error`` -- the first adaptor error, or None.
 
-    Stops on ``terminal`` (the tool that means "answered"), on a reply with no tool
-    calls, or at ``max_turns``. **A run that hits the cap is not an answer** and the
+    Stops on ``terminal`` (the tool that means "answered"), on a second reply with no
+    tool calls, or at ``max_turns``. ``remind`` is sent **once** if the model answers
+    in prose without having called the terminal tool. **A run that hits the cap is not an answer** and the
     surface will see no terminal call, which is what it should see.
     """
     messages = [dict(m) for m in trial.conversation.messages]
     calls: List[Dict[str, Any]] = []
+    nudged = False
 
     for _ in range(max_turns):
         # Trial and Conversation are frozen dataclasses, so each turn is a new
@@ -63,9 +66,22 @@ def run_agent(adaptor, trial, surface, *, terminal: str,
 
         raw_calls = (resp.usage or {}).get("raw_tool_calls") or []
         if not raw_calls:
+            # It answered in prose instead of calling the terminal tool. On the
+            # first run of s15 that was 26 of 27 trials: the model searched all
+            # five shops and then simply wrote its recommendation out.
+            #
+            # One reminder, once, and only if it has not answered yet. A prose
+            # answer is not read -- inferring a venue from a sentence is a guess
+            # wearing a number -- so without this the searches are wasted. More
+            # than one reminder would be badgering it toward a tool call, which
+            # is a different experiment.
             messages.append({"role": "assistant",
                              "content": [{"type": "text", "text": resp.text or ""}]})
-            return calls, messages, None
+            if nudged or not remind:
+                return calls, messages, None
+            nudged = True
+            messages.append({"role": "user", "content": [{"type": "text", "text": remind}]})
+            continue
 
         messages.append({"role": "assistant", "content": [{"type": "text", "text": resp.text or ""}],
                          "tool_calls": raw_calls})

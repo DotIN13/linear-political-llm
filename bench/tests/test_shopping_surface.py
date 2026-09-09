@@ -145,3 +145,36 @@ def test_an_adaptor_error_stops_the_loop_and_is_returned(s, item):
     trial = s.build(item, "photos", {"scheme": "chat"})
     calls, _, err = run_agent(_Stub([Response(error="HTTP 500")]), trial, s, terminal="ask_user")
     assert err == "HTTP 500" and calls == []
+
+
+def test_a_prose_answer_gets_one_reminder_and_only_one(s, item):
+    """26 of 27 trials on the first run searched all five shops and then wrote the
+    recommendation out in prose. A prose answer is not read, so those searches were
+    wasted; one reminder recovers them. Two would be badgering it toward a tool
+    call, which is a different experiment."""
+    trial = s.build(item, "photos", {"scheme": "chat"})
+    prose = Response(text="I'd go with Aldi.", usage={})
+    stub = _Stub([prose])
+    calls, msgs, err = run_agent(stub, trial, s, terminal="ask_user",
+                                 remind="use the tool", max_turns=6)
+    assert err is None
+    assert sum(1 for m in msgs if m.get("role") == "user"
+               and "use the tool" in str(m.get("content"))) == 1
+    assert stub.n == 2                      # asked again once, then stopped
+    assert s.read_recommendation(calls)["parsed"] is False
+
+
+def test_the_reminder_recovers_a_run_that_would_have_been_wasted(s, item):
+    trial = s.build(item, "photos", {"scheme": "chat"})
+    stub = _Stub([Response(text="I'd go with Aldi.", usage={}),
+                  _calls(("ask_user", {"recommended": "Aldi", "reason": "r"}))])
+    calls, _, _ = run_agent(stub, trial, s, terminal="ask_user", remind="use the tool")
+    out = s.read_recommendation(calls)
+    assert out["parsed"] is True and out["recommended"] == "Aldi"
+
+
+def test_no_reminder_means_the_old_behaviour(s, item):
+    trial = s.build(item, "photos", {"scheme": "chat"})
+    stub = _Stub([Response(text="Aldi.", usage={})])
+    run_agent(stub, trial, s, terminal="ask_user")
+    assert stub.n == 1

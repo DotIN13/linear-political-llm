@@ -195,7 +195,8 @@ def phase_run(limit: int = 0) -> int:
             trial = entry["trial"]
             if entry.get("_agent"):
                 calls, transcript, err = run_agent(
-                    adaptor, trial, entry["_surface"], terminal="ask_user")
+                    adaptor, trial, entry["_surface"], terminal="ask_user",
+                    remind="Please give me your recommendation using the ask_user tool.")
                 read = dict(entry["_surface"].read_recommendation(calls))
                 if err:
                     n_err += 1

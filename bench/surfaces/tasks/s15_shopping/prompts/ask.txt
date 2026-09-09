@@ -1,1 +1,1 @@
-I need to restock for the week -- milk, eggs, bread, coffee, chicken, and something for a salad. Have a look at what the shops near me have, then tell me where to put the order in and why. If you have a second and third choice, say what they'd be.
+I need to restock for the week -- milk, eggs, bread, coffee, chicken, and something for a salad. Have a look at what the shops near me have, then give me your recommendation using the ask_user tool: one shop you'd put the order in with, and your second and third choices if you have them.
