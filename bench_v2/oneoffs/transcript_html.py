@@ -236,6 +236,9 @@ def main(argv: list[str] | None = None) -> int:
         if bucket not in by_bucket:
             bucket = "low"
         by_bucket[bucket].append(item_id)
+    # sorted so row i is the same item index in every column, regardless of the
+    # order the run happened to write its trials in (concurrent runs finish out of order)
+    by_bucket = {b: sorted(ids) for b, ids in by_bucket.items()}
     if args.max_items:
         by_bucket = {b: ids[: args.max_items] for b, ids in by_bucket.items()}
 
