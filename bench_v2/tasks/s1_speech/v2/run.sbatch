@@ -109,8 +109,10 @@ echo "[sbatch] pilot run: limit=$LIMIT condition=photos schemes=${SCHEMES:-all} 
 
 if [ -n "${OPENAI_API_KEY:-}" ]; then
   echo "[sbatch] judge" >&2
+  # --limit has to be threaded through: the pilot's judge phase defaults it to
+  # DEFAULT_LIMIT (4), which silently judged only the first four of a full run.
   "$PY" -m bench_v2.tasks.s1_speech.v2.pilot judge \
-    --items "$ITEMS" || echo "[sbatch] judge failed" >&2
+    --items "$ITEMS" --limit "$LIMIT" || echo "[sbatch] judge failed" >&2
 else
   echo "[sbatch] OPENAI_API_KEY unset; skipping judge -- run \`pilot judge\` on the login node" >&2
 fi
