@@ -34,16 +34,18 @@ td .se { color:var(--muted); font-size:11.5px; font-weight:400; }
 .note ul { margin:6px 0 0; padding-left:20px; }
 .note li { margin:3px 0; }
 .k { font-weight:700; }
+.miss { color:var(--muted); }
 </style></head>
 <body>
 <header>
   <h1>s3_digest v4 — chat / agentic / agentic_live × bare·memory × photo-lean bucket</h1>
   <div class="sub">
-    photos-only · 1188 trials (parsed 1140) · Qwen3-VL-8B-Instruct (vLLM) ·
-    run <code>58037385</code> · branch <code>7697d6b</code> · <code>measurement_rev=70e075f81adc</code>.
+    photos-only · 1188 trials (parsed 1138) · Qwen3-VL-8B-Instruct (vLLM) ·
+    run <code>58051064</code> · <code>measurement_rev=493bf67c9be1</code>.
     Bucket = tertile of the user's image-lean score (<span class="k">low</span> = most left photos,
     <span class="k">high</span> = most right). Output slant: negative = left, positive = right;
-    <code>rel</code> == <code>slant</code> for this run.
+    <code>rel</code> == <code>slant</code> for this run. In <span class="k">memory</span>, the
+    <code>agentic_live</code> transcript opens with an intent sentence before the tool calls.
   </div>
 </header>
 <main>
@@ -56,31 +58,31 @@ td .se { color:var(--muted); font-size:11.5px; font-weight:400; }
   </tr></thead>
   <tbody>
     <tr><td class="l">chat</td><td class="l">bare</td>
-      <td class="neg">−0.435 <span class="n">(63)</span></td>
-      <td class="neg">−0.400 <span class="n">(64)</span></td>
-      <td class="neg">−0.410 <span class="n">(61)</span></td></tr>
+      <td class="neg">−0.458 <span class="n">(62)</span></td>
+      <td class="neg">−0.366 <span class="n">(65)</span></td>
+      <td class="neg">−0.416 <span class="n">(63)</span></td></tr>
     <tr><td class="l">chat</td><td class="l">memory</td>
-      <td class="neg">−0.503 <span class="n">(66)</span></td>
-      <td class="neg">−0.356 <span class="n">(64)</span></td>
-      <td class="neg">−0.289 <span class="n">(63)</span></td></tr>
+      <td class="neg">−0.494 <span class="n">(64)</span></td>
+      <td class="neg">−0.317 <span class="n">(65)</span></td>
+      <td class="neg">−0.284 <span class="n">(62)</span></td></tr>
 
     <tr><td class="l">agentic</td><td class="l">bare</td>
       <td class="neg">−0.497 <span class="n">(62)</span></td>
-      <td class="neg">−0.481 <span class="n">(64)</span></td>
-      <td class="neg">−0.419 <span class="n">(64)</span></td></tr>
+      <td class="neg">−0.438 <span class="n">(64)</span></td>
+      <td class="neg">−0.435 <span class="n">(63)</span></td></tr>
     <tr><td class="l">agentic</td><td class="l">memory</td>
-      <td class="neg">−0.492 <span class="n">(59)</span></td>
-      <td class="neg">−0.265 <span class="n">(62)</span></td>
-      <td class="neg">−0.225 <span class="n">(63)</span></td></tr>
+      <td class="neg">−0.505 <span class="n">(59)</span></td>
+      <td class="neg">−0.292 <span class="n">(61)</span></td>
+      <td class="neg">−0.206 <span class="n">(63)</span></td></tr>
 
     <tr><td class="l">agentic_live</td><td class="l">bare</td>
-      <td class="neg strong">−0.619 <span class="n">(63)</span></td>
-      <td class="neg">−0.506 <span class="n">(64)</span></td>
-      <td class="neg">−0.425 <span class="n">(64)</span></td></tr>
+      <td class="neg strong">−0.556 <span class="n">(64)</span></td>
+      <td class="neg">−0.511 <span class="n">(63)</span></td>
+      <td class="neg">−0.450 <span class="n">(64)</span></td></tr>
     <tr><td class="l">agentic_live</td><td class="l">memory</td>
-      <td class="neg">−0.594 <span class="n">(64)</span></td>
-      <td class="neg">−0.514 <span class="n">(65)</span></td>
-      <td class="neg">−0.397 <span class="n">(65)</span></td></tr>
+      <td class="neg">−0.550 <span class="n">(64)</span></td>
+      <td class="neg">−0.292 <span class="n">(65)</span></td>
+      <td class="neg">−0.188 <span class="n">(65)</span></td></tr>
   </tbody>
 </table>
 <div class="legend">
@@ -95,35 +97,58 @@ td .se { color:var(--muted); font-size:11.5px; font-weight:400; }
   </tr></thead>
   <tbody>
     <tr><td class="l">chat</td>
-      <td class="neg">−0.089 <span class="se">(0.047)</span></td>
-      <td class="pos">+0.052 <span class="se">(0.054)</span></td>
-      <td class="pos strong">+0.117 <span class="se">(0.050)</span></td></tr>
+      <td class="neg">−0.067 <span class="se">(0.036)</span></td>
+      <td class="pos">+0.050 <span class="se">(0.053)</span></td>
+      <td class="pos strong">+0.142 <span class="se">(0.056)</span></td></tr>
     <tr><td class="l">agentic</td>
-      <td>+0.000 <span class="se">(0.042)</span></td>
-      <td class="pos strong">+0.227 <span class="se">(0.055)</span></td>
-      <td class="pos strong">+0.190 <span class="se">(0.052)</span></td></tr>
+      <td class="neg">−0.007 <span class="se">(0.047)</span></td>
+      <td class="pos strong">+0.163 <span class="se">(0.052)</span></td>
+      <td class="pos strong">+0.223 <span class="se">(0.055)</span></td></tr>
     <tr><td class="l">agentic_live</td>
-      <td class="pos">+0.013 <span class="se">(0.031)</span></td>
-      <td>+0.000 <span class="se">(0.039)</span></td>
-      <td class="pos">+0.051 <span class="se">(0.034)</span></td></tr>
+      <td class="neg">−0.013 <span class="se">(0.038)</span></td>
+      <td class="pos strong">+0.239 <span class="se">(0.052)</span></td>
+      <td class="pos strong">+0.273 <span class="se">(0.044)</span></td></tr>
   </tbody>
 </table>
 <div class="legend">
   Positive = memory shifts the output right (toward the inferred user); parentheses are standard errors.
-  Paired n per cell ≈ 56–63. Bucket order: low → high image-lean.
+  Paired n per cell ≈ 55–64. Bucket order: low → high image-lean.
+</div>
+
+<h2>Table 3 · agentic_live, with vs without the intent sentence</h2>
+<table>
+  <thead><tr>
+    <th class="l">run</th><th>low</th><th>mid</th><th>high</th>
+  </tr></thead>
+  <tbody>
+    <tr><td class="l">invalidated (no preamble)</td>
+      <td class="neg">+0.013 <span class="se">(0.031)</span></td>
+      <td class="miss">+0.000 <span class="se">(0.039)</span></td>
+      <td class="neg">+0.051 <span class="se">(0.034)</span></td></tr>
+    <tr><td class="l">58051064 (with preamble)</td>
+      <td class="neg">−0.013 <span class="se">(0.038)</span></td>
+      <td class="pos strong">+0.239 <span class="se">(0.052)</span></td>
+      <td class="pos strong">+0.273 <span class="se">(0.044)</span></td></tr>
+  </tbody>
+</table>
+<div class="legend">
+  The two runs share stimuli, deal and question; the only change is the memory-variant
+  intent sentence inserted before the first tool call.
 </div>
 
 <h2>Read</h2>
 <div class="note">
   <ul>
-    <li><span class="k">chat</span>: memory barely moves low/mid, then shifts the high bucket right by ≈ +0.12.</li>
-    <li><span class="k">agentic</span>: the largest memory shift — ≈ +0.23 mid, +0.19 high; low flat.</li>
-    <li><span class="k">agentic_live</span>: the memory effect is essentially gone (+0.05 high, ≈0 low/mid) — inside noise.</li>
-    <li>So the memory-induced shift toward the inferred user (strongest where the photos are right-leaning)
-        is present in chat and agentic but <span class="k">nulled in agentic_live</span>, where the user's
-        question leads and the file/search activity is inserted afterward.</li>
-    <li>agentic_live's <span class="k">bare</span> baseline is also the most left (−0.619 at low), so it is the
-        <span class="k">memory modulation</span> that vanishes, not the imaging effect.</li>
+    <li><span class="k">chat</span>: memory barely moves low/mid, then shifts the high bucket right by ≈ +0.14.</li>
+    <li><span class="k">agentic</span>: a large memory shift — ≈ +0.16 mid, +0.22 high; low flat.</li>
+    <li><span class="k">agentic_live</span>: now the <span class="k">largest</span> memory shift of any scheme —
+        ≈ +0.24 mid, +0.27 high; low flat.</li>
+    <li>The invalidated run (same transcript, no intent sentence) showed <span class="k">no</span> memory
+        effect in agentic_live (+0.01 / 0.00 / +0.05). Adding the announcement that the agent will read the
+        user's memory and recommend to their taste — one sentence before the tool calls — turns the null
+        into the strongest effect.</li>
+    <li>So the sycophantic shift is gated not by the live turn order itself but by <span class="k">whether the
+        agent first states its intent to use the memory</span>.</li>
   </ul>
 </div>
 
