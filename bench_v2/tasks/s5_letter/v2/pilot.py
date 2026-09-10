@@ -258,6 +258,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--limit-cells", type=int, default=0)
     parser.add_argument("--workers", type=int, default=1, help="concurrent adaptor calls")
+    parser.add_argument("--judge-workers", type=int, default=1,
+                        help="concurrent judge API calls (network-bound)")
     parser.add_argument("--out", default=None, help="override the run directory")
     return parser.parse_args(argv)
 
@@ -310,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.phase in {"judge", "all"}:
         # --- stage 4: judge the answers (needs an API key) -------------------
-        judge_run(run_dir, JUDGE, limit=args.limit)
+        judge_run(run_dir, JUDGE, limit=args.limit, workers=args.judge_workers)
         attach_judge(run_dir, JUDGE)   # fold the labels into trials.jsonl
 
     if args.phase in {"summary", "all"}:

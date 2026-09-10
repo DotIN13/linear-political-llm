@@ -8,7 +8,9 @@ of the answer text and the spec, so it is cached by ``(response_hash, judge_id)`
 from __future__ import annotations
 
 import json
+import threading
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -34,11 +36,19 @@ def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
 
 def judge_run(run_dir: str | Path, spec: JudgeSpec,
               cache_path: str | Path | None = None,
-              limit: int = 0, verbose: bool = True) -> int:
+              limit: int = 0, verbose: bool = True,
+              workers: int = 1) -> int:
     """Judge every answer in ``run_dir/trials.jsonl``, appending to ``judged.jsonl``.
 
     Returns the number of newly written rows. A row already present for this
     ``(trial_key, judge_id)`` is skipped, so re-running after a crash resumes.
+
+    ``workers > 1`` fans the API calls out through a thread pool -- the judge is
+    network-bound and one call at a time wastes the wall clock, especially on a
+    reasoning model. The cache (thread-safe, locked) and the output file (under
+    the same lock) are the only shared state, and ``judged.jsonl`` still gets one
+    row per trial, so the record shape is unchanged. ``build``/validation is
+    per-call and stateless.
     """
     run_dir = Path(run_dir)
     trials = _read_jsonl(run_dir / "trials.jsonl")
@@ -47,22 +57,30 @@ def judge_run(run_dir: str | Path, spec: JudgeSpec,
     planned = trials[:limit] if limit else trials
     if verbose:
         print(f"[judge] {len(planned)} trials, {len(seen)} already judged -> {out_path}")
-    if not planned:
+    # The work list: skip already-judged rows and empty answers up front, so the
+    # pool holds only calls that will actually happen.
+    todo: list[tuple[str, str]] = []
+    for record in planned:
+        key = record.get("trial_key")
+        if (key, spec.judge_id) in seen:
+            continue
+        text = ((record.get("response") or {}).get("text") or "").strip()
+        if not text:
+            continue
+        todo.append((key, text))
+    if not todo:
         return 0
     cache = JudgeCache(cache_path or judge_cache_path())
     caller = JudgeCaller(spec)
+    lock = threading.Lock()
+    n = {"written": 0}
 
-    n = 0
     with out_path.open("a", encoding="utf-8") as out:
-        for record in planned:
-            key = record.get("trial_key")
-            if (key, spec.judge_id) in seen:
-                continue
-            text = ((record.get("response") or {}).get("text") or "").strip()
-            if not text:
-                continue
+        def one(item: tuple[str, str]) -> None:
+            key, text = item
             digest = response_hash(text)
-            payload = cache.get(digest, spec.judge_id)
+            with lock:
+                payload = cache.get(digest, spec.judge_id)
             if payload is None:
                 try:
                     payload = caller.call(text)
@@ -70,20 +88,31 @@ def judge_run(run_dir: str | Path, spec: JudgeSpec,
                     payload = {"judge_id": spec.judge_id, "model": spec.model,
                                "labels": None, "error": str(exc)}
                 else:
-                    cache.put(digest, spec.judge_id, payload)
+                    with lock:
+                        cache.put(digest, spec.judge_id, payload)
             row = {
                 "trial_key": key, "judge_id": spec.judge_id, "model": spec.model,
                 "labels": payload.get("labels"), "error": payload.get("error"),
             }
-            out.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
-            out.flush()
-            n += 1
-            if verbose and n % 10 == 0:
-                print(f"  [{n}/{len(planned)}]", flush=True)
+            with lock:
+                out.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+                out.flush()
+                n["written"] += 1
+                if verbose and n["written"] % 25 == 0:
+                    print(f"  [{n['written']}/{len(todo)}]", flush=True)
+
+        if workers and workers > 1:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = [pool.submit(one, item) for item in todo]
+                for future in as_completed(futures):
+                    future.result()
+        else:
+            for item in todo:
+                one(item)
     cache.close()
     if verbose:
-        print(f"[judge] wrote {n} new rows")
-    return n
+        print(f"[judge] wrote {n['written']} new rows")
+    return n["written"]
 
 
 def attach_judge(run_dir: str | Path, spec: JudgeSpec) -> int:

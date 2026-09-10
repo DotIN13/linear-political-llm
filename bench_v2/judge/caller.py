@@ -95,7 +95,23 @@ UNKNOWN_MODEL_CAPS = ModelCaps(api="responses", temperature=None, seed=None,
 
 
 def caps_for(model: str) -> ModelCaps:
-    return MODEL_CAPS.get(model, UNKNOWN_MODEL_CAPS)
+    """The model's measured capabilities, with one env override.
+
+    ``BENCH_JUDGE_REASONING_EFFORT`` lowers (or raises) a Responses model's
+    ``reasoning.effort`` for a run. It exists because "high" is the measured
+    default and is slow on a 1000-row judge; setting it to ``none`` (or
+    ``minimal``/``low``) turns reasoning off. It only ever touches
+    ``reasoning_effort`` -- temperature, seed and logprobs stay as measured --
+    and because effort enters ``judge_id``, an overridden run is a distinct
+    cache key rather than a collision with the measured one.
+    """
+    caps = MODEL_CAPS.get(model, UNKNOWN_MODEL_CAPS)
+    override = os.environ.get("BENCH_JUDGE_REASONING_EFFORT")
+    if override:
+        caps = ModelCaps(api=caps.api, temperature=caps.temperature,
+                         seed=caps.seed, logprobs=caps.logprobs,
+                         reasoning_effort=override)
+    return caps
 
 
 @dataclass(frozen=True)

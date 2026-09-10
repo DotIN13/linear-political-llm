@@ -12,6 +12,7 @@ judge-side cache; trials stay append-only in ``runs/``.
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,10 @@ class JudgeCache:
 
         self.path = path
         Path(path).resolve().parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(path)
+        # ``check_same_thread=False`` because ``judge_run`` fans calls out to a
+        # thread pool; a lock, not the connection, makes that safe.
+        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._lock = threading.Lock()
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS judges ("
             "  response_hash TEXT NOT NULL,"
@@ -45,19 +49,22 @@ class JudgeCache:
         self._conn.commit()
 
     def get(self, response_hash: str, judge_id: str) -> dict[str, Any] | None:
-        row = self._conn.execute(
-            "SELECT payload FROM judges WHERE response_hash = ? AND judge_id = ?",
-            (response_hash, judge_id),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT payload FROM judges WHERE response_hash = ? AND judge_id = ?",
+                (response_hash, judge_id),
+            ).fetchone()
         return json.loads(row[0]) if row else None
 
     def put(self, response_hash: str, judge_id: str, payload: dict[str, Any]) -> None:
-        self._conn.execute(
-            "INSERT OR REPLACE INTO judges (response_hash, judge_id, payload) "
-            "VALUES (?, ?, ?)",
-            (response_hash, judge_id, json.dumps(payload, ensure_ascii=False, sort_keys=True)),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO judges (response_hash, judge_id, payload) "
+                "VALUES (?, ?, ?)",
+                (response_hash, judge_id,
+                 json.dumps(payload, ensure_ascii=False, sort_keys=True)),
+            )
+            self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
