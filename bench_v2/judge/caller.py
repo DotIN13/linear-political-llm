@@ -17,12 +17,14 @@ a time (the capability table lives below, next to the caller):
 
 * ``gpt-5.4`` on chat completions takes strict json_schema **and** logprobs
   **and** ``temperature=0.0`` -- the only model on this key that takes all
-  three, so it is the only bit-reproducible judge available.
+  three, so it is the only bit-reproducible judge available. It is kept as the
+  reproducibility check, not the default.
 * ``gpt-5.6-luna`` and every other model newer than gpt-5.4 **refuse
   ``temperature``** ("Only the default (1) value is supported") and **refuse
   ``logprobs``** ("not supported with this model"). On the Responses API
   ``seed`` and ``top_p`` are refused as well, and ``reasoning.effort`` and
-  ``max_output_tokens`` appear instead.
+  ``max_output_tokens`` appear instead. luna is the default judge; see the
+  ``DEFAULT_JUDGE_MODEL`` comment for why and what it costs.
 * DeepSeek (``DEEPSEEK_API_KEY``) does **not** support strict json_schema (400
   "This response_format type is unavailable now"); it has JSON mode
   (``json_object``) and logprobs.
@@ -51,10 +53,17 @@ from pydantic import ValidationError
 from bench_v2.judge.schema import strict_schema
 from bench_v2.types import sha256_of
 
-# gpt-5.4, deliberately: the only model this key can reach that accepts strict
+# gpt-5.6-luna with reasoning off, the team's default as of 2026-09-10. It is not
+# bit-reproducible the way gpt-5.4 was (no temperature, no seed, and the Responses
+# API), but a side-by-side on the 1188 s1_speech v3 answers showed its labels agree
+# with gpt-5.4 on 76% of `lean` (Pearson +0.67) and the memory-minus-bare effect it
+# reports is the same size and sign. It reads ~0.06 further left overall, which
+# matters for *levels*, not for the differences the hypothesis turns on.
+#
+# gpt-5.4 remains reachable for a reproducibility check with
+# BENCH_JUDGE_MODEL=gpt-5.4; that is also the only model here that accepts strict
 # json_schema **and** logprobs **and** temperature=0.0 at once.
-# BENCH_JUDGE_MODEL overrides it without an edit.
-DEFAULT_JUDGE_MODEL = "gpt-5.4"
+DEFAULT_JUDGE_MODEL = "gpt-5.6-luna"
 DEFAULT_SEED = 20260905
 
 
@@ -78,8 +87,11 @@ class ModelCaps:
 MODEL_CAPS: dict[str, ModelCaps] = {
     "gpt-5.4": ModelCaps(api="chat", temperature=0.0, seed=DEFAULT_SEED,
                          logprobs=True),
+    # Default judge. Reasoning off: on a 1188-row run effort="high" is minutes per
+    # task instead of seconds, and the labels move no more than between two
+    # reasoning-on calls. ``BENCH_JUDGE_REASONING_EFFORT`` raises it if wanted.
     "gpt-5.6-luna": ModelCaps(api="responses", temperature=None, seed=None,
-                              logprobs=False, reasoning_effort="high"),
+                              logprobs=False, reasoning_effort="none"),
     "gpt-5.6-sol": ModelCaps(api="responses", temperature=None, seed=None,
                              logprobs=False, reasoning_effort="high"),
     "gpt-5.6-terra": ModelCaps(api="responses", temperature=None, seed=None,
@@ -97,13 +109,13 @@ UNKNOWN_MODEL_CAPS = ModelCaps(api="responses", temperature=None, seed=None,
 def caps_for(model: str) -> ModelCaps:
     """The model's measured capabilities, with one env override.
 
-    ``BENCH_JUDGE_REASONING_EFFORT`` lowers (or raises) a Responses model's
-    ``reasoning.effort`` for a run. It exists because "high" is the measured
-    default and is slow on a 1000-row judge; setting it to ``none`` (or
-    ``minimal``/``low``) turns reasoning off. It only ever touches
+    ``BENCH_JUDGE_REASONING_EFFORT`` overrides a Responses model's
+    ``reasoning.effort`` for a run. The default is ``none`` (off), which is what
+    makes the default judge fast enough for a 1000-row run; the override raises
+    it (``low``/``minimal``/``high``) when a check needs it. It only ever touches
     ``reasoning_effort`` -- temperature, seed and logprobs stay as measured --
     and because effort enters ``judge_id``, an overridden run is a distinct
-    cache key rather than a collision with the measured one.
+    cache key rather than a collision with the default one.
     """
     caps = MODEL_CAPS.get(model, UNKNOWN_MODEL_CAPS)
     override = os.environ.get("BENCH_JUDGE_REASONING_EFFORT")

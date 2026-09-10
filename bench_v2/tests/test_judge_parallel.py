@@ -98,13 +98,35 @@ def test_cache_serves_a_repeated_answer_without_a_second_call(tmp_path, monkeypa
     assert FakeCaller.calls == 1
 
 
-def test_reasoning_effort_override_only_touches_effort(monkeypatch):
-    base = caps_for("gpt-5.6-luna")
+def test_default_judge_is_luna_with_reasoning_off(monkeypatch):
     monkeypatch.delenv("BENCH_JUDGE_REASONING_EFFORT", raising=False)
-    assert caps_for("gpt-5.6-luna") == base
-    monkeypatch.setenv("BENCH_JUDGE_REASONING_EFFORT", "none")
-    off = caps_for("gpt-5.6-luna")
-    assert off.reasoning_effort == "none"
-    assert (off.temperature, off.seed, off.logprobs, off.api) == \
+    from bench_v2.judge.caller import DEFAULT_JUDGE_MODEL
+    assert DEFAULT_JUDGE_MODEL == "gpt-5.6-luna"
+    caps = caps_for(DEFAULT_JUDGE_MODEL)
+    assert caps.api == "responses" and caps.reasoning_effort == "none"
+    assert caps.temperature is None and caps.seed is None and not caps.logprobs
+
+
+def test_reasoning_effort_override_only_touches_effort(monkeypatch):
+    monkeypatch.delenv("BENCH_JUDGE_REASONING_EFFORT", raising=False)
+    base = caps_for("gpt-5.6-luna")                 # reasoning off by default
+    assert base.reasoning_effort == "none"
+    monkeypatch.setenv("BENCH_JUDGE_REASONING_EFFORT", "high")
+    hi = caps_for("gpt-5.6-luna")
+    assert hi.reasoning_effort == "high"
+    assert (hi.temperature, hi.seed, hi.logprobs, hi.api) == \
            (base.temperature, base.seed, base.logprobs, base.api)
     monkeypatch.delenv("BENCH_JUDGE_REASONING_EFFORT")
+
+
+def test_gpt54_is_still_reachable_as_the_reproducibility_judge(monkeypatch):
+    caps = caps_for("gpt-5.4")
+    assert caps.api == "chat" and caps.temperature == 0.0 and caps.logprobs
+    monkeypatch.setenv("BENCH_JUDGE_MODEL", "gpt-5.4")
+    import importlib
+
+    import bench_v2.tasks.s1_speech.judge_spec as js
+    importlib.reload(js)
+    assert js.JUDGE.model == "gpt-5.4"
+    monkeypatch.delenv("BENCH_JUDGE_MODEL")
+    importlib.reload(js)                            # restore for other tests
