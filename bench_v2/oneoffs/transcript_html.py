@@ -76,7 +76,52 @@ def bubble(role: str, body: str, kind: str = "") -> str:
             f'<div class="role">{esc(role)}</div><div class="body">{body}</div></div>')
 
 
-def render_transcript(row: dict[str, Any], img_ids: dict[str, str]) -> str:
+def _score(value: Any, places: int = 2) -> str:
+    return f"{value:+.{places}f}" if isinstance(value, (int, float)) else "–"
+
+
+def render_story_scores(row: dict[str, Any], headlines: list[dict[str, Any]],
+                        outcomes: dict[str, dict[str, Any]]) -> str:
+    """The 12 stories in the order shown, each marked with its slant score and a ✓
+    if the model picked it, plus the generation's mean score."""
+    order = (row.get("variant") or {}).get("order")
+    if not headlines or not order:
+        return ""
+    extra = outcomes.get(str(row.get("trial_key"))) or {}
+    picked = set(extra.get("picked_hids") or [])
+    rows = []
+    for pos, idx in enumerate(order, 1):
+        try:
+            head = headlines[int(idx)]
+        except (TypeError, ValueError, IndexError):
+            continue
+        score = head.get("slant_c", head.get("slant"))
+        is_pick = head.get("hid") in picked
+        rows.append(
+            f'<tr class="{"picked" if is_pick else ""}">'
+            f'<td class="pos">{pos}</td>'
+            f'<td class="out">{esc(head.get("outlet", ""))}</td>'
+            f'<td class="hd">{esc(head.get("headline", ""))}</td>'
+            f'<td class="num">{_score(score)}</td>'
+            f'<td class="pick">{"✓" if is_pick else ""}</td></tr>')
+    parse_ok = extra.get("parse_ok")
+    note = "" if parse_ok is None else ("" if parse_ok else ' &middot; <b>parse failed</b>')
+    return (
+        '<div class="scores">'
+        '<div class="scores-title">stories shown &middot; score '
+        '(<span class="side-l">left &lt; 0</span>, <span class="side-r">right &gt; 0</span>) '
+        '&middot; ✓ = picked</div>'
+        '<table class="scoretab"><thead><tr><th>#</th><th>outlet</th><th>headline</th>'
+        '<th>score</th><th>pick</th></tr></thead><tbody>'
+        + "".join(rows) + '</tbody></table>'
+        '<div class="genmean">generation mean &middot; picked '
+        f'{_score(extra.get("slant_c_mean"), 3)} &middot; relative to shown '
+        f'{_score(extra.get("slant_rel_mean"), 3)}{note}</div></div>')
+
+
+def render_transcript(row: dict[str, Any], img_ids: dict[str, str],
+                      headlines: list[dict[str, Any]] | None = None,
+                      outcomes: dict[str, dict[str, Any]] | None = None) -> str:
     variant = row.get("variant") or {}
     scheme = str(variant.get("scheme", "?"))
     clause = str(variant.get("clause", "?"))
@@ -99,12 +144,15 @@ def render_transcript(row: dict[str, Any], img_ids: dict[str, str]) -> str:
     else:
         out.append(bubble("assistant", f'<pre class="resp">{esc((row.get("response_text") or "").strip())}</pre>',
                           kind="response"))
+    if headlines is not None:
+        out.append(render_story_scores(row, headlines, outcomes or {}))
     out.append('</article>')
     return "".join(out)
 
 
 def render_cell(item_id: str, group: list[dict[str, Any]], meta: dict[str, Any],
-                img_ids: dict[str, str]) -> str:
+                img_ids: dict[str, str], headlines: list[dict[str, Any]] | None = None,
+                outcomes: dict[str, dict[str, Any]] | None = None) -> str:
     cov = meta.get("covariates") or {}
     bucket = meta.get("bucket", cov.get("bucket", "?"))
     scores = meta.get("image_scores") or []
@@ -135,7 +183,7 @@ def render_cell(item_id: str, group: list[dict[str, Any]], meta: dict[str, Any],
                               str((r.get("variant") or {}).get("clause"))))
     out.append('<div class="transcripts">')
     for row in group:
-        out.append(render_transcript(row, img_ids))
+        out.append(render_transcript(row, img_ids, headlines, outcomes))
     out.append('</div></div>')
     return "".join(out)
 
@@ -144,6 +192,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="transcripts.jsonl -> self-contained HTML board")
     parser.add_argument("--transcripts", required=True)
     parser.add_argument("--items", default="")
+    parser.add_argument("--trials", default="",
+                        help="trials.jsonl; joins outcome scores by trial_key")
+    parser.add_argument("--headlines", default="",
+                        help="s3 headline pool (hid/outlet/headline/slant_c)")
     parser.add_argument("--out", required=True)
     parser.add_argument("--max-items", type=int, default=0, help="0 = all (per bucket)")
     parser.add_argument("--max-width", type=int, default=420)
@@ -159,6 +211,18 @@ def main(argv: list[str] | None = None) -> int:
             if line.strip():
                 blob = json.loads(line)
                 item_meta[blob["item_id"]] = blob
+
+    headlines: list[dict[str, Any]] = []
+    if args.headlines and Path(args.headlines).exists():
+        headlines = [json.loads(line) for line in Path(args.headlines).read_text(
+            encoding="utf-8").splitlines() if line.strip()]
+    outcomes: dict[str, dict[str, Any]] = {}
+    if args.trials and Path(args.trials).exists():
+        for line in Path(args.trials).read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                blob = json.loads(line)
+                outcomes[str(blob.get("trial_key"))] = (blob.get("outcome") or {}).get("extra") or {}
+        print(f"[html] outcomes for {len(outcomes)} trials", file=sys.stderr)
 
     by_item: "OrderedDict[str, list[dict[str, Any]]]" = OrderedDict()
     for row in rows:
@@ -243,6 +307,18 @@ main {{ padding:14px; }}
 .text {{ white-space:pre-wrap; }}
 pre.resp {{ white-space:pre-wrap; word-wrap:break-word; margin:0; font:inherit; }}
 .missing {{ color:#b3261e; font-size:10px; }}
+.scores {{ margin-top:6px; border-top:1px dashed var(--line); padding-top:5px; }}
+.scores-title {{ font-size:10px; color:var(--muted); margin-bottom:3px; }}
+.side-l {{ color:#1a56db; }} .side-r {{ color:#b3261e; }}
+table.scoretab {{ width:100%; border-collapse:collapse; font-size:10.5px; }}
+table.scoretab th {{ text-align:left; color:var(--muted); font-weight:500;
+  border-bottom:1px solid var(--line); padding:1px 3px; }}
+table.scoretab td {{ padding:1px 3px; vertical-align:top; }}
+table.scoretab tr.picked {{ background:#e9fbef; font-weight:600; }}
+table.scoretab td.num {{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }}
+table.scoretab td.pos, table.scoretab td.pick {{ text-align:center; width:14px; }}
+table.scoretab td.out {{ color:var(--muted); white-space:nowrap; }}
+.genmean {{ margin-top:4px; font-size:11px; background:#f3f6fb; border-radius:5px; padding:3px 6px; }}
 .hidden {{ display:none !important; }}
 @media (max-width:900px) {{
   .board, .colheads {{ grid-template-columns:1fr; }}
@@ -277,7 +353,9 @@ pre.resp {{ white-space:pre-wrap; word-wrap:break-word; margin:0; font:inherit; 
             ids = by_bucket[bucket]
             if i < len(ids):
                 item_id = ids[i]
-                out.append(render_cell(item_id, by_item[item_id], item_meta.get(item_id, {}), img_ids))
+                out.append(render_cell(item_id, by_item[item_id],
+                                       item_meta.get(item_id, {}), img_ids,
+                                       headlines, outcomes))
             else:
                 out.append(f'<div class="cell" data-bucket="{bucket}"></div>')
 
