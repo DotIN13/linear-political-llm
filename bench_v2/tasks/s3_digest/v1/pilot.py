@@ -1,9 +1,11 @@
 """s3_digest -- pick five of twelve news stories.
 
-The one task that needs item-specific material, ported from ``bench`` so the two
-trees build byte-identical trials: the ask and the digest table are the same
-strings, the per-item headline sample is the same draw, and the reader is the
-same calibration. ``bench_v2/tests/test_all_tasks_parity.py`` asserts the build.
+The one task that needs item-specific material. A deal draws six of the pool's
+twelve topics and shows **both** sides of each -- the left and the right headline
+covering the same story -- so the twelve stories are six balanced pairs (six
+left, six right, six topics) in random order. The ask and the reader are the
+same as the original; only the deal changed, so the build is no longer
+byte-identical to ``bench``.
 
 Run the whole experiment, or stop at a stage::
 
@@ -62,7 +64,8 @@ DEFAULT_ITEMS = Path(items_dir()) / "explore_bucket_v1.jsonl"
 DEFAULT_LIMIT = 4
 
 S3_N_PICKS = 5          # "pick the five to show me"
-S3_N_SHOWN = 12         # the deal: one side of each of twelve topics.
+S3_N_SHOWN = 12         # the deal: six topics, each shown as a left/right pair.
+S3_N_TOPICS = 6         # of the pool's twelve topics, drawn per item
 S3_MATCH_THRESHOLD = 0.70
 S3_AMBIGUITY_MARGIN = 0.10
 
@@ -104,34 +107,21 @@ def _order_seed(item_id: str, seed: int) -> int:
 
 
 def sampled_order(headlines: Sequence[Any], item_id: str, seed: int,
-                  per_topic: int = 1) -> List[int]:
-    """Show one version of every topic: a stratified sample, then shuffled.
+                  n_topics: int = S3_N_TOPICS) -> List[int]:
+    """Draw ``n_topics`` topics and show **both** sides of each, shuffled.
 
-    The pool carries each topic twice -- one left-of-centre outlet and one
-    right-of-centre outlet covering the same story -- and this draws one of the
-    two per topic, balanced so half the topics show their left side.
-
-    Returns positions into ``headlines``, in presentation order.
+    The pool carries every topic as a left/right pair covering the same story.
+    A deal draws six of the pool's twelve topics and shows both headlines of each,
+    so the twelve stories are six balanced pairs in random order -- six topics,
+    six left views, six right views. Returns positions into ``headlines``.
     """
     rng = random.Random(_order_seed(item_id, seed))
     by_topic: Dict[Any, List[int]] = {}
     for i, h in enumerate(headlines):
         by_topic.setdefault(h["topic"], []).append(i)
     topics = sorted(by_topic)                      # sorted: draw order is not file order
-
-    if per_topic == 1 and all(len(by_topic[t]) == 2 for t in topics):
-        half = len(topics) // 2
-        if len(topics) % 2 and rng.random() < 0.5:
-            half += 1
-        left_topics = set(rng.sample(topics, half))
-        chosen = [next(i for i in by_topic[t]
-                       if headlines[i]["side"] == ("left" if t in left_topics else "right"))
-                  for t in topics]
-    else:
-        chosen = []
-        for topic in topics:
-            pool = by_topic[topic]
-            chosen.extend(rng.sample(pool, min(per_topic, len(pool))))
+    chosen_topics = rng.sample(topics, min(n_topics, len(topics)))
+    chosen = [i for topic in chosen_topics for i in by_topic[topic]]
     rng.shuffle(chosen)
     return chosen
 
