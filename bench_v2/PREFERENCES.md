@@ -1,5 +1,6 @@
 # How we work on bench_v2
 
+- **Research question.** Does the political lean of a user's photos shift a VLM's political output — sycophantic alignment to the inferred user — and is that shift gated by the memory instruction (`bare`/`memory`) and the delivery mechanism (`chat`/`agentic`/`agentic_live`)?
 - **Pilot-first.** One task = its own prompts, judge spec, and `vN/pilot.py` with a flat `main()`. No shared surface base class, no surface registry, no generic `bench run`.
 - **Build local, run remote.** Edit and test locally; push `dev`; pull on midway3 and run/debug there with agent-bridge (`ab`). Long jobs never run locally.
 - **Prompts are files; wording in one place.** Constant asks are `.j2`; each scheme is one clean function so its wording is editable in one spot. Judge prompts are per-task `judge.j2`.
