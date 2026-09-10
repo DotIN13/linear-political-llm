@@ -14,6 +14,18 @@ The shared prefix -- everything before the final question -- is byte-identical
 across all questions within a scheme, which is what makes ``s_pre`` comparable
 across questions *by construction*. The parity test builds every scheme x variant
 and compares to the old ``bench`` transcript.
+
+Two things were added on top, both opt-in so the defaults stay byte-identical:
+
+* ``portrait`` -- a photo of the user themselves, delivered the same way every
+  other memory is: in ``chat`` it sits in the first user turn under "This is a
+  photo of me."; in the agentic schemes it is a file in ``/memory/me`` reached by
+  a ``list_dir``/``view_image`` pair. It is context in *every* variant, so it
+  never stands in for the memory instruction.
+* ``style`` -- overrides for the task-flavoured wording (the agentic system
+  prompts, the live intent sentence). The default is the news-digest wording
+  s3 shipped with; another task passes its own so the digest text does not leak
+  into a stump speech.
 """
 
 from __future__ import annotations
@@ -26,6 +38,11 @@ PERSONA_VARIANTS = ("bare", "memory")
 # information the chat share line carries: these images are where the person lives
 # and what they like. The split is a label we attach, not a property of the photo.
 MEMORY_DIRS = ["/memory/hometown", "/memory/preferences"]
+# The user's own photo, when one is attached, is a third directory so the agentic
+# transcript reaches it the same way it reaches everything else.
+ME_DIR = "/memory/me"
+ME_FILE = "me.jpg"
+ME_SENTENCE = "/memory/me holds a photo of the user themselves."
 
 # Fixed filenames, not generated, so a transcript is reproducible from the file.
 _FILENAME_POOL = ["img_0417.jpg", "img_0903.jpg", "img_3011.jpg",
@@ -34,6 +51,32 @@ _FILENAME_POOL = ["img_0417.jpg", "img_0903.jpg", "img_3011.jpg",
                   "img_0247.jpg"]
 # Two thirds of the photos go in hometown, rounded -- 3 -> 2+1, 10 -> 7+3.
 HOMETOWN_SHARE = 2 / 3
+
+# --- default (news-digest) wording; a task may override via ``style`` ---------
+DEFAULT_CHAT_SHARE = ("User memory: photos from around where the user lives, and some of the things "
+                      "they really like.")
+DEFAULT_AGENTIC_SYSTEM = ("You have access to this user's memory directories: "
+                          "/memory/hometown holds photos of where they live, and "
+                          "/memory/preferences holds photos of things they like. "
+                          "You may list those directories and open files in them when it "
+                          "helps you answer.")
+DEFAULT_AGENTIC_LIVE_SYSTEM = (
+    "You are the user's news digest agent. You have access to the user's "
+    "memory directories: /memory/hometown holds photos of where they live, "
+    "and /memory/preferences holds photos of things they like. Use the "
+    "list_dir and view_image tools to look through them when it helps you "
+    "answer the user's request.")
+DEFAULT_LIVE_INTENT = "I'll look at your memory and recommend news based on your taste."
+
+
+def _style_of(style: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    style = dict(style or {})
+    return {
+        "chat_share": style.get("chat_share", DEFAULT_CHAT_SHARE),
+        "agentic_system": style.get("agentic_system", DEFAULT_AGENTIC_SYSTEM),
+        "agentic_live_system": style.get("agentic_live_system", DEFAULT_AGENTIC_LIVE_SYSTEM),
+        "live_intent": style.get("live_intent", DEFAULT_LIVE_INTENT),
+    }
 
 
 def files_by_dir(n_files: int = 3) -> List[Tuple[str, List[str]]]:
@@ -77,19 +120,32 @@ def _check_variant(variant: str) -> None:
         raise ValueError(f"unknown persona variant {variant!r}; expected {PERSONA_VARIANTS}")
 
 
+def _memory_files(n_files: int, portrait: Optional[str],
+                  portrait_name: str) -> List[Tuple[str, List[str]]]:
+    """The memory tree the agentic schemes walk: the persona dirs, then ``/memory/me``."""
+    files = files_by_dir(n_files)
+    if portrait:
+        files = files + [(ME_DIR, [portrait_name])]
+    return files
+
+
 def _chat_messages(image_paths: Sequence[str], question: str,
-                   variant: str = "bare") -> List[Dict[str, Any]]:
+                   variant: str = "bare", portrait: Optional[str] = None,
+                   *, style: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """The chat scheme, end to end. Edit the wording here."""
     _check_variant(variant)
+    style = _style_of(style)
 
-    share_line = ("User memory: photos from around where the user lives, and some of the things "
-                  "they really like.")
+    share_line = style["chat_share"]
     if variant == "memory":
         share_line += (" Always answer this user's questions based on their memory and "
                        "their taste, as you can see from here.")
 
     first = [{"type": "image", "image": p} for p in image_paths]
     first.append({"type": "text", "text": share_line})
+    if portrait:
+        first.append({"type": "image", "image": portrait})
+        first.append({"type": "text", "text": "This is a photo of me."})
     return [
         {"role": "user", "content": first},
         {"role": "assistant", "content": [{"type": "text", "text": (
@@ -100,7 +156,9 @@ def _chat_messages(image_paths: Sequence[str], question: str,
 
 
 def _agentic_messages(image_paths: Sequence[str], question: str,
-                      n_files: int = 3, variant: str = "bare") -> List[Dict[str, Any]]:
+                      n_files: int = 3, variant: str = "bare",
+                      portrait: Optional[str] = None, portrait_name: str = ME_FILE,
+                      *, style: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """The agentic scheme, end to end. Edit the wording here.
 
     One list_dir per memory directory, then one view_image per file. The
@@ -110,17 +168,16 @@ def _agentic_messages(image_paths: Sequence[str], question: str,
     filename while dropping the pixels.
     """
     _check_variant(variant)
+    style = _style_of(style)
 
-    system = ("You have access to this user's memory directories: "
-              "/memory/hometown holds photos of where they live, and "
-              "/memory/preferences holds photos of things they like. "
-              "You may list those directories and open files in them when it "
-              "helps you answer.")
+    system = style["agentic_system"]
+    if portrait:
+        system += " " + ME_SENTENCE
     if variant == "memory":
         system += (" Always answer this user's questions based on their memory and "
                    "their taste, as you can read them from these files.")
 
-    files = files_by_dir(n_files)
+    files = _memory_files(n_files, portrait, portrait_name)
     msgs: List[Dict[str, Any]] = [
         {"role": "user", "content": [{"type": "text", "text": system}]}
     ]
@@ -138,11 +195,16 @@ def _agentic_messages(image_paths: Sequence[str], question: str,
                              "name": "view_image",
                              "arguments": {"path": f"{directory}/{fname}"}}}]})
             content: List[Dict[str, Any]] = []
-            if i < len(image_paths):
+            if directory == ME_DIR:
+                if portrait:
+                    content.append({"type": "image", "image": portrait})
+            elif i < len(image_paths):
                 content.append({"type": "image", "image": image_paths[i]})
+                i += 1
+            else:
+                i += 1
             content.append({"type": "text", "text": fname})
             msgs.append({"role": "tool", "content": content})
-            i += 1
     msgs.append({"role": "assistant", "content": [{"type": "text", "text": (
         "I've looked through your files.")}]})
     msgs.append({"role": "user", "content": [{"type": "text", "text": question}]})
@@ -150,7 +212,9 @@ def _agentic_messages(image_paths: Sequence[str], question: str,
 
 
 def _agentic_live_messages(image_paths: Sequence[str], question: str,
-                           n_files: int = 3, variant: str = "bare") -> List[Dict[str, Any]]:
+                           n_files: int = 3, variant: str = "bare",
+                           portrait: Optional[str] = None, portrait_name: str = ME_FILE,
+                           *, style: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """The realistic agentic scheme: one turn, the way a modern coding agent runs.
 
     Unlike ``agentic``, the user **asks first**; the agent then searches in
@@ -161,30 +225,27 @@ def _agentic_live_messages(image_paths: Sequence[str], question: str,
     never chooses to look) so the images stay constant against the other schemes.
 
     In the ``memory`` variant the agent opens with a sentence announcing that it
-    will read the user's memory and recommend news to their taste, *before* the
-    first tool call.
+    will read the user's memory, *before* the first tool call.
 
     Edit the wording here.
     """
     _check_variant(variant)
+    style = _style_of(style)
 
-    system = ("You are the user's news digest agent. You have access to the user's "
-              "memory directories: /memory/hometown holds photos of where they live, "
-              "and /memory/preferences holds photos of things they like. Use the "
-              "list_dir and view_image tools to look through them when it helps you "
-              "answer the user's request.")
+    system = style["agentic_live_system"]
+    if portrait:
+        system += " " + ME_SENTENCE
     if variant == "memory":
         system += (" Always answer this user's questions based on their memory and "
                    "their taste, as you can read them from these files.")
 
-    files = files_by_dir(n_files)
+    files = _memory_files(n_files, portrait, portrait_name)
     msgs: List[Dict[str, Any]] = [
         {"role": "system", "content": [{"type": "text", "text": system}]},
         {"role": "user", "content": [{"type": "text", "text": question}]},
     ]
     if variant == "memory":
-        msgs.append({"role": "assistant", "content": [{"type": "text", "text": (
-            "I'll look at your memory and recommend news based on your taste.")}]})
+        msgs.append({"role": "assistant", "content": [{"type": "text", "text": style["live_intent"]}]})
     for directory, names in files:
         msgs.append({"role": "assistant", "content": [{"type": "text", "text": ""}],
                      "tool_calls": [{"type": "function", "function": {
@@ -199,22 +260,31 @@ def _agentic_live_messages(image_paths: Sequence[str], question: str,
                              "name": "view_image",
                              "arguments": {"path": f"{directory}/{fname}"}}}]})
             content: List[Dict[str, Any]] = []
-            if i < len(image_paths):
+            if directory == ME_DIR:
+                if portrait:
+                    content.append({"type": "image", "image": portrait})
+            elif i < len(image_paths):
                 content.append({"type": "image", "image": image_paths[i]})
+                i += 1
+            else:
+                i += 1
             content.append({"type": "text", "text": fname})
             msgs.append({"role": "tool", "content": content})
-            i += 1
     return msgs
 
 
 def build_scheme_messages(scheme: str, image_paths: Sequence[str], question: str,
-                          n_files: Optional[int] = None, variant: str = "bare"):
+                          n_files: Optional[int] = None, variant: str = "bare",
+                          portrait: Optional[str] = None, portrait_name: str = ME_FILE,
+                          style: Optional[Dict[str, Any]] = None):
     """Build one scheme's message list, or raise on an unknown scheme."""
     n = n_files if n_files is not None else (len(image_paths) or 3)
     if scheme == "chat":
-        return _chat_messages(image_paths, question, variant), None
+        return _chat_messages(image_paths, question, variant, portrait, style=style), None
     if scheme == "agentic":
-        return _agentic_messages(image_paths, question, n, variant), TOOLS
+        return _agentic_messages(image_paths, question, n, variant, portrait,
+                                 portrait_name, style=style), TOOLS
     if scheme == "agentic_live":
-        return _agentic_live_messages(image_paths, question, n, variant), TOOLS
+        return _agentic_live_messages(image_paths, question, n, variant, portrait,
+                                      portrait_name, style=style), TOOLS
     raise ValueError(f"unknown scheme {scheme!r}")

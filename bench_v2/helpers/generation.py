@@ -53,8 +53,16 @@ def build_base(
     meta_extra: MetaExtra | None = None,
     conditions: Sequence[str] = CONDITIONS,
     schemes: Sequence[str] = SCHEMES,
+    portrait: str | None = None,
+    portrait_name: str = "me.jpg",
+    scheme_style: dict[str, Any] | None = None,
 ) -> Trial:
-    """Build one generation trial, exactly as the bench surface did."""
+    """Build one generation trial, exactly as the bench surface did.
+
+    ``portrait`` is an extra image of the user (EasyPortrait) delivered as context
+    by every scheme; ``scheme_style`` overrides a task's agentic wording. Both are
+    off by default, so an existing surface's conversation is unchanged.
+    """
     if condition not in conditions:
         raise ValueError(f"unknown condition {condition!r}; expected {tuple(conditions)}")
     variant = dict(variant or {"scheme": "chat"})
@@ -87,7 +95,10 @@ def build_base(
         n_files = 0
     else:
         n_files = len(item.image_paths) or 3
-        messages, tools = build_scheme_messages(scheme, image_paths, question, n_files, clause)
+        messages, tools = build_scheme_messages(
+            scheme, image_paths, question, n_files, clause,
+            portrait=portrait, portrait_name=portrait_name, style=scheme_style,
+        )
 
     meta: dict[str, Any] = {
         "family": family,
@@ -105,6 +116,10 @@ def build_base(
         "scheme_invariant": condition == "no_photos",
         "judge": judge,
     }
+    if portrait:
+        meta["portrait"] = portrait
+        meta["portrait_name"] = portrait_name
+        meta["n_images"] = len(image_paths) + 1
     if meta_extra is not None:
         meta.update(meta_extra(variant, order, qid))
 

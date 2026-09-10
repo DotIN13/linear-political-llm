@@ -1,0 +1,21 @@
+{
+  "source": "EasyPortrait",
+  "csv": "results/token_scoring/qwen3_vl/easyportrait/prompt_token_fg_bg_stats_combined_ideology_headwise_linear.csv",
+  "csv_sha256_16": "a25c6dcf43b73f51",
+  "probe": "combined_ideology_headwise_linear",
+  "score_field": "image_mean",
+  "bucketing": "rank_tertile",
+  "buckets": [
+    "low",
+    "mid",
+    "high"
+  ],
+  "n_total": 20000,
+  "cuts": {
+    "low_hi": 0.141018,
+    "mid_hi": 0.283918
+  },
+  "per_bucket": 250,
+  "seed": 42,
+  "note": "Portrait buckets are rank tertiles because the portrait probe scores do not straddle the fixed +/-0.5 cut the LVIS item buckets use."
+}
