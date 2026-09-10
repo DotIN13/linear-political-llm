@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     for item_id, group in by_item.items():
         for row in group:
             for path in row.get("images") or []:
-                if path in img_payload:
+                if path in img_ids:          # dedup by PATH (img_payload is keyed by ident)
                     continue
                 data = thumb_b64(path, args.max_width, args.quality)
                 if data is None:
