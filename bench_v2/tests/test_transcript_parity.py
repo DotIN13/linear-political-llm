@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from bench.surfaces.shared import transcript as old
-from bench_v2.helpers import system_prompt as new
+old = pytest.importorskip("bench.surfaces.shared.transcript")
+from bench_v2.helpers import system_prompt as new  # noqa: E402
 
 
 @pytest.mark.parametrize("scheme", ["chat", "agentic"])

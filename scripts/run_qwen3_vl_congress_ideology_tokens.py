@@ -27,7 +27,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from utils import generate_and_score_tokens, model_base_name
+from lpl.utils import generate_and_score_tokens, model_base_name
 
 DEFAULT_MODEL_PATH = "/home/tzhang3/jevans/models/Qwen3-VL-8B-Instruct"
 DEFAULT_IMAGE_DIR = "data/congress_images"

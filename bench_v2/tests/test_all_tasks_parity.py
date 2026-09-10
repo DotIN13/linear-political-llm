@@ -25,7 +25,10 @@ def _pilot_ids() -> list[str]:
 
 
 def _bench_surface(task: str):
-    from bench import registry
+    try:
+        from bench import registry
+    except ModuleNotFoundError:
+        return None
 
     registry.load_all()
     try:
