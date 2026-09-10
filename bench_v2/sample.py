@@ -66,13 +66,14 @@ csv.field_size_limit(10_000_000)
 # loading
 # --------------------------------------------------------------------------- #
 def signed_extreme(image_min: float, image_max: float) -> float:
-    """The image's most extreme patch token score: whichever of its min/max patch
-    scores sits further from zero, keeping the sign.
+    """The image's most extreme patch token score: ``image_max`` when
+    ``abs(image_max) > abs(image_min)``, otherwise ``image_min``.
 
     ``[-10, 5, 5, 3]`` -> ``-10``. The CSV already carries the two patch extremes
     (``image_min``/``image_max``), so the full per-token tensor is not needed.
+    A tie (equal magnitudes) resolves to ``image_min``.
     """
-    return image_max if abs(image_max) >= abs(image_min) else image_min
+    return image_max if abs(image_max) > abs(image_min) else image_min
 
 
 def load_stats(path: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:

@@ -44,7 +44,7 @@ def _pool():
 def test_signed_extreme_keeps_the_further_patch():
     assert signed_extreme(-10.0, 5.0) == -10.0
     assert signed_extreme(-3.0, 4.0) == 4.0
-    assert signed_extreme(2.0, -2.0) == -2.0  # tie -> max, matches >=
+    assert signed_extreme(-2.0, 2.0) == -2.0  # tie -> min
 
 
 def test_tercile_cuts_are_equal_count():
