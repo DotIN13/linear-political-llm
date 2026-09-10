@@ -41,7 +41,8 @@ td .se { color:var(--muted); font-size:11.5px; font-weight:400; }
   <h1>scheme &times; persona &times; image-lean bucket &mdash; s1_speech &amp; s3_digest</h1>
   <div class="sub">
     photos-only &middot; Qwen3-VL-8B-Instruct (vLLM) &middot; three runs:
-    <span class="k">s1_speech v3</span> <code>58071231</code> (judge <code>lean</code>, gpt-5.4),
+    <span class="k">s1_speech v3</span> <code>58071231</code> (judged under <span class="k">both</span>
+    gpt-5.4 and gpt-5.6-luna, the new default),
     <span class="k">s3_digest v5</span> <code>58071232</code> (with an EasyPortrait photo of the user),
     <span class="k">s3_digest v4</span> <code>58051064</code> (no portrait).
     <br>Bucket = tertile of the user's image-lean score
@@ -55,11 +56,13 @@ td .se { color:var(--muted); font-size:11.5px; font-weight:400; }
 
 <div class="note">
   <span class="k">How to read these.</span> Each cell is a mean, with n in parentheses (Table 1)
-  or the standard error in parentheses (Table 4). The four comparisons that matter:
+  or the standard error in parentheses (Tables 1b and 4). The comparisons that matter:
   <ul>
-    <li><span class="k">Table 1</span> (s1_speech): memory shifts every bucket toward center,
+    <li><span class="k">Table 1 / 1b</span> (s1_speech): memory shifts every bucket toward center,
         but there is no s3-sized <span class="k">bucket gradient</span> &mdash; the effect is
-        small and roughly uniform across the user's inferred lean.</li>
+        small and roughly uniform across the user's inferred lean. Shown under both judges;
+        luna (the default) reads ~0.06 further left, so read the <code>memory &minus; bare</code>
+        panel (1b), not the levels, across judges.</li>
     <li><span class="k">Table 2 vs Table 3</span> (s3_digest v5 vs v4): the memory gradient
         replicates, and adding the user's portrait does not change the pattern.</li>
     <li><span class="k">Table 4</span>: the paired <code>memory &minus; bare</code> effect,
@@ -68,53 +71,101 @@ td .se { color:var(--muted); font-size:11.5px; font-weight:400; }
   </ul>
 </div>
 
-<h2 style="margin-top:30px">Cell means</h2>
+<h2 style="margin-top:30px">s1_speech v3 &mdash; judge-dependent</h2>
 
-<h2>Table 1 &middot; s1_speech v3 &mdash; mean judge lean (&minus;1 left → +1 right)</h2>
+<h2>Table 1 &middot; s1_speech v3 &mdash; mean judge lean (&minus;1 left &rarr; +1 right)</h2>
 <table>
   <thead><tr>
-    <th class="l">scheme</th><th class="l">variant</th>
-    <th>low</th><th>mid</th><th>high</th><th>all</th>
+    <th class="l" rowspan="2">scheme</th><th class="l" rowspan="2">variant</th>
+    <th colspan="2">low</th><th colspan="2">mid</th><th colspan="2">high</th><th colspan="2">all</th>
+  </tr><tr>
+    <th>5.4</th><th>luna</th><th>5.4</th><th>luna</th><th>5.4</th><th>luna</th><th>5.4</th><th>luna</th>
   </tr></thead>
   <tbody>
     <tr><td class="l">chat</td><td class="l">bare</td>
       <td class="neg">−0.4256 <span class="n">(65)</span></td>
+      <td class="neg">−0.5000 <span class="n">(66)</span></td>
       <td class="neg">−0.3788 <span class="n">(66)</span></td>
+      <td class="neg">−0.4495 <span class="n">(66)</span></td>
       <td class="neg">−0.3282 <span class="n">(65)</span></td>
-      <td class="neg strong">−0.3776 <span class="n">(196)</span></td></tr>
+      <td class="neg">−0.3636 <span class="n">(66)</span></td>
+      <td class="neg strong">−0.3776 <span class="n">(196)</span></td>
+      <td class="neg strong">−0.4377 <span class="n">(198)</span></td></tr>
     <tr><td class="l">chat</td><td class="l">memory</td>
       <td class="neg">−0.3939 <span class="n">(66)</span></td>
+      <td class="neg">−0.4949 <span class="n">(66)</span></td>
       <td class="neg">−0.3030 <span class="n">(66)</span></td>
+      <td class="neg">−0.3990 <span class="n">(66)</span></td>
       <td class="neg">−0.2222 <span class="n">(66)</span></td>
-      <td class="neg strong">−0.3064 <span class="n">(198)</span></td></tr>
+      <td class="neg">−0.3131 <span class="n">(66)</span></td>
+      <td class="neg strong">−0.3064 <span class="n">(198)</span></td>
+      <td class="neg strong">−0.4024 <span class="n">(198)</span></td></tr>
 
     <tr><td class="l">agentic</td><td class="l">bare</td>
       <td class="neg">−0.4596 <span class="n">(66)</span></td>
+      <td class="neg">−0.5051 <span class="n">(66)</span></td>
       <td class="neg">−0.3636 <span class="n">(66)</span></td>
+      <td class="neg">−0.4293 <span class="n">(66)</span></td>
       <td class="neg">−0.2626 <span class="n">(66)</span></td>
-      <td class="neg strong">−0.3620 <span class="n">(198)</span></td></tr>
+      <td class="neg">−0.3333 <span class="n">(66)</span></td>
+      <td class="neg strong">−0.3620 <span class="n">(198)</span></td>
+      <td class="neg strong">−0.4226 <span class="n">(198)</span></td></tr>
     <tr><td class="l">agentic</td><td class="l">memory</td>
       <td class="neg">−0.3939 <span class="n">(66)</span></td>
+      <td class="neg">−0.4646 <span class="n">(66)</span></td>
       <td class="neg">−0.3333 <span class="n">(66)</span></td>
+      <td class="neg">−0.4040 <span class="n">(66)</span></td>
       <td class="neg">−0.2222 <span class="n">(66)</span></td>
-      <td class="neg strong">−0.3165 <span class="n">(198)</span></td></tr>
+      <td class="neg">−0.2677 <span class="n">(66)</span></td>
+      <td class="neg strong">−0.3165 <span class="n">(198)</span></td>
+      <td class="neg strong">−0.3788 <span class="n">(198)</span></td></tr>
 
     <tr><td class="l">agentic_live</td><td class="l">bare</td>
       <td class="neg">−0.4697 <span class="n">(66)</span></td>
+      <td class="neg">−0.5657 <span class="n">(66)</span></td>
       <td class="neg">−0.4091 <span class="n">(66)</span></td>
+      <td class="neg">−0.4899 <span class="n">(66)</span></td>
       <td class="neg">−0.3030 <span class="n">(66)</span></td>
-      <td class="neg strong">−0.3939 <span class="n">(198)</span></td></tr>
+      <td class="neg">−0.3485 <span class="n">(66)</span></td>
+      <td class="neg strong">−0.3939 <span class="n">(198)</span></td>
+      <td class="neg strong">−0.4680 <span class="n">(198)</span></td></tr>
     <tr><td class="l">agentic_live</td><td class="l">memory</td>
       <td class="neg">−0.4343 <span class="n">(66)</span></td>
+      <td class="neg">−0.5202 <span class="n">(66)</span></td>
       <td class="neg">−0.3485 <span class="n">(66)</span></td>
+      <td class="neg">−0.4141 <span class="n">(66)</span></td>
       <td class="neg">−0.2222 <span class="n">(66)</span></td>
-      <td class="neg strong">−0.3350 <span class="n">(198)</span></td></tr>
+      <td class="neg">−0.2727 <span class="n">(66)</span></td>
+      <td class="neg strong">−0.3350 <span class="n">(198)</span></td>
+      <td class="neg strong">−0.4024 <span class="n">(198)</span></td></tr>
 
-    <tr><td class="l">all</td><td class="l">bare</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td class="strong">−0.3778 <span class="n">(592)</span></td></tr>
-    <tr><td class="l">all</td><td class="l">memory</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td class="strong">−0.3193 <span class="n">(594)</span></td></tr>
+    <tr><td class="l">all</td><td class="l">bare</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td class="strong">−0.3778 <span class="n">(592)</span></td><td class="strong">−0.4428 <span class="n">(594)</span></td></tr>
+    <tr><td class="l">all</td><td class="l">memory</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td class="strong">−0.3193 <span class="n">(594)</span></td><td class="strong">−0.3945 <span class="n">(594)</span></td></tr>
   </tbody>
 </table>
-<div class="legend">Parentheses are n. Judge label mapped to [&minus;1, 1]. Memory pulls every bucket toward center; no s3-sized bucket gradient.</div>
+<div class="legend">Each cell: <span class="k">gpt-5.4</span> / <span class="k">gpt-5.6-luna</span> (reasoning off), n in parentheses. Judge label mapped to [&minus;1, 1]. luna reads &asymp;0.06 further left on every cell, so compare memory&minus;bare (Table 1b), not levels, across judges.</div>
+
+<h2>Table 1b &middot; s1_speech v3 &mdash; paired memory &minus; bare (the hypothesis DV)</h2>
+<table>
+  <thead><tr>
+    <th class="l">scheme</th><th class="l">bucket</th>
+    <th>gpt-5.4</th><th>gpt-5.6-luna</th>
+  </tr></thead>
+  <tbody>
+    <tr><td class="l">chat</td><td class="l">low</td><td class="pos">+0.0308 <span class="se">(0.028)</span> <span class="n">t+1.1 n=65</span></td><td class="pos">+0.0051 <span class="se">(0.027)</span> <span class="n">t+0.2 n=66</span></td></tr>
+    <tr><td class="l">chat</td><td class="l">mid</td><td class="pos">+0.0758 <span class="se">(0.033)</span> <span class="n">t+2.3 n=66</span></td><td class="pos">+0.0505 <span class="se">(0.032)</span> <span class="n">t+1.6 n=66</span></td></tr>
+    <tr><td class="l">chat</td><td class="l">high</td><td class="pos">+0.1077 <span class="se">(0.039)</span> <span class="n">t+2.8 n=65</span></td><td class="pos">+0.0505 <span class="se">(0.038)</span> <span class="n">t+1.3 n=66</span></td></tr>
+    <tr><td class="l">agentic</td><td class="l">low</td><td class="pos">+0.0657 <span class="se">(0.032)</span> <span class="n">t+2.1 n=66</span></td><td class="pos">+0.0404 <span class="se">(0.031)</span> <span class="n">t+1.3 n=66</span></td></tr>
+    <tr><td class="l">agentic</td><td class="l">mid</td><td class="pos">+0.0303 <span class="se">(0.036)</span> <span class="n">t+0.8 n=66</span></td><td class="pos">+0.0253 <span class="se">(0.035)</span> <span class="n">t+0.7 n=66</span></td></tr>
+    <tr><td class="l">agentic</td><td class="l">high</td><td class="pos">+0.0404 <span class="se">(0.043)</span> <span class="n">t+0.9 n=66</span></td><td class="pos">+0.0657 <span class="se">(0.041)</span> <span class="n">t+1.6 n=66</span></td></tr>
+    <tr><td class="l">agentic_live</td><td class="l">low</td><td class="pos">+0.0354 <span class="se">(0.030)</span> <span class="n">t+1.2 n=66</span></td><td class="pos">+0.0455 <span class="se">(0.026)</span> <span class="n">t+1.8 n=66</span></td></tr>
+    <tr><td class="l">agentic_live</td><td class="l">mid</td><td class="pos">+0.0606 <span class="se">(0.031)</span> <span class="n">t+1.9 n=66</span></td><td class="pos">+0.0758 <span class="se">(0.032)</span> <span class="n">t+2.4 n=66</span></td></tr>
+    <tr><td class="l">agentic_live</td><td class="l">high</td><td class="pos">+0.0808 <span class="se">(0.037)</span> <span class="n">t+2.2 n=66</span></td><td class="pos">+0.0758 <span class="se">(0.034)</span> <span class="n">t+2.2 n=66</span></td></tr>
+  </tbody>
+</table>
+<div class="legend">Within-item paired <code>memory &minus; bare</code> on judge <code>lean</code>; positive = memory shifts the letter/speech right. Both judges show a small, roughly uniform positive shift &mdash; <span class="k">no s3-sized bucket gradient</span>. Parentheses are standard errors.</div>
+
+<h2 style="margin-top:30px">s3_digest &mdash; deterministic (no judge; Tables 2&ndash;5 hold under any judge)</h2>
 
 <h2>Table 2 &middot; s3_digest v5 &mdash; mean rel slant (with user portrait)</h2>
 <table>
@@ -274,9 +325,11 @@ td .se { color:var(--muted); font-size:11.5px; font-weight:400; }
     <li><span class="k">s1_speech is task-dependent.</span> With v3's task-appropriate wording
         ("personal assistant", "tailor my answer to your taste") the news-digest confound is
         gone, and the effect moves the expected way &mdash; but it stays small and is not
-        significant in any scheme, and <span class="k">agentic</span> is flat. So the strong
+        significant in any scheme, and <span class="k">agentic</span> is flat-ish. So the strong
         s3 gradient is not simply the wording: a forced 5-of-12 choice exposes it, a
-        free-form stump speech does not.</li>
+        free-form stump speech does not. This holds under <span class="k">both</span> judges;
+        the one thing that moves is which single cell is strongest &mdash; gpt-5.4 puts it on
+        chat-high (+0.108), luna on agentic_live-mid/high (+0.076).</li>
     <li><span class="k">The gate is behavioral, not lexical.</span> In s3 the memory shift
         lands on <span class="k">economic</span> framing (and only weakly on social /
         institutional trust): the same headlines read market-forward for a right-leaning
