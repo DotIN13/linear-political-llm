@@ -34,6 +34,7 @@ PORT=${PORT:-8000}
 OUT="$REPO/runs/bench_v2/s3_digest/v3"
 ITEMS=${ITEMS:-items/explore_bucket_v1.jsonl}
 LIMIT=${1:-0}
+WORKERS=${WORKERS:-16}
 
 [ -f "$SIF" ] || { echo "[sbatch] no SIF at $SIF" >&2; exit 1; }
 [ -d "$MODEL_DIR" ] || { echo "[sbatch] no model at $MODEL_DIR" >&2; exit 1; }
@@ -94,10 +95,10 @@ for i in $(seq 1 180); do
 done
 [ "$READY" = 1 ] || { echo "[sbatch] server never became ready" >&2; exit 1; }
 
-echo "[sbatch] pilot run: limit=$LIMIT condition=photos items=$ITEMS" >&2
+echo "[sbatch] pilot run: limit=$LIMIT condition=photos items=$ITEMS workers=$WORKERS" >&2
 "$PY" -m bench_v2.tasks.s3_digest.v3.pilot run \
   --adaptor vllm --limit "$LIMIT" --condition photos \
-  --items "$ITEMS" \
+  --items "$ITEMS" --workers "$WORKERS" \
   || { echo "[sbatch] pilot run failed" >&2; exit 1; }
 
 echo "[sbatch] summary" >&2

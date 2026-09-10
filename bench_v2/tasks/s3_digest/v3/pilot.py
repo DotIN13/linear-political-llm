@@ -378,11 +378,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model", default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--limit-cells", type=int, default=0)
+    parser.add_argument("--workers", type=int, default=1, help="concurrent adaptor calls")
+    parser.add_argument("--out", default=None, help="override the run directory")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    run_dir = Path(args.out) if args.out else OUT_DIR
 
     # --- stage 1: load the items ---------------------------------------------
     items, synthetic = read_items(args.items, args.limit)
@@ -423,13 +426,13 @@ def main(argv: list[str] | None = None) -> int:
         adaptor = adaptor_cls(**kwargs)
         run_helper.run_cells(
             surface=SURFACE, cells=cells, build=build, read=read, adaptor=adaptor,
-            out_dir=OUT_DIR, seed=args.seed, limit_cells=args.limit_cells,
-            note=f"{TASK}/{VERSION}",
+            out_dir=run_dir, seed=args.seed, limit_cells=args.limit_cells,
+            note=f"{TASK}/{VERSION}", workers=args.workers,
         )
 
     if args.phase == "summary":
         # --- stage 4: summarize the dependent variable ----------------------
-        trials = OUT_DIR / "trials.jsonl"
+        trials = run_dir / "trials.jsonl"
         if not trials.exists():
             print(f"no records at {trials}; run `pilot run` first")
             return 1

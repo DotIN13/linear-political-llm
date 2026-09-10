@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 from bench_v2.helpers import run as run_helper
 from bench_v2.judge import aggregate_labels, attach_judge
@@ -32,6 +33,14 @@ class DummyAdaptor:
             text="Here's an outline for your stump speech: jobs, health, schools.",
             probe={"s_pre": [1.0, 2.0]}, timing_ms=12.5, cost_usd=0.0,
         )
+
+
+class SlowAdaptor(DummyAdaptor):
+    """Sleeps so several calls really are in flight at once under the pool."""
+
+    def run(self, trial):
+        time.sleep(0.05)
+        return super().run(trial)
 
 
 def test_run_cells_writes_and_resumes(tmp_path):
@@ -73,6 +82,24 @@ def test_run_cells_writes_and_resumes(tmp_path):
 
     assert os.path.exists(os.path.join(out, "manifest.json"))
     assert os.path.exists(os.path.join(out, "conversations"))
+
+
+def test_run_cells_parallel_writes_each_once(tmp_path):
+    cells = run_helper.cell_plan(("no_photos",), v1.variants(), [synthetic_item()],
+                                 v1.is_item_invariant)
+    out = str(tmp_path)
+    n = run_helper.run_cells(surface="s1_speech", cells=cells, build=v1.build,
+                             read=v1.read, adaptor=SlowAdaptor(), out_dir=out,
+                             seed=42, verbose=False, workers=4)
+    assert n == len(cells)
+    rows = [json.loads(line) for line in
+            open(os.path.join(out, "trials.jsonl")) if line.strip()]
+    transcripts = [json.loads(line) for line in
+                   open(os.path.join(out, "transcripts.jsonl")) if line.strip()]
+    keys = [row["trial_key"] for row in rows]
+    assert len(keys) == len(set(keys)) == len(cells)  # no dups, no losses under the pool
+    assert len(transcripts) == len(cells)
+    assert all(row["response"]["text"] for row in rows)
 
 
 def test_attach_judge_folds_labels_into_trials(tmp_path):
