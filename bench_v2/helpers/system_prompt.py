@@ -160,6 +160,10 @@ def _agentic_live_messages(image_paths: Sequence[str], question: str,
     episode reads as a single user turn. The search is still scripted (the model
     never chooses to look) so the images stay constant against the other schemes.
 
+    In the ``memory`` variant the agent opens with a sentence announcing that it
+    will read the user's memory and recommend news to their taste, *before* the
+    first tool call.
+
     Edit the wording here.
     """
     _check_variant(variant)
@@ -178,6 +182,9 @@ def _agentic_live_messages(image_paths: Sequence[str], question: str,
         {"role": "system", "content": [{"type": "text", "text": system}]},
         {"role": "user", "content": [{"type": "text", "text": question}]},
     ]
+    if variant == "memory":
+        msgs.append({"role": "assistant", "content": [{"type": "text", "text": (
+            "I'll look at your memory and recommend news based on your taste.")}]})
     for directory, names in files:
         msgs.append({"role": "assistant", "content": [{"type": "text", "text": ""}],
                      "tool_calls": [{"type": "function", "function": {

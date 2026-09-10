@@ -13,7 +13,7 @@ IMGS = ["a.jpg", "b.jpg", "c.jpg"]
 
 
 def test_agentic_live_asks_first_then_searches():
-    msgs, tools = build_scheme_messages("agentic_live", IMGS, "THE QUESTION", 3, "memory")
+    msgs, tools = build_scheme_messages("agentic_live", IMGS, "THE QUESTION", 3, "bare")
     roles = [m["role"] for m in msgs]
     assert roles[0] == "system"
     assert roles[1] == "user"
@@ -21,6 +21,19 @@ def test_agentic_live_asks_first_then_searches():
     # 2 list_dir + 3 view_image = five call/result pairs, then nothing (the model answers)
     assert roles[2:] == ["assistant", "tool"] * 5
     assert all(m.get("tool_calls") for m in msgs if m["role"] == "assistant")
+    assert msgs[-1]["role"] == "tool"
+    assert tools is not None
+
+
+def test_agentic_live_memory_opens_with_an_intent_sentence():
+    msgs, tools = build_scheme_messages("agentic_live", IMGS, "THE QUESTION", 3, "memory")
+    roles = [m["role"] for m in msgs]
+    assert roles[:3] == ["system", "user", "assistant"]
+    preamble = msgs[2]
+    assert not preamble.get("tool_calls")
+    assert "memory" in preamble["content"][0]["text"].lower()
+    # the announcement comes before any tool call
+    assert roles[3:] == ["assistant", "tool"] * 5
     assert msgs[-1]["role"] == "tool"
     assert tools is not None
 
