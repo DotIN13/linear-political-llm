@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scheme &times; persona &times; image-lean bucket &mdash; s1_speech &amp; s3_digest</title>
+<style>
+:root { --fg:#1b1f24; --muted:#6a737d; --line:#e1e4e8; --bg:#f6f8fa; --card:#fff;
+        --left:#dbeafe; --right:#fee2e2; }
+* { box-sizing:border-box; }
+body { margin:0; font:14px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  color:var(--fg); background:var(--bg); }
+header { background:#fff; border-bottom:1px solid var(--line); padding:16px 22px; }
+h1 { font-size:19px; margin:0 0 4px; }
+h2 { font-size:15px; margin:26px 0 8px; }
+.sub { color:var(--muted); font-size:12.5px; }
+.sub code { background:#eef2f6; padding:1px 5px; border-radius:5px; }
+main { padding:8px 22px 40px; max-width:940px; }
+table { border-collapse:collapse; width:100%; margin-top:6px; background:var(--card);
+  border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+th, td { padding:7px 10px; text-align:right; border-top:1px solid var(--line); font-variant-numeric:tabular-nums; }
+thead th { border-top:0; background:#eef2f6; font-size:12px; text-transform:uppercase;
+  letter-spacing:.05em; color:#364152; }
+th.l, td.l { text-align:left; }
+tbody tr:hover { background:#fafbfc; }
+td.neg { background:var(--left); }
+td.pos { background:var(--right); }
+td.strong { font-weight:700; }
+td .n { color:var(--muted); font-size:11.5px; font-weight:400; }
+td .se { color:var(--muted); font-size:11.5px; font-weight:400; }
+.legend { color:var(--muted); font-size:12px; margin-top:6px; }
+.legend .sw { display:inline-block; width:11px; height:11px; border-radius:3px;
+  vertical-align:-1px; margin:0 4px 0 10px; border:1px solid var(--line); }
+.note { background:#fff; border:1px solid var(--line); border-radius:8px; padding:12px 16px;
+  margin-top:10px; }
+.note ul { margin:6px 0 0; padding-left:20px; }
+.note li { margin:3px 0; }
+.k { font-weight:700; }
+.miss { color:var(--muted); }
+</style></head>
+<body>
+<header>
+  <h1>scheme &times; persona &times; image-lean bucket &mdash; s1_speech &amp; s3_digest</h1>
+  <div class="sub">
+    photos-only &middot; Qwen3-VL-8B-Instruct (vLLM) &middot; three runs:
+    <span class="k">s1_speech v3</span> <code>58071231</code> (judge <code>lean</code>, gpt-5.4),
+    <span class="k">s3_digest v5</span> <code>58071232</code> (with an EasyPortrait photo of the user),
+    <span class="k">s3_digest v4</span> <code>58051064</code> (no portrait).
+    <br>Bucket = tertile of the user's image-lean score
+    (<span class="k">low</span> = most left photos, <span class="k">high</span> = most right).
+    Negative = left, positive = right; in the s1 tables the judge's 7-point
+    <code>lean</code> label is mapped to [&minus;1, 1]. In <span class="k">memory</span>, the
+    <code>agentic_live</code> transcript opens with an intent sentence before the tool calls.
+  </div>
+</header>
+<main>
+
+<div class="note">
+  <span class="k">How to read these.</span> Each cell is a mean, with n in parentheses (Table 1)
+  or the standard error in parentheses (Table 4). The four comparisons that matter:
+  <ul>
+    <li><span class="k">Table 1</span> (s1_speech): memory shifts every bucket toward center,
+        but there is no s3-sized <span class="k">bucket gradient</span> &mdash; the effect is
+        small and roughly uniform across the user's inferred lean.</li>
+    <li><span class="k">Table 2 vs Table 3</span> (s3_digest v5 vs v4): the memory gradient
+        replicates, and adding the user's portrait does not change the pattern.</li>
+    <li><span class="k">Table 4</span>: the paired <code>memory &minus; bare</code> effect,
+        cell for cell, with the portrait (v5) and without (v4).</li>
+    <li><span class="k">Table 5</span>: the intent sentence gates agentic_live.</li>
+  </ul>
+</div>
+
+<h2 style="margin-top:30px">Cell means</h2>
+
+<h2>Table 1 &middot; s1_speech v3 &mdash; mean judge lean (&minus;1 left → +1 right)</h2>
+<table>
+  <thead><tr>
+    <th class="l">scheme</th><th class="l">variant</th>
+    <th>low</th><th>mid</th><th>high</th><th>all</th>
+  </tr></thead>
+  <tbody>
+    <tr><td class="l">chat</td><td class="l">bare</td>
+      <td class="neg">−0.4256 <span class="n">(65)</span></td>
+      <td class="neg">−0.3788 <span class="n">(66)</span></td>
+      <td class="neg">−0.3282 <span class="n">(65)</span></td>
+      <td class="neg strong">−0.3776 <span class="n">(196)</span></td></tr>
+    <tr><td class="l">chat</td><td class="l">memory</td>
+      <td class="neg">−0.3939 <span class="n">(66)</span></td>
+      <td class="neg">−0.3030 <span class="n">(66)</span></td>
+      <td class="neg">−0.2222 <span class="n">(66)</span></td>
+      <td class="neg strong">−0.3064 <span class="n">(198)</span></td></tr>
+
+    <tr><td class="l">agentic</td><td class="l">bare</td>
+      <td class="neg">−0.4596 <span class="n">(66)</span></td>
+      <td class="neg">−0.3636 <span class="n">(66)</span></td>
+      <td class="neg">−0.2626 <span class="n">(66)</span></td>
+      <td class="neg strong">−0.3620 <span class="n">(198)</span></td></tr>
+    <tr><td class="l">agentic</td><td class="l">memory</td>
+      <td class="neg">−0.3939 <span class="n">(66)</span></td>
+      <td class="neg">−0.3333 <span class="n">(66)</span></td>
+      <td class="neg">−0.2222 <span class="n">(66)</span></td>
+      <td class="neg strong">−0.3165 <span class="n">(198)</span></td></tr>
+
+    <tr><td class="l">agentic_live</td><td class="l">bare</td>
+      <td class="neg">−0.4697 <span class="n">(66)</span></td>
+      <td class="neg">−0.4091 <span class="n">(66)</span></td>
+      <td class="neg">−0.3030 <span class="n">(66)</span></td>
+      <td class="neg strong">−0.3939 <span class="n">(198)</span></td></tr>
+    <tr><td class="l">agentic_live</td><td class="l">memory</td>
+      <td class="neg">−0.4343 <span class="n">(66)</span></td>
+      <td class="neg">−0.3485 <span class="n">(66)</span></td>
+      <td class="neg">−0.2222 <span class="n">(66)</span></td>
+      <td class="neg strong">−0.3350 <span class="n">(198)</span></td></tr>
+
+    <tr><td class="l">all</td><td class="l">bare</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td class="strong">−0.3778 <span class="n">(592)</span></td></tr>
+    <tr><td class="l">all</td><td class="l">memory</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td class="strong">−0.3193 <span class="n">(594)</span></td></tr>
+  </tbody>
+</table>
+<div class="legend">Parentheses are n. Judge label mapped to [&minus;1, 1]. Memory pulls every bucket toward center; no s3-sized bucket gradient.</div>
+
+<h2>Table 2 &middot; s3_digest v5 &mdash; mean rel slant (with user portrait)</h2>
+<table>
+  <thead><tr>
+    <th class="l">scheme</th><th class="l">variant</th>
+    <th>low</th><th>mid</th><th>high</th><th>all</th>
+  </tr></thead>
+  <tbody>
+    <tr><td class="l">chat</td><td class="l">bare</td>
+      <td class="neg">−0.4646 <span class="n">(65)</span></td>
+      <td class="neg">−0.4839 <span class="n">(62)</span></td>
+      <td class="neg">−0.3742 <span class="n">(62)</span></td>
+      <td class="neg strong">−0.4413 <span class="n">(189)</span></td></tr>
+    <tr><td class="l">chat</td><td class="l">memory</td>
+      <td class="neg">−0.5048 <span class="n">(63)</span></td>
+      <td class="neg">−0.3415 <span class="n">(65)</span></td>
+      <td class="neg">−0.1810 <span class="n">(63)</span></td>
+      <td class="neg strong">−0.3424 <span class="n">(191)</span></td></tr>
+
+    <tr><td class="l">agentic</td><td class="l">bare</td>
+      <td class="neg">−0.4710 <span class="n">(62)</span></td>
+      <td class="neg">−0.4813 <span class="n">(64)</span></td>
+      <td class="neg">−0.3908 <span class="n">(65)</span></td>
+      <td class="neg strong">−0.4471 <span class="n">(191)</span></td></tr>
+    <tr><td class="l">agentic</td><td class="l">memory</td>
+      <td class="neg">−0.5410 <span class="n">(61)</span></td>
+      <td class="neg">−0.3785 <span class="n">(65)</span></td>
+      <td class="neg">−0.1935 <span class="n">(62)</span></td>
+      <td class="neg strong">−0.3702 <span class="n">(188)</span></td></tr>
+
+    <tr><td class="l">agentic_live</td><td class="l">bare</td>
+      <td class="neg">−0.5818 <span class="n">(66)</span></td>
+      <td class="neg">−0.5323 <span class="n">(65)</span></td>
+      <td class="neg">−0.5000 <span class="n">(64)</span></td>
+      <td class="neg strong">−0.5385 <span class="n">(195)</span></td></tr>
+    <tr><td class="l">agentic_live</td><td class="l">memory</td>
+      <td class="neg">−0.5631 <span class="n">(65)</span></td>
+      <td class="neg">−0.2909 <span class="n">(66)</span></td>
+      <td class="neg">−0.1937 <span class="n">(63)</span></td>
+      <td class="neg strong">−0.3505 <span class="n">(194)</span></td></tr>
+
+    <tr><td class="l">all</td><td class="l">bare</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td class="strong">−0.4762 <span class="n">(575)</span></td></tr>
+    <tr><td class="l">all</td><td class="l">memory</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td class="strong">−0.3543 <span class="n">(573)</span></td></tr>
+  </tbody>
+</table>
+<div class="legend">Parentheses are n. Negative = left, positive = right. Low cells barely move; mid/high swing right under memory — the sycophantic gradient.</div>
+
+<h2>Table 3 &middot; s3_digest v4 &mdash; mean rel slant (no portrait, reference)</h2>
+<table>
+  <thead><tr>
+    <th class="l">scheme</th><th class="l">variant</th>
+    <th>low</th><th>mid</th><th>high</th><th>all</th>
+  </tr></thead>
+  <tbody>
+    <tr><td class="l">chat</td><td class="l">bare</td>
+      <td class="neg">−0.4581 <span class="n">(62)</span></td>
+      <td class="neg">−0.3662 <span class="n">(65)</span></td>
+      <td class="neg">−0.4159 <span class="n">(63)</span></td>
+      <td class="neg strong">−0.4126 <span class="n">(190)</span></td></tr>
+    <tr><td class="l">chat</td><td class="l">memory</td>
+      <td class="neg">−0.4937 <span class="n">(64)</span></td>
+      <td class="neg">−0.3169 <span class="n">(65)</span></td>
+      <td class="neg">−0.2839 <span class="n">(62)</span></td>
+      <td class="neg strong">−0.3654 <span class="n">(191)</span></td></tr>
+
+    <tr><td class="l">agentic</td><td class="l">bare</td>
+      <td class="neg">−0.4968 <span class="n">(62)</span></td>
+      <td class="neg">−0.4375 <span class="n">(64)</span></td>
+      <td class="neg">−0.4349 <span class="n">(63)</span></td>
+      <td class="neg strong">−0.4561 <span class="n">(189)</span></td></tr>
+    <tr><td class="l">agentic</td><td class="l">memory</td>
+      <td class="neg">−0.5051 <span class="n">(59)</span></td>
+      <td class="neg">−0.2918 <span class="n">(61)</span></td>
+      <td class="neg">−0.2063 <span class="n">(63)</span></td>
+      <td class="neg strong">−0.3311 <span class="n">(183)</span></td></tr>
+
+    <tr><td class="l">agentic_live</td><td class="l">bare</td>
+      <td class="neg">−0.5563 <span class="n">(64)</span></td>
+      <td class="neg">−0.5111 <span class="n">(63)</span></td>
+      <td class="neg">−0.4500 <span class="n">(64)</span></td>
+      <td class="neg strong">−0.5058 <span class="n">(191)</span></td></tr>
+    <tr><td class="l">agentic_live</td><td class="l">memory</td>
+      <td class="neg">−0.5500 <span class="n">(64)</span></td>
+      <td class="neg">−0.2923 <span class="n">(65)</span></td>
+      <td class="neg">−0.1877 <span class="n">(65)</span></td>
+      <td class="neg strong">−0.3423 <span class="n">(194)</span></td></tr>
+
+    <tr><td class="l">all</td><td class="l">bare</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td class="strong">−0.4582 <span class="n">(570)</span></td></tr>
+    <tr><td class="l">all</td><td class="l">memory</td><td>&ndash;</td><td>&ndash;</td><td>&ndash;</td><td class="strong">−0.3465 <span class="n">(568)</span></td></tr>
+  </tbody>
+</table>
+<div class="legend">Same stimulus and deal as v5 without the EasyPortrait face. Compare cell-for-cell with Table 2: the portrait does not change the pattern.</div>
+
+<h2 style="margin-top:30px">Memory effect: portrait vs no portrait</h2>
+<h2>Table 4 &middot; paired memory &minus; bare (rel slant), v5 (portrait) vs v4 (no portrait)</h2>
+<table>
+  <thead><tr>
+    <th class="l">scheme</th><th class="l">bucket</th>
+    <th>v5 &middot; with portrait</th><th>v4 &middot; no portrait</th><th>&Delta; (v5&minus;v4)</th>
+  </tr></thead>
+  <tbody>
+    <tr><td class="l">chat</td><td class="l">low</td><td class="neg">−0.0381 <span class="se">(0.048)</span></td><td class="neg">−0.0667 <span class="se">(0.036)</span></td><td class="pos">+0.0286</td></tr>
+    <tr><td class="l"></td><td class="l">mid</td><td class="pos">+0.1443 <span class="se">(0.045)</span></td><td class="pos">+0.0500 <span class="se">(0.054)</span></td><td class="pos">+0.0943</td></tr>
+    <tr><td class="l"></td><td class="l">high</td><td class="pos">+0.2034 <span class="se">(0.067)</span></td><td class="pos">+0.1424 <span class="se">(0.056)</span></td><td class="pos">+0.0610</td></tr>
+    <tr><td class="l">agentic</td><td class="l">low</td><td class="neg">−0.0759 <span class="se">(0.039)</span></td><td class="neg">−0.0073 <span class="se">(0.047)</span></td><td class="neg">−0.0686</td></tr>
+    <tr><td class="l"></td><td class="l">mid</td><td class="pos">+0.1016 <span class="se">(0.042)</span></td><td class="pos">+0.1627 <span class="se">(0.052)</span></td><td class="neg">−0.0611</td></tr>
+    <tr><td class="l"></td><td class="l">high</td><td class="pos">+0.1967 <span class="se">(0.046)</span></td><td class="pos">+0.2230 <span class="se">(0.056)</span></td><td class="neg">−0.0262</td></tr>
+    <tr><td class="l">agentic_live</td><td class="l">low</td><td class="pos">+0.0369 <span class="se">(0.052)</span></td><td class="neg">−0.0129 <span class="se">(0.038)</span></td><td class="pos">+0.0498</td></tr>
+    <tr><td class="l"></td><td class="l">mid</td><td class="pos">+0.2338 <span class="se">(0.050)</span></td><td class="pos">+0.2387 <span class="se">(0.052)</span></td><td class="neg">−0.0049</td></tr>
+    <tr><td class="l"></td><td class="l">high</td><td class="pos">+0.2774 <span class="se">(0.057)</span></td><td class="pos">+0.2730 <span class="se">(0.044)</span></td><td class="pos">+0.0044</td></tr>
+  </tbody>
+</table>
+<div class="legend">
+  Within-item paired <code>memory &minus; bare</code>, per scheme &times; bucket. Parentheses are
+  standard errors. Positive = memory shifts output right (toward the inferred user). The portrait
+  changes nothing systematic.
+</div>
+
+<h2 style="margin-top:30px">The gate</h2>
+<h2>Table 5 &middot; agentic_live, with vs without the intent sentence (s3 v4)</h2>
+<table>
+  <thead><tr>
+    <th class="l">run</th><th>low</th><th>mid</th><th>high</th>
+  </tr></thead>
+  <tbody>
+    <tr><td class="l">invalidated (no preamble)</td>
+      <td class="pos">+0.013 <span class="se">(0.031)</span></td>
+      <td class="miss">+0.000 <span class="se">(0.039)</span></td>
+      <td class="pos">+0.051 <span class="se">(0.034)</span></td></tr>
+    <tr><td class="l">58051064 (with preamble)</td>
+      <td class="neg">&minus;0.013 <span class="se">(0.038)</span></td>
+      <td class="pos strong">+0.239 <span class="se">(0.052)</span></td>
+      <td class="pos strong">+0.273 <span class="se">(0.044)</span></td></tr>
+  </tbody>
+</table>
+<div class="legend">
+  Paired <code>memory &minus; bare</code> rel slant, per bucket. The two runs share stimuli,
+  deal and question; the only change is the memory-variant intent sentence inserted before
+  the first tool call. Without it the effect is null; with it, agentic_live has the largest
+  effect of any scheme in the run.
+</div>
+
+<h2>Read</h2>
+<div class="note">
+  <ul>
+    <li><span class="k">s3_digest (v4 / v5)</span>: the sycophantic gradient is the robust result.
+        <span class="k">agentic_live</span> is the largest &mdash; low flat, then
+        &asymp; +0.23 mid and +0.28 high; <span class="k">chat</span> and
+        <span class="k">agentic</span> show the same shape, slightly smaller. The memory
+        instruction (not the turn order) is what turns the effect on; the realistic live order
+        amplifies it.</li>
+    <li><span class="k">The user's face does not add to it.</span> v5 attaches an EasyPortrait
+        portrait in every scheme (chat: "This is a photo of me."; agentic: a file in
+        <code>/memory/me</code>). Table 4 shows the paired effect is essentially unchanged
+        from v4, with differences that flip sign across schemes. The model rarely refers to
+        the portrait; it describes the persona photos instead.</li>
+    <li><span class="k">s1_speech is task-dependent.</span> With v3's task-appropriate wording
+        ("personal assistant", "tailor my answer to your taste") the news-digest confound is
+        gone, and the effect moves the expected way &mdash; but it stays small and is not
+        significant in any scheme, and <span class="k">agentic</span> is flat. So the strong
+        s3 gradient is not simply the wording: a forced 5-of-12 choice exposes it, a
+        free-form stump speech does not.</li>
+    <li><span class="k">The gate is behavioral, not lexical.</span> In s3 the memory shift
+        lands on <span class="k">economic</span> framing (and only weakly on social /
+        institutional trust): the same headlines read market-forward for a right-leaning
+        user and redistribution-forward for a left-leaning one.</li>
+  </ul>
+</div>
+
+</main>
+</body></html>
