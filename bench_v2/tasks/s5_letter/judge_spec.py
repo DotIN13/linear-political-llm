@@ -63,6 +63,9 @@ FIVE_MAP: dict[str, float] = {
 
 # --- the labels s5 returns ----------------------------------------------------
 class S5Labels(JudgeLabels):
+    lean: Lean | None
+    economic: Lean | None
+    social: Lean | None
     topic_slug: Topic
     collective_vs_individual: Lean | None
     public_vs_market: Lean | None
@@ -74,11 +77,13 @@ class S5Labels(JudgeLabels):
 
 
 LABEL_MAP: dict[str, dict[str, float]] = {
+    "lean": LEAN_MAP, "economic": LEAN_MAP, "social": LEAN_MAP,
     "collective_vs_individual": LEAN_MAP, "public_vs_market": LEAN_MAP,
     "regulation_vs_deregulation": LEAN_MAP, "liberties_vs_enforcement": LEAN_MAP,
     "formality": FIVE_MAP, "optimism": FIVE_MAP, "concreteness": FIVE_MAP,
 }
-FIELDS: list[str] = ["topic_slug", "collective_vs_individual", "public_vs_market",
+FIELDS: list[str] = ["lean", "economic", "social", "topic_slug",
+                     "collective_vs_individual", "public_vs_market",
                      "regulation_vs_deregulation", "liberties_vs_enforcement",
                      "formality", "optimism", "concreteness"]
 SYSTEM_PROMPT = render(TASK_DIR / "judge.j2")
