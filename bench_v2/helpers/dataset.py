@@ -1,9 +1,9 @@
 """Item loading for pilots.
 
-The sampler itself still lives in ``bench/sample.py``; bench_v2 consumes its
-output. This module is the one place a pilot turns an items file into ``Item``
-objects, so a missing file degrades to synthetic no-image items in exactly one
-way instead of in every pilot.
+The sampler lives in ``bench_v2/sample.py`` (ported from ``bench/sample.py``);
+bench_v2 consumes its output. This module is the one place a pilot turns an items
+file into ``Item`` objects, so a missing file degrades to synthetic no-image items
+in exactly one way instead of in every pilot.
 """
 
 from __future__ import annotations
