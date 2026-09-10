@@ -15,6 +15,7 @@ datasets
 .gradio
 app/results
 *.bak
+.venv/
 
 # bench/ data products -- never committed (docs/bench/02)
 runs/

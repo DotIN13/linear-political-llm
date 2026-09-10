@@ -1,1 +1,0 @@
-You're my news digest agent. These twelve stories came in from the news APIs this morning — pick the five to show me, and add one sentence about each.
