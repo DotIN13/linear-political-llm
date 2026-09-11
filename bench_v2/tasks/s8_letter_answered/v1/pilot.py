@@ -41,14 +41,15 @@ from bench_v2.helpers.prompts import load_json, load_pool, render
 from bench_v2.helpers.readers import detect_refusal, refusal_match, word_count
 from bench_v2.judge import aggregate_labels, attach_judge, judge_run
 from bench_v2.paths import items_dir, runs_dir
-from bench_v2.tasks.s8_letter_answered.judge_spec import JUDGE
+from bench_v2.tasks.s8_letter_answered.v1.judge_spec import JUDGE
 from bench_v2.types import Item, Outcome, Response, Trial
 
 TASK = "s8_letter_answered"
 VERSION = "v1"
 SURFACE = TASK
 TITLE = "write a letter to my representative about a supplied concern"
-TASK_DIR = Path(__file__).resolve().parents[1]
+HERE = Path(__file__).resolve().parent         # v1's own prompts, assistant turn, judge
+TASK_DIR = HERE.parent                         # the concern pool and prefill, shared with v2
 CONDITIONS: tuple[str, ...] = ("photos", "no_photos")
 SCHEMES: tuple[str, ...] = ("chat", "agentic")
 MAX_NEW_TOKENS = 800
@@ -62,8 +63,8 @@ ROW_META = ("domain", "topic", "lean", "concern")
 # scripted assistant turn is the model's own words (a real s5 reply), trimmed to
 # the one question the dataset answers. The prefill is the model's own opening,
 # json because its trailing blank line is the mechanism.
-OPENING_ASK = render(TASK_DIR / "prompt.j2")
-ASSISTANT_ASKS = render(TASK_DIR / "assistant_asks.j2")
+OPENING_ASK = render(HERE / "prompt.j2")
+ASSISTANT_ASKS = render(HERE / "assistant_asks.j2")
 PREFILL = load_json(TASK_DIR / "prefill.json")["prefill"]
 
 _ROWS, _HEADER = load_pool(TASK_DIR / "concerns_v1.jsonl")

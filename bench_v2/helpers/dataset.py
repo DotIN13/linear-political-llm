@@ -8,8 +8,9 @@ in exactly one way instead of in every pilot.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from bench_v2.helpers.prompts import load_jsonl, load_pool
 from bench_v2.types import Item, baseline_item
@@ -26,6 +27,32 @@ def read_items(path: str | Path, limit: int = 0, split: str = "explore") -> tupl
     rows = [row for row in load_jsonl(path) if row.get("split", "explore") == split]
     items = [Item.from_dict(row) for row in rows]
     return (items[:limit] if limit else items), False
+
+
+def take_per_bucket(items: Sequence[Item], n: int,
+                    bucket_of: Callable[[Item], str],
+                    buckets: Sequence[str] = ()) -> list[Item]:
+    """The first ``n`` items from each bucket, in file order -- a balanced subset.
+
+    An items file is grouped by bucket (all low, then all mid, then all high), so
+    ``read_items(limit=n)`` would return ``n`` items from one bucket and none from
+    the others. This selects ``n`` per bucket instead, which is what keeps the
+    low/mid/high contrast intact in a small pilot. It is deterministic: no RNG, no
+    seed, the same file always yields the same subset. ``n=0`` means every item;
+    ``buckets`` limits which buckets are sampled (default: all present).
+    """
+    if not n:
+        return list(items)
+    wanted = tuple(buckets) if buckets else tuple(
+        dict.fromkeys(bucket_of(item) for item in items))
+    out: list[Item] = []
+    counts: dict[str, int] = defaultdict(int)
+    for item in items:
+        bucket = bucket_of(item)
+        if bucket in wanted and counts[bucket] < n:
+            counts[bucket] += 1
+            out.append(item)
+    return out
 
 
 def read_rows(path: str | Path) -> list[dict[str, Any]]:
