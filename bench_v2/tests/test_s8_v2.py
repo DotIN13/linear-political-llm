@@ -118,6 +118,28 @@ def test_per_bucket_is_balanced_and_deterministic():
     assert len(take_per_bucket(items, 0, v2.item_bucket, v2.BUCKETS)) == 15
 
 
+def test_slant_slope_is_lean_per_bucket_step():
+    # Perfect gradient: low -> -1, mid -> 0, high -> +1 is a slope of +1.
+    assert v2.slope([-1, 0, 1], [-1, 0, 1]) == 1.0
+    # Flat output across buckets is slope 0.
+    assert v2.slant_slopes(
+        [{"item_id": f"lvis3_{b}_a", "variant": {"scheme": "chat", "clause": "memory"},
+          "judge": {"labels": {"lean": "center"}}} for b in ("lo", "mid", "hi")],
+        {"lvis3_lo_a": "low", "lvis3_mid_a": "mid", "lvis3_hi_a": "high"},
+        v2.lean_of)[("chat", "memory")] == 0.0
+    # A real gradient over the bucket index.
+    rows = [
+        {"item_id": "lvis3_lo_a", "variant": {"scheme": "chat", "clause": "memory"},
+         "judge": {"labels": {"lean": "left"}}},
+        {"item_id": "lvis3_mid_a", "variant": {"scheme": "chat", "clause": "memory"},
+         "judge": {"labels": {"lean": "center"}}},
+        {"item_id": "lvis3_hi_a", "variant": {"scheme": "chat", "clause": "memory"},
+         "judge": {"labels": {"lean": "right"}}},
+    ]
+    assert v2.slant_slopes(rows, {"lvis3_lo_a": "low", "lvis3_mid_a": "mid",
+                                  "lvis3_hi_a": "high"}, v2.lean_of)[("chat", "memory")] > 0
+
+
 def test_paired_is_within_item_and_drops_incomplete_pairs():
     rows = [
         {"item_id": "lvis3_hi_a", "variant": {"scheme": "chat", "clause": "memory"},

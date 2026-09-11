@@ -25,18 +25,17 @@
 # Usage: PER_BUCKET=10 sbatch run.sbatch
 #   The run defaults to a balanced small pilot: PER_BUCKET=10 -> 30 personas
 #   (10 low / 10 mid / 10 high) x 12 concerns x 3 schemes x 2 variants = 2160
-#   photo cells (+ 72 no-photo). That is the "for now" size; the full set is
-#   PER_BUCKET=0 (198 personas -> 14256 cells). Override with an env var:
+#   photo cells, plus the item-invariant no_photos baseline
+#   (12 concerns x 3 schemes x 2 variants = 72) -> 2232 total. That is the "for
+#   now" size; the full set is PER_BUCKET=0 (198 personas -> 14256 + 72). Override
+#   with an env var:
 #     PER_BUCKET=0  sbatch run.sbatch     # every item
 #     PER_BUCKET=5  sbatch run.sbatch     # 15 personas
 #   Everything is env-driven; a smoke uses `pilot run --per-bucket 1` directly.
 #
-# The job runs --condition photos, like s1/s5. The no_photos baseline is
-# item-invariant (12 x 3 x 2 = 72 cells) and is run from the pilot directly if
-# wanted: `... run --condition no_photos`.
-#
-# SCHEMES (env, comma-separated) narrows the run, e.g. SCHEMES=agentic_live runs
-# only the realistic turn x bare/memory. Unset or empty runs every scheme.
+# The job runs both conditions (photos + no_photos). SCHEMES (env,
+# comma-separated) narrows the scheme set, e.g. SCHEMES=agentic_live runs only
+# the realistic turn x bare/memory. Unset or empty runs every scheme.
 #   SCHEMES=agentic_live sbatch run.sbatch
 set -uo pipefail
 
@@ -51,6 +50,7 @@ OUT="$REPO/runs/bench_v2/s8_letter_answered/v2"
 ITEMS=${ITEMS:-items/explore_bucket_v1.jsonl}
 PER_BUCKET=${PER_BUCKET:-10}
 WORKERS=${WORKERS:-16}
+JUDGE_WORKERS=${JUDGE_WORKERS:-16}
 SCHEMES=${SCHEMES:-}
 
 [ -f "$SIF" ] || { echo "[sbatch] no SIF at $SIF" >&2; exit 1; }
@@ -115,18 +115,20 @@ done
 SCHEME_ARGS=()
 for s in ${SCHEMES//,/ }; do SCHEME_ARGS+=(--scheme "$s"); done
 
-echo "[sbatch] pilot run: per_bucket=$PER_BUCKET condition=photos schemes=${SCHEMES:-all} items=$ITEMS workers=$WORKERS" >&2
+echo "[sbatch] pilot run: per_bucket=$PER_BUCKET conditions=photos,no_photos schemes=${SCHEMES:-all} items=$ITEMS workers=$WORKERS" >&2
 "$PY" -m bench_v2.tasks.s8_letter_answered.v2.pilot run \
-  --adaptor vllm --per-bucket "$PER_BUCKET" --condition photos \
+  --adaptor vllm --per-bucket "$PER_BUCKET" \
+  --condition photos --condition no_photos \
   --items "$ITEMS" --workers "$WORKERS" "${SCHEME_ARGS[@]}" \
   || { echo "[sbatch] pilot run failed" >&2; exit 1; }
 
 if [ -n "${OPENAI_API_KEY:-}" ]; then
-  echo "[sbatch] judge" >&2
+  echo "[sbatch] judge (workers=$JUDGE_WORKERS)" >&2
   # --limit 0 is explicit: the judge phase defaults it to DEFAULT_LIMIT (4),
   # which would silently judge only the first four of the run.
   "$PY" -m bench_v2.tasks.s8_letter_answered.v2.pilot judge \
-    --items "$ITEMS" --limit 0 || echo "[sbatch] judge failed" >&2
+    --items "$ITEMS" --limit 0 --judge-workers "$JUDGE_WORKERS" \
+    || echo "[sbatch] judge failed" >&2
 else
   echo "[sbatch] OPENAI_API_KEY unset; skipping judge -- run \`pilot judge\` on the login node" >&2
 fi
