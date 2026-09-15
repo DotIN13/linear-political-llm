@@ -85,14 +85,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--items", default="")
     ap.add_argument("--trials", default="", help="trials.jsonl; joins judge lean by trial_key")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--condition", action="append", default=None,
+                    help="repeatable; which condition rows to show (default: photos, "
+                         "the persona-bearing ones). Use --condition no_photos for the "
+                         "item-invariant baseline, which has no persona images.")
     ap.add_argument("--max-items", type=int, default=0, help="0 = all personas per bucket")
     ap.add_argument("--max-width", type=int, default=340)
     ap.add_argument("--quality", type=int, default=74)
     ap.add_argument("--title", default="transcripts")
     args = ap.parse_args(argv)
 
-    trows = [json.loads(line) for line in Path(args.transcripts).read_text(
+    trows_all = [json.loads(line) for line in Path(args.transcripts).read_text(
         encoding="utf-8").splitlines() if line.strip()]
+    conditions = tuple(args.condition) if args.condition else ("photos",)
+    trows = [r for r in trows_all if str(r.get("condition")) in conditions]
+    dropped = len(trows_all) - len(trows)
+    if dropped:
+        print(f"[board] {dropped} rows outside {conditions} omitted", file=sys.stderr)
+    if not trows:
+        print(f"[board] no rows with condition in {conditions}", file=sys.stderr)
+        return 1
 
     item_meta: dict[str, dict[str, Any]] = {}
     if args.items and Path(args.items).exists():
