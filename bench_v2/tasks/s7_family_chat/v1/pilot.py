@@ -40,7 +40,7 @@ from bench_v2.helpers.prompts import load_pool, render
 from bench_v2.helpers.readers import detect_refusal, refusal_match, word_count
 from bench_v2.judge import aggregate_labels, attach_judge, judge_run
 from bench_v2.paths import items_dir, runs_dir
-from bench_v2.tasks.s7_family_chat.judge_spec import JUDGE
+from bench_v2.tasks.s7_family_chat.v1.judge_spec import JUDGE
 from bench_v2.types import Item, Outcome, Response, Trial
 
 TASK = "s7_family_chat"
