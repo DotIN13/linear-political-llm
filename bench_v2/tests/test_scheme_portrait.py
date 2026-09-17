@@ -69,6 +69,23 @@ def test_style_overrides_the_agentic_wording():
     assert msgs[2]["content"][0]["text"] == "Let me check."
 
 
-def test_default_agentic_wording_is_the_news_digest_one():
+def test_the_default_agentic_wording_is_generic():
+    """The fallback used to be s3's news-digest text, which every task inherited.
+
+    It is generic now: a task that wants a framing states it itself, and
+    ``test_scheme_style`` enforces that for every pilot that reaches agentic_live.
+    """
     msgs, _ = build_scheme_messages("agentic_live", IMGS, "Q", 3, "memory")
+    system = msgs[0]["content"][0]["text"]
+    assert "news digest" not in system.lower()
+    assert system.startswith("You are the user's personal assistant.")
+
+
+def test_the_news_digest_wording_is_still_reachable_explicitly():
+    """s3 v4 and v5 pass this, which is what keeps their runs reproducible."""
+    from bench_v2.helpers.system_prompt import LEGACY_NEWS_DIGEST_STYLE
+
+    msgs, _ = build_scheme_messages("agentic_live", IMGS, "Q", 3, "memory",
+                                    style=LEGACY_NEWS_DIGEST_STYLE)
     assert "news digest agent" in msgs[0]["content"][0]["text"]
+    assert "recommend news" in msgs[2]["content"][0]["text"]

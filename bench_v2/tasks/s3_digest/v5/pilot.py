@@ -55,6 +55,7 @@ from bench_v2.helpers.readers import (
 )
 from bench_v2.helpers.system_prompt import PERSONA_VARIANTS
 from bench_v2.paths import REPO_ROOT, items_dir, runs_dir
+from bench_v2.tasks.s3_digest.style import NEWS_DIGEST_STYLE
 from bench_v2.types import Item, Outcome, Response, Trial
 
 TASK = "s3_digest"
@@ -394,7 +395,7 @@ def build(item: Item, condition: str, variant: dict[str, Any] | None = None,
         max_new_tokens=MAX_NEW_TOKENS, judge=None,
         randomizes_per_item=RANDOMIZES_PER_ITEM, item_order_fn=item_order_fn,
         portrait=portrait_path(portrait), portrait_name=PORTRAIT_NAME,
-        meta_extra=meta_extra,
+        meta_extra=meta_extra, scheme_style=NEWS_DIGEST_STYLE,
     )
 
 

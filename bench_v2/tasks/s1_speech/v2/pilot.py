@@ -52,7 +52,14 @@ from bench_v2.helpers.dataset import read_items
 from bench_v2.helpers.generation import build_base
 from bench_v2.helpers.prompts import load_json, render
 from bench_v2.helpers.readers import detect_refusal, refusal_match, word_count
-from bench_v2.helpers.system_prompt import PERSONA_VARIANTS
+# v2 predates per-task wording. It passed no style, so it inherited the global
+# fallback, which at the time was s3's news-digest text -- the confound v3 exists to
+# fix. The strings are pinned here from the frozen legacy record so that v2's own
+# run directory stays reproducible; nothing new should use them.
+from bench_v2.helpers.system_prompt import (
+    LEGACY_NEWS_DIGEST_STYLE as SCHEME_STYLE,
+    PERSONA_VARIANTS,
+)
 from bench_v2.judge import aggregate_labels, attach_judge, judge_run
 from bench_v2.paths import items_dir, runs_dir
 from bench_v2.tasks.s1_speech.judge_spec import JUDGE
@@ -121,7 +128,7 @@ def build(item: Item, condition: str, variant: dict[str, Any] | None = None,
         surface=SURFACE, item=item, condition=condition, variant=variant, seed=seed,
         question_fn=lambda qid, order, attribution: question(),
         max_new_tokens=MAX_NEW_TOKENS, prefill=PREFILL, judge=JUDGE.id,
-        randomizes_per_item=RANDOMIZES_PER_ITEM,
+        randomizes_per_item=RANDOMIZES_PER_ITEM, scheme_style=SCHEME_STYLE,
     )
 
 

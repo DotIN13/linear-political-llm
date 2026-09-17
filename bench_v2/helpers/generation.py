@@ -13,9 +13,11 @@ tests build the same trial through both and compare, which is what keeps it so.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 
-from bench_v2.helpers.system_prompt import build_scheme_messages
+from bench_v2.helpers.schemes import build_scheme_messages, builder_for
+from bench_v2.helpers.schemes import components
 from bench_v2.types import Conversation, Item, ProbePoint, Trial
 
 CONDITIONS = ("photos", "no_photos")
@@ -34,6 +36,7 @@ PROBE_POINTS = [
 QuestionFn = Callable[[str, list[int] | None, str], str]
 OrderFn = Callable[[Item, int], list[int]]
 MetaExtra = Callable[[dict[str, Any], list[int] | None, str], dict[str, Any]]
+
 
 
 def build_base(
@@ -56,12 +59,27 @@ def build_base(
     portrait: str | None = None,
     portrait_name: str = "me.jpg",
     scheme_style: dict[str, Any] | None = None,
+    task_dir: str | Path | None = None,
 ) -> Trial:
     """Build one generation trial, exactly as the bench surface did.
 
+    Three places a task can change what is sent, in increasing order of how much
+    they change:
+
+    * ``scheme_style`` -- the older way to word a prompt, keyed by concept. Kept
+      because eleven tasks and two recorded runs use it.
+    * ``task_dir`` -- this task's own ``.j2`` components, one directory per scheme
+      (``<task_dir>/agentic/role.j2``), and, if a global shape genuinely does not
+      fit, a whole ``<task_dir>/<scheme>.py`` assembly. One argument covers both.
+    * the task's ``question_fn`` -- the body, which every pilot already supplies.
+
+    The request is composed by the task's ``<scheme>/request.j2`` component and is
+    applied **before** the photos/no_photos branch, so the baseline carries the same
+    framing and stays a control for the persona rather than for the wording.
+
     ``portrait`` is an extra image of the user (EasyPortrait) delivered as context
-    by every scheme; ``scheme_style`` overrides a task's agentic wording. Both are
-    off by default, so an existing surface's conversation is unchanged.
+    by every scheme. It is off by default, so an existing surface's conversation is
+    unchanged.
     """
     if condition not in conditions:
         raise ValueError(f"unknown condition {condition!r}; expected {tuple(conditions)}")
@@ -88,16 +106,18 @@ def build_base(
 
     with_images = condition == "photos"
     image_paths = list(item.image_paths) if with_images else []
-    question = question_fn(qid, order, attribution)
+    prompts = components.resolve(style=scheme_style, task_dir=task_dir)
+    question = prompts.request(scheme, question_fn(qid, order, attribution))
     if condition == "no_photos":
         messages = [{"role": "user", "content": [{"type": "text", "text": question}]}]
         tools = None
         n_files = 0
     else:
         n_files = len(item.image_paths) or 3
-        messages, tools = build_scheme_messages(
+        assembler = builder_for(task_dir) if task_dir else build_scheme_messages
+        messages, tools = assembler(
             scheme, image_paths, question, n_files, clause,
-            portrait=portrait, portrait_name=portrait_name, style=scheme_style,
+            portrait=portrait, portrait_name=portrait_name, prompts=prompts,
         )
 
     meta: dict[str, Any] = {
