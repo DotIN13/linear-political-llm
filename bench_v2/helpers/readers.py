@@ -95,9 +95,11 @@ FORMAT_PICK_N = ("\n\nStart your reply with just the {n} numbers, comma-separate
 FORMAT_RANK_N = ("\n\nStart your reply with all {n} numbers in your order, best first, "
                  "comma-separated, on a line of their own. Then give your reasons.")
 
-# "1, 3, 5" possibly behind a short lead-in ("I'd pick 1, 3 and 5"). The 12-character
-# budget admits a few words of preamble and rejects a sentence.
-_NUM_LINE = re.compile(r"^[^0-9]{0,12}((?:\d{1,2})(?:\s*[,、和and]+\s*\d{1,2})*)", re.I)
+# "1, 3, 5" possibly behind a lead-in ("I'd pick 1, 3 and 5"). The budget admits a
+# label -- "Final ranking: ", "Top picks: ", "Final recommendation: " are 15 to 21
+# characters and all three appear in real answers -- and still rejects a sentence.
+# Twelve was too tight for those labels and cost six readable answers.
+_NUM_LINE = re.compile(r"^[^0-9]{0,28}((?:\d{1,2})(?:\s*[,、和and]+\s*\d{1,2})*)", re.I)
 
 
 def numbered_question(ask: str, options: Sequence[dict[str, Any]],

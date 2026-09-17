@@ -92,7 +92,10 @@ PICK_WEIGHTS: tuple[int, ...] = tuple(range(N_PICKS, 0, -1))   # 5,4,3,2,1
 WEIGHT_SUM = sum(PICK_WEIGHTS)
 ID_FIELD = "nid"
 QUESTION_IDS: tuple[str, ...] = ("q0",)
-MAX_NEW_TOKENS = 1600
+# 1,600 was too few. The live memory arm narrates what it read before it answers, and
+# ten of its answers ran out of budget mid-sentence while evaluating all sixteen
+# options -- "Dunleith has new ta" -- so they never stated a shortlist at all.
+MAX_NEW_TOKENS = 3200
 RANDOMIZES_PER_ITEM = True
 OUT_DIR = Path(runs_dir()) / "bench_v2" / TASK / VERSION
 DEFAULT_ITEMS = Path(items_dir()) / "explore_bucket_v1.jsonl"
@@ -175,7 +178,11 @@ def parse_shortlist(text: str, shown: list[dict[str, Any]]
     # sixteen shown, so prose numbers ("img_0417.jpg") cannot enter.
     positions = {str(row["name"]).strip().lower(): i + 1 for i, row in enumerate(shown)}
     found: list[int] = []
-    for line in [l.strip() for l in (text or "").strip().splitlines() if l.strip()][:12]:
+    # Every line, not the first twelve. A candidate only counts if the name is one of
+    # the sixteen shown, so prose cannot contribute, and twelve lines was cutting off
+    # the twelve longest answers in the run -- an arbitrary window in the way of a
+    # match that is already safe.
+    for line in [l.strip() for l in (text or "").strip().splitlines() if l.strip()]:
         for number, name in re.findall(
                 r"(\d{1,2})\s*[.):]\s*\**\s*([A-Za-z][A-Za-z'’-]{2,20})", line):
             position = positions.get(name.strip().lower())

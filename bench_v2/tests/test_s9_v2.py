@@ -371,6 +371,32 @@ def test_the_answer_line_beats_the_restatement():
     assert picks == [5, 9, 2, 12, 1] and method == "numbers"
 
 
+def test_an_answer_line_with_a_label_is_read():
+    """Real answers say "Final ranking: 5, 9, 2, 12, 1." -- 15 characters of label.
+
+    The line budget was 12, which rejected the label and dropped the answer.
+    """
+    from bench_v2.helpers.readers import parse_picks
+    for label in ("Final ranking: ", "Top picks: ", "Final recommendation: "):
+        assert parse_picks(f"{label}5, 9, 2, 12, 1.", 5, 16) == [5, 9, 2, 12, 1]
+    # and it still refuses a sentence
+    assert parse_picks("Considering everything I have seen, the answer is 5, 9, 2, 12, 1.", 5, 16) is None
+
+
+def test_the_name_route_reads_a_list_far_down_the_answer():
+    """The window was twelve lines; the twelve longest answers put the list past it."""
+    item = Item(item_id="p_1_lo_1", images=[], image_paths=[], image_scores=[], stratum=-1)
+    filler = "".join(f"Consideration {i}: something the user might value.\n" for i in range(20))
+    text = filler + "1. Larkfield - text.\n2. Norwood - text.\n3. Pemberton - text.\n4. Brackley - text.\n5. Jesmond - text.\n"
+    picks, method = pilot.parse_shortlist(text, pilot.ROWS)
+    assert method == "names" and picks is not None
+
+
+def test_generation_gets_room_to_finish():
+    """Ten answers were cut off mid-sentence evaluating all sixteen options."""
+    assert pilot.MAX_NEW_TOKENS >= 3000
+
+
 # --- the summary ---------------------------------------------------------------
 def test_fields_cover_every_attribute_in_both_forms():
     """Built from AXES, so a column cannot be named differently from its reading."""
