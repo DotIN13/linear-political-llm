@@ -16,7 +16,7 @@ import pytest
 
 from bench_v2.helpers.schemes import build_scheme_messages, components
 from bench_v2.tasks.s9_neighborhood.v2 import pilot
-from bench_v2.types import Item, baseline_item
+from bench_v2.types import Item, Response, baseline_item
 
 AXES = pilot.AXES
 ROWS, HEADER = pilot.ROWS, pilot.HEADER
@@ -248,6 +248,62 @@ def test_no_arm_inherits_the_news_digest_wording():
     text = " ".join(str(m.get("content")) for m in trial.conversation.messages).lower()
     assert "news digest" not in text
     assert "recommend news" not in text
+
+
+# --- the summary ---------------------------------------------------------------
+def test_fields_cover_every_attribute_in_both_forms():
+    """Built from AXES, so a column cannot be named differently from its reading."""
+    assert set(pilot.FIELDS) == {"right_rank_w"} | {f"{a}_rank_w" for a in AXES}
+    assert set(pilot.CHECK_FIELDS) == {"right_pick_mean"} | {f"{a}_pick_mean" for a in AXES}
+
+
+def test_every_summary_column_is_a_key_the_reader_writes():
+    """The bug the smoke run found.
+
+    The first summary hardcoded ``access``, ``faith``, ... where the reader writes
+    ``access_rank_w``. Every attribute column printed ``-`` and the table looked
+    entirely plausible, so nothing failed except the reading.
+    """
+    item = Item(item_id="probe_1_lo_1", images=["a.jpg"], image_paths=["a.jpg"],
+                image_scores=[0.0], stratum=-1)
+    trial = pilot.build(item, "photos", {"scheme": "chat", "clause": "bare"})
+    out = pilot.read(Response(text="1, 2, 3, 4, 5"), trial)
+    for field in pilot.FIELDS + pilot.CHECK_FIELDS:
+        assert field in out.extra, f"{field} is printed but never written by read()"
+
+
+def test_the_summary_prints_a_real_number_in_every_column(tmp_path, capsys):
+    """Not just that the key exists, but that it reaches the table."""
+    item = Item(item_id="probe_1_lo_1", images=["a.jpg"], image_paths=["a.jpg"],
+                image_scores=[0.0], stratum=-1)
+    trial = pilot.build(item, "photos", {"scheme": "chat", "clause": "bare"})
+    out = pilot.read(Response(text="1, 2, 3, 4, 5"), trial)
+    row = {"condition": "photos", "item_id": item.item_id,
+           "variant": {"scheme": "chat", "clause": "bare"},
+           "outcome": {"extra": out.extra}}
+    pilot.print_summary([row], tmp_path / "no-items.jsonl")
+    printed = capsys.readouterr().out
+    for field in pilot.FIELDS:
+        rendered = f"{out.extra[field]:>+13.4f}"
+        assert rendered in printed, f"{field} did not reach the table"
+
+
+def test_the_summary_reports_parse_rate_and_refusals(tmp_path, capsys):
+    """What the smoke is read for. Neither was printed before the first smoke run."""
+    item = Item(item_id="probe_1_lo_1", images=["a.jpg"], image_paths=["a.jpg"],
+                image_scores=[0.0], stratum=-1)
+    trial = pilot.build(item, "photos", {"scheme": "chat", "clause": "bare"})
+    good = pilot.read(Response(text="1, 2, 3, 4, 5"), trial)
+    bad = pilot.read(Response(text="I would rather not."), trial)
+    rows = [{"condition": "photos", "item_id": item.item_id,
+             "variant": {"scheme": "chat", "clause": "bare"}, "outcome": {"extra": good.extra}},
+            {"condition": "photos", "item_id": item.item_id,
+             "variant": {"scheme": "chat", "clause": "memory"}, "outcome": {"extra": bad.extra}}]
+    pilot.print_summary(rows, tmp_path / "no-items.jsonl")
+    printed = capsys.readouterr().out
+    assert "parsed" in printed and "rate" in printed and "refusals" in printed
+    assert "0.500" in printed, "one of the two parsed, so the rate is 0.500"
+    assert "baseline" not in printed, "no no_photos rows, so no baseline block"
 
 
 # --- the assembled conversation ------------------------------------------------

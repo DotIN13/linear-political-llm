@@ -80,6 +80,12 @@ BUCKET_ABBREV: dict[str, str] = {"low": "lo", "mid": "mid", "high": "hi"}
 BUCKET_BY_STRATUM: dict[int, str] = {-1: "low", 0: "mid", 1: "high"}
 # In the order they are read out, so the summary table and the file agree.
 AXES: tuple[str, ...] = ("access", "faith", "composition", "water")
+# The readings, named once. The summary prints these and nothing typed by hand.
+FIELDS: tuple[str, ...] = ("right_rank_w",) + tuple(f"{axis}_rank_w" for axis in AXES)
+# The unweighted forms, as a check on the weighting rather than as the estimate.
+CHECK_FIELDS: tuple[str, ...] = ("right_pick_mean",) + tuple(
+    f"{axis}_pick_mean" for axis in AXES)
+
 N_PICKS = 5
 PICK_WEIGHTS: tuple[int, ...] = tuple(range(N_PICKS, 0, -1))   # 5,4,3,2,1
 WEIGHT_SUM = sum(PICK_WEIGHTS)
@@ -314,52 +320,101 @@ def _load_rows(out_dir: Path) -> list[dict[str, Any]]:
 
 
 def print_summary(rows: list[dict[str, Any]], items_path: str | Path) -> None:
+    """Everything the run is read for: does it parse, and what did the persona move.
+
+    The column names come from ``FIELDS``, which is built from ``AXES``, rather than
+    being typed out. The first version of this function hardcoded ``access``,
+    ``faith``, ... where the readings are ``access_rank_w`` and so on, so every
+    attribute column printed ``-`` and the table still looked plausible. The smoke
+    run caught it; ``test_s9_v2`` now asserts that every column here is a key the
+    reader actually writes.
+    """
     print(f"{TITLE}  [{SURFACE}/{VERSION}]  {len(rows)} records")
     if not rows:
         return
     items, _synthetic = read_items(items_path, 0)
     bucket_by_item = {item.item_id: item_bucket(item) for item in items}
 
+    # --- does it parse, per condition ---------------------------------------
+    print()
+    print(f"{'condition':<12}{'n':>5}{'parsed':>8}{'rate':>8}{'refusals':>10}"
+          f"{'right_rank_w':>14}{'words':>8}")
+    for condition in CONDITIONS:
+        group = [r for r in rows if r.get("condition") == condition]
+        if not group:
+            continue
+        extras = [r["outcome"]["extra"] for r in group
+                  if r.get("outcome") and r["outcome"].get("extra")]
+        parsed = sum(1 for e in extras if e.get("parsed"))
+        refusals = sum(1 for e in extras if e.get("refusal"))
+        vals = [e["right_rank_w"] for e in extras if e.get("right_rank_w") is not None]
+        words = [e.get("word_count") for e in extras if e.get("word_count") is not None]
+        mean = f"{sum(vals) / len(vals):+.4f}" if vals else "-"
+        wmean = f"{sum(words) / len(words):.0f}" if words else "-"
+        print(f"{condition:<12}{len(group):>5}{parsed:>8}"
+              f"{parsed / max(1, len(group)):>8.3f}{refusals:>10}{mean:>14}{wmean:>8}")
+
     # --- means by scheme x variant x bucket ---------------------------------
-    group: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    group_cells: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         if row.get("condition") != "photos":
             continue
         variant = row.get("variant") or {}
         key = (str(variant.get("scheme")), str(variant.get("clause")),
                bucket_of(row, bucket_by_item))
-        group[key].append(row)
+        group_cells[key].append(row)
 
-    cols = ("right_rank_w",) + AXES
-    header = f"{'scheme':<14}{'clause':<9}{'bucket':<8}{'n':>5}"
-    header += "".join(f"{c[:11]:>13}" for c in cols)
-    print(header)
+    print()
+    print("mean per cell (the pre-registered reading, then one per attribute)")
+    print(f"{'scheme':<14}{'clause':<9}{'bucket':<8}{'n':>5}"
+          + "".join(f"{c[:12]:>13}" for c in FIELDS))
     for scheme in SCHEMES:
         for clause in PERSONA_VARIANTS:
             for bucket in BUCKETS:
-                rows_here = group.get((scheme, clause, bucket), [])
-                if not rows_here:
-                    continue
-                line = f"{scheme:<14}{clause:<9}{bucket:<8}{len(rows_here):>5}"
-                for col in cols:
-                    vals = [r["outcome"]["extra"].get(col) for r in rows_here
-                            if r.get("outcome") and r["outcome"].get("extra")
-                            and r["outcome"]["extra"].get(col) is not None]
-                    line += f"{sum(vals) / len(vals):>+13.4f}" if vals else f"{'-':>13}"
-                print(line)
+                rows_here = group_cells.get((scheme, clause, bucket), [])
+                if rows_here:
+                    print(_cell_line(scheme, clause, bucket, len(rows_here), rows_here))
+
+    # --- the baseline: no persona, so every reading should sit at zero ------
+    base = [r for r in rows if r.get("condition") == "no_photos"]
+    if base:
+        print()
+        print("baseline, no persona (should sit near 0; a pull here is in the pool)")
+        print(f"{'scheme':<14}{'clause':<9}{'n':>5}"
+              + "".join(f"{c[:12]:>13}" for c in FIELDS))
+        for scheme in SCHEMES:
+            for clause in PERSONA_VARIANTS:
+                rows_here = [r for r in base
+                             if str((r.get("variant") or {}).get("scheme")) == scheme
+                             and str((r.get("variant") or {}).get("clause")) == clause]
+                if rows_here:
+                    print(_cell_line(scheme, clause, None, len(rows_here), rows_here))
 
     # --- the hypothesis: paired memory - bare, per scheme x bucket ----------
     print()
     print("paired memory - bare, within item (positive = the shortlist moved right)")
-    print(f"{'field':<18}{'scheme':<14}{'bucket':<8}{'delta':>10}{'se':>9}{'n':>6}")
-    for field in (("right_rank_w",) + tuple(f"{a}_pick_mean" for a in AXES)):
+    print(f"{'field':<20}{'scheme':<14}{'bucket':<8}{'delta':>10}{'se':>9}{'n':>6}")
+    for field in FIELDS + CHECK_FIELDS:
         for scheme in SCHEMES:
             stats = paired(rows, bucket_by_item, field)
             for bucket in BUCKETS:
-                if (scheme, bucket) not in stats:
-                    continue
-                mean, se, n = stats[(scheme, bucket)]
-                print(f"{field:<18}{scheme:<14}{bucket:<8}{mean:>+10.4f}{se:>9.4f}{n:>6}")
+                if (scheme, bucket) in stats:
+                    mean, se, n = stats[(scheme, bucket)]
+                    print(f"{field:<20}{scheme:<14}{bucket:<8}"
+                          f"{mean:>+10.4f}{se:>9.4f}{n:>6}")
+
+
+def _cell_line(scheme: str, clause: str, bucket: Optional[str], n: int,
+               rows_here: list[dict[str, Any]]) -> str:
+    """One row of a mean table: the label, n, then every field in FIELDS."""
+    label = scheme.ljust(14) + clause.ljust(9) + (bucket or "-").ljust(8)
+    line = f"{label}{n:>5}"
+    for field in FIELDS:
+        vals = [r["outcome"]["extra"].get(field) for r in rows_here
+                if r.get("outcome") and r["outcome"].get("extra")
+                and r["outcome"]["extra"].get(field) is not None]
+        line += f"{sum(vals) / len(vals):>+13.4f}" if vals else f"{'-':>13}"
+    return line
 
 
 # --- main --------------------------------------------------------------------
