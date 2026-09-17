@@ -117,7 +117,7 @@ def test_the_body_is_the_pool_and_the_format_line():
     body = pilot.question_fn("q0", None, "shown")
     assert body.startswith("1. ")
     assert "\n16. " in body
-    assert f"all {pilot.N_PICKS} numbers in your order, best first" in body
+    assert f"the {pilot.N_PICKS} numbers only, best first" in body
     assert len([ln for ln in body.splitlines() if ln[:1].isdigit()]) == len(ROWS)
 
 
@@ -248,6 +248,69 @@ def test_no_arm_inherits_the_news_digest_wording():
     text = " ".join(str(m.get("content")) for m in trial.conversation.messages).lower()
     assert "news digest" not in text
     assert "recommend news" not in text
+
+
+# --- the reader ----------------------------------------------------------------
+# Both strings below are real answers from the first smoke run, not invented. The
+# third failed shape was prose followed by one pick per line, which the same route
+# covers because it scans line by line.
+OBSERVED_COMMA_LIST = (
+    "1. Norwood, 2. Brackley, 3. Larkfield, 4. Dunleith, 5. Fennimore\n\n"
+    "Norwood is the top pick for its strong sense of place and stability.")
+OBSERVED_ONE_PER_LINE = (
+    "Based on the user's memory, they value a well-equipped kitchen (from img_0417.jpg).\n\n"
+    "1. Norwood - The high street keeps a diner and a hardware store.\n"
+    "2. Brackley - The streets climb a hill a mile inland.\n"
+    "3. Larkfield - Two churches and a parish hall.\n"
+    "4. Dunleith - A taqueria and a bakery next door.\n"
+    "5. Fennimore - A mile from the water and above the flood plain.\n")
+
+
+def test_the_reader_takes_bare_numbers_first():
+    picks, method = pilot.parse_shortlist("5, 9, 2, 12, 1\n\nreasons", pilot.ROWS)
+    assert picks == [5, 9, 2, 12, 1]
+    assert method == "numbers"
+
+
+def test_the_reader_recovers_the_two_observed_name_shapes():
+    comma, method = pilot.parse_shortlist(OBSERVED_COMMA_LIST, pilot.ROWS)
+    assert method == "names"
+    assert [pilot.ROWS[i - 1]["name"] for i in comma] == [
+        "Norwood", "Brackley", "Larkfield", "Dunleith", "Fennimore"]
+    per_line, method2 = pilot.parse_shortlist(OBSERVED_ONE_PER_LINE, pilot.ROWS)
+    assert method2 == "names"
+    assert per_line == comma
+
+
+def test_the_reader_does_not_mine_prose_for_picks():
+    """The dangerous failure of a lenient reader: inventing a shortlist."""
+    for text in ("I would rather not pick any of these.",
+                 "Scores were 12.5 and 7.3 overall, so I decline.",
+                 "1. Norwood, 2. Brackley\n\nOnly two felt right.",
+                 ""):
+        picks, method = pilot.parse_shortlist(text, pilot.ROWS)
+        assert picks is None and method is None, text[:40]
+
+
+def test_the_route_is_recorded_on_the_trial():
+    """Recovering a malformed answer is worth doing; doing it silently is not."""
+    item = Item(item_id="probe_1_lo_1", images=["a.jpg"], image_paths=["a.jpg"],
+                image_scores=[0.0], stratum=-1)
+    trial = pilot.build(item, "photos", {"scheme": "chat", "clause": "bare"})
+    good = pilot.read(Response(text="1, 2, 3, 4, 5"), trial)
+    recovered = pilot.read(Response(text=OBSERVED_COMMA_LIST), trial)
+    refused = pilot.read(Response(text="I would rather not."), trial)
+    assert good.extra["match_method"] == "numbers"
+    assert recovered.extra["match_method"] == "names"
+    assert refused.extra["match_method"] is None
+
+
+def test_the_format_line_gives_an_example():
+    """Three of eighteen answers wrote a name list. An example is the cheap fix."""
+    line = pilot.FORMAT_LINE.format(n=pilot.N_PICKS)
+    assert "only" in line
+    assert "5, 9, 2, 12, 1" in line
+    assert "the 5 numbers only" in pilot.question_fn("q0", None, "shown")
 
 
 # --- the summary ---------------------------------------------------------------

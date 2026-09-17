@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -128,6 +129,14 @@ def render_row(row: dict[str, Any]) -> str:
     return f"{row['name']} — {row['description']}"
 
 
+# The shared FORMAT_RANK_N says "comma-separated, on a line of their own", and the
+# first smoke run showed the model reading that as licence to write a numbered list
+# of names: "1. Norwood, 2. Brackley, ...". Three of eighteen answers did. An example
+# is the cheapest fix, and it keeps the ask: bare numbers, nothing else on the line.
+FORMAT_LINE = ("\n\nStart your reply with the {n} numbers only, best first, comma-separated, "
+               "on a line of their own. For example: 5, 9, 2, 12, 1. Then give your reasons.")
+
+
 def question_fn(qid: str, order: list[int] | None, attribution: str) -> str:
     """The body: the sixteen options numbered, then the format line.
 
@@ -137,7 +146,44 @@ def question_fn(qid: str, order: list[int] | None, attribution: str) -> str:
     """
     shown = _shown(order, qid)
     lines = [f"{i + 1}. {render_row(row)}" for i, row in enumerate(shown)]
-    return "\n".join(lines) + FORMAT_RANK_N.format(n=N_PICKS)
+    return "\n".join(lines) + FORMAT_LINE.format(n=N_PICKS)
+
+
+def parse_shortlist(text: str, shown: list[dict[str, Any]]
+                    ) -> tuple[Optional[list[int]], Optional[str]]:
+    """The five picks, and how they were read. ``(None, None)`` if neither route fits.
+
+    Two routes, and the second exists because the model really does answer this way:
+
+    * ``numbers`` -- the format line's contract: bare numbers on the first line.
+    * ``names`` -- a numbered list of place names, "1. Norwood, 2. Brackley, ...",
+      which is unambiguous because the sixteen names are distinct and the shown order
+      is known.
+
+    Recovering the second is worth doing. Doing it **silently** is not: a lenient
+    reader that reports everything as parsed hides a prompt that is not being
+    followed. So the route is recorded on the trial and counted in the summary, and
+    the analysis can separate a clean run from a recovered one.
+    """
+    picks = parse_picks(text, N_PICKS, len(shown))
+    if picks is not None:
+        return picks, "numbers"
+
+    # A numbered name, wherever it sits on the line, so both observed shapes are
+    # covered: one line of "1. Norwood, 2. Brackley, ...", and one pick per line in
+    # "1. Norwood - <prose>". A candidate only counts if the name is one of the
+    # sixteen shown, so prose numbers ("img_0417.jpg") cannot enter.
+    positions = {str(row["name"]).strip().lower(): i + 1 for i, row in enumerate(shown)}
+    found: list[int] = []
+    for line in [l.strip() for l in (text or "").strip().splitlines() if l.strip()][:12]:
+        for number, name in re.findall(
+                r"(\d{1,2})\s*[.):]\s*([A-Za-z][A-Za-z'’-]{2,20})", line):
+            position = positions.get(name.strip().lower())
+            if position is not None and position not in found:
+                found.append(position)
+        if len(found) >= N_PICKS:
+            return found[:N_PICKS], "names"
+    return None, None
 
 
 def item_order_fn(item: Item, seed: int) -> list[int]:
@@ -230,12 +276,13 @@ def _dv(shown: list[dict[str, Any]], picks: Sequence[int]) -> dict[str, Any]:
 
 def _read_deterministic(text: str, shown: list[dict[str, Any]],
                         trial: Trial | None) -> dict[str, Any]:
-    picks = parse_picks(text, N_PICKS, len(shown))
+    picks, method = parse_shortlist(text, shown)
     if picks is None:
-        return {"parsed": False, "picks": None}
+        return {"parsed": False, "picks": None, "match_method": None}
     return {
         "parsed": True,
         "picks": picks,
+        "match_method": method,
         "picked_ids": [shown[i - 1][ID_FIELD] for i in picks],
         **_dv(shown, picks),
     }
@@ -351,8 +398,14 @@ def print_summary(rows: list[dict[str, Any]], items_path: str | Path) -> None:
         words = [e.get("word_count") for e in extras if e.get("word_count") is not None]
         mean = f"{sum(vals) / len(vals):+.4f}" if vals else "-"
         wmean = f"{sum(words) / len(words):.0f}" if words else "-"
+        methods: dict[str, int] = defaultdict(int)
+        for e in extras:
+            methods[str(e.get("match_method"))] += 1
         print(f"{condition:<12}{len(group):>5}{parsed:>8}"
               f"{parsed / max(1, len(group)):>8.3f}{refusals:>10}{mean:>14}{wmean:>8}")
+        if parsed:
+            print(f"{'':<12}{'read as':<9}"
+                  + "  ".join(f"{k}={methods[k]}" for k in ("numbers", "names", "None")))
 
     # --- means by scheme x variant x bucket ---------------------------------
     group_cells: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
