@@ -185,18 +185,20 @@ def render_pick_scores(row: dict[str, Any], pool: list[dict[str, Any]],
         *[f'<span class="r">{_score(extra.get(ax + "_rank_w"), 2)} {ax}</span>'
           for ax in AXIS_ORDER],
     ])
+    # The chips are the glance and they stay visible; the table is the detail and it
+    # folds away. Six transcripts share a cell, so a table that is always open is a
+    # cell you scroll past.
     return (
-        '<details class="picks"' + (" open" if not extra.get("parsed") else "") + '>'
-        '<summary>16 options in the order shown &middot; '
-        + ("5 recommended" if extra.get("parsed") else "no readable answer") + '</summary>'
+        '<div class="picks">'
         '<div class="strip">' + "".join(chips) + '</div>'
         '<div class="readings">' + reading
-        + f'<span class="r dim">{int(extra.get("word_count") or 0)} words</span>'
         + (f'<span class="r dim">read by {esc(method)}</span>' if method else "")
         + '</div>' + status
-        + '<table class="scoretab picktab"><thead><tr><th>#</th><th>option</th>'
+        + '<details class="optlist"' + (" open" if not extra.get("parsed") else "") + '>'
+        '<summary>the sixteen options, by name and attribute</summary>'
+        '<table class="scoretab picktab"><thead><tr><th>#</th><th>option</th>'
         + "".join(f"<th>{a}</th>" for a in AXIS_ORDER)
-        + '<th>pick</th></tr></thead><tbody>' + "".join(trows) + '</tbody></table></details>')
+        + '<th>pick</th></tr></thead><tbody>' + "".join(trows) + '</tbody></table></details></div>')
 
 
 def render_transcript(row: dict[str, Any], img_ids: dict[str, str],
@@ -481,8 +483,8 @@ table.scoretab td.out {{ color:var(--muted); white-space:nowrap; }}
 .plus {{ color:#b3261e; font-weight:700; }} .minus {{ color:#1a56db; font-weight:700; }}
 h2.sect {{ font-size:14px; margin:18px 0 8px; }}
 .picks {{ margin-top:6px; border-top:1px dashed var(--line); padding-top:5px; }}
-.picks summary {{ cursor:pointer; font-size:10px; color:var(--muted); }}
-.picks[open] summary {{ margin-bottom:4px; }}
+.optlist summary {{ cursor:pointer; font-size:10px; color:var(--muted); }}
+.optlist[open] summary {{ margin-bottom:4px; }}
 .strip {{ display:flex; flex-wrap:wrap; gap:2px; margin:2px 0 5px; }}
 .chip {{ display:inline-flex; align-items:center; justify-content:center; width:19px; height:17px;
   font-size:9.5px; border:1px solid var(--line); border-radius:3px; color:var(--muted); background:#fff; }}
