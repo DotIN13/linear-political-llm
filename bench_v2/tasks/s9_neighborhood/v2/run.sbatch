@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH --output=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/bench_v2/s9_neighborhood/v2/slurm-%j.out
 #SBATCH --error=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/bench_v2/s9_neighborhood/v2/slurm-%j.err
 #
@@ -20,6 +20,12 @@
 #
 # Directives are defaults; override on the command line if it moves:
 #   sbatch --partition=jevans-gpu --account=pi-jevans --qos=jevans-gpu run.sbatch
+#
+# Slurm opens the stdout file before the script body runs, so the run directory
+# has to exist BEFORE submitting or the job dies on start:
+#
+#   mkdir -p /project/jevans/tzhang3/dotty-project/linear-political-llm/runs/bench_v2/s9_neighborhood/v2
+#   sbatch bench_v2/tasks/s9_neighborhood/v2/run.sbatch 1 24
 #
 # Usage: sbatch run.sbatch [PER_BUCKET] [CELLS]
 #   PER_BUCKET=1 -> 1 item per image-lean bucket = 3 items, x 2 conditions
