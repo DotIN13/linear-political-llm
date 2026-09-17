@@ -111,7 +111,15 @@ def numbered_question(ask: str, options: Sequence[dict[str, Any]],
     return ask + "\n\n" + "\n".join(lines) + suffix
 
 
-def _leading_numbers(text: str, n_options: int) -> list[int] | None:
+def _lines_of_numbers(text: str, n_options: int):
+    """Yield the unique in-range numbers on each line, in the order the lines come.
+
+    One line at a time, because an answer is often a numbered restatement of the
+    options followed by the answer line, and the answer line is the one we want.
+    Taking only the first line that contains *any* number is what made an answer
+    beginning ``1. **Larkfield**`` read as a single pick and drop the whole trial:
+    the real shortlist was on a later line and was never reached.
+    """
     for line in (text or "").strip().splitlines():
         line = line.strip()
         if not line:
@@ -127,24 +135,33 @@ def _leading_numbers(text: str, n_options: int) -> list[int] | None:
                 seen.add(x)
                 unique.append(x)
         if unique:
-            return unique
+            yield unique
+
+
+def _leading_numbers(text: str, n_options: int) -> list[int] | None:
+    """The first line's numbers, whatever their count."""
+    for unique in _lines_of_numbers(text, n_options):
+        return unique
     return None
 
 
 def parse_picks(text: str, n_expected: int, n_options: int) -> list[int] | None:
-    """Exactly ``n_expected`` distinct 1-based picks, or ``None``."""
-    nums = _leading_numbers(text, n_options)
-    if nums is None or len(nums) != n_expected:
-        return None
-    return nums
+    """Exactly ``n_expected`` distinct 1-based picks, or ``None``.
+
+    The **first line that yields that many**, not the first line with numbers at all.
+    """
+    for nums in _lines_of_numbers(text, n_options):
+        if len(nums) == n_expected:
+            return nums
+    return None
 
 
 def parse_ranking(text: str, n_options: int) -> list[int] | None:
-    """A full permutation of ``1..n_options``, or ``None``."""
-    nums = _leading_numbers(text, n_options)
-    if nums is None or sorted(nums) != list(range(1, n_options + 1)):
-        return None
-    return nums
+    """A full permutation of ``1..n_options``, or ``None`` -- likewise by line."""
+    for nums in _lines_of_numbers(text, n_options):
+        if sorted(nums) == list(range(1, n_options + 1)):
+            return nums
+    return None
 
 
 # --- tool calls ---------------------------------------------------------------

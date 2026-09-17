@@ -177,12 +177,20 @@ def parse_shortlist(text: str, shown: list[dict[str, Any]]
     found: list[int] = []
     for line in [l.strip() for l in (text or "").strip().splitlines() if l.strip()][:12]:
         for number, name in re.findall(
-                r"(\d{1,2})\s*[.):]\s*([A-Za-z][A-Za-z'’-]{2,20})", line):
+                r"(\d{1,2})\s*[.):]\s*\**\s*([A-Za-z][A-Za-z'’-]{2,20})", line):
             position = positions.get(name.strip().lower())
             if position is not None and position not in found:
                 found.append(position)
         if len(found) >= N_PICKS:
-            return found[:N_PICKS], "names"
+            found = found[:N_PICKS]
+            # A numbered list that walks the first five shown in shown order is the
+            # model restating the pool, not choosing from it. Twenty-five answers in
+            # the first full run did exactly that and this route read the restatement
+            # as the shortlist, which is a wrong dependent variable rather than a lost
+            # trial. Refusing it drops the answer instead, which is the honest failure.
+            if found == list(range(1, N_PICKS + 1)):
+                return None, None
+            return found, "names"
     return None, None
 
 

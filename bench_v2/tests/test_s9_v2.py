@@ -313,6 +313,64 @@ def test_the_format_line_gives_an_example():
     assert "the 5 numbers only" in pilot.question_fn("q0", None, "shown")
 
 
+def test_the_answer_line_is_found_after_a_restatement():
+    """The bug that lost 89 answers: a numbered list first, the answer later.
+
+    The shared reader used to return the first line containing *any* number, so an
+    answer opening ``1. **Larkfield**`` read as one pick and the trial was dropped,
+    even though the shortlist ``5, 9, 2, 12, 1`` was on a later line.
+    """
+    from bench_v2.helpers.readers import parse_picks
+    text = ("Based on the user's memory, they value a well-equipped kitchen.\n"
+            "1. **Larkfield** - High ground.\n"
+            "2. **Norwood** - Walkable.\n"
+            "3. **Pemberton** - Good.\n"
+            "4. **Brackley** - Strong.\n"
+            "5. **Jesmond** - Stable.\n"
+            "I'll now generate the final list.\n"
+            "5, 9, 2, 12, 1\n"
+            "Reasons:\n")
+    assert parse_picks(text, 5, 16) == [5, 9, 2, 12, 1]
+
+
+def test_a_restatement_of_the_pool_is_not_read_as_a_shortlist():
+    """The wrong dependent variable the first full run had in 25 answers.
+
+    Asked for five of sixteen, the model sometimes lists the first five **as shown**
+    and then gives its real picks. A numbered *name* list that walks the shown order
+    is the pool restated, and reading it as the shortlist silently records a
+    position-determined answer as a choice.
+    """
+    restatement = ("1. Brackley - text.\n2. Larkfield - text.\n3. Cawdor - text.\n"
+                   "4. Harrowgate - text.\n5. Invermay - text.\nReasons follow.\n")
+    shown = [r for r in ROWS if r["name"] in
+             ("Brackley", "Larkfield", "Cawdor", "Harrowgate", "Invermay")]
+    shown = ([r for r in ROWS if r["name"] == "Brackley"]
+             + [r for r in ROWS if r["name"] == "Larkfield"]
+             + [r for r in ROWS if r["name"] == "Cawdor"]
+             + [r for r in ROWS if r["name"] == "Harrowgate"]
+             + [r for r in ROWS if r["name"] == "Invermay"]
+             + [r for r in ROWS if r["name"] not in
+                ("Brackley", "Larkfield", "Cawdor", "Harrowgate", "Invermay")])
+    picks, method = pilot.parse_shortlist(restatement, shown)
+    assert picks is None and method is None
+
+
+def test_the_answer_line_beats_the_restatement():
+    """Same text, but with the real answer line present -- the numbers route wins."""
+    text = ("1. Brackley - text.\n2. Larkfield - text.\n3. Cawdor - text.\n"
+            "4. Harrowgate - text.\n5. Invermay - text.\n5, 9, 2, 12, 1\n")
+    shown = ([r for r in ROWS if r["name"] == "Brackley"]
+             + [r for r in ROWS if r["name"] == "Larkfield"]
+             + [r for r in ROWS if r["name"] == "Cawdor"]
+             + [r for r in ROWS if r["name"] == "Harrowgate"]
+             + [r for r in ROWS if r["name"] == "Invermay"]
+             + [r for r in ROWS if r["name"] not in
+                ("Brackley", "Larkfield", "Cawdor", "Harrowgate", "Invermay")])
+    picks, method = pilot.parse_shortlist(text, shown)
+    assert picks == [5, 9, 2, 12, 1] and method == "numbers"
+
+
 # --- the summary ---------------------------------------------------------------
 def test_fields_cover_every_attribute_in_both_forms():
     """Built from AXES, so a column cannot be named differently from its reading."""
