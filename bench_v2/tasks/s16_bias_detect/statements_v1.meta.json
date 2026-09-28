@@ -1,0 +1,11 @@
+{
+  "version": "statements_v1",
+  "n_items": 18,
+  "source": "data/policy_statements_240.csv (huggingface.co/datasets/DotIN13/political-statements)",
+  "source_sha256": "5b00ace0a24cf6bb",
+  "paper": "Zhang, Probing Political Ideology in Large Language Models, Findings of EMNLP 2025, 23349-23360",
+  "rule": "per domain one text of each lean: left = most liberal author whose text plainly takes the left side; right = most conservative author whose text plainly takes the right side; balanced = author nearest zero whose text weighs both sides or takes none. Six domains x three = 18",
+  "labelled_by": "hand reading by Claude, 2026-09-28; the reason for each pick is in `why`",
+  "note": "Ukraine is weak: all 40 statements support the aid in nearly the same words, so its three differ only in shading.",
+  "built_by": "bench_v2/tasks/s16_bias_detect/build_statements.py"
+}
