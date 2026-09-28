@@ -4,8 +4,8 @@
 #SBATCH --account=pi-jevans
 #SBATCH --qos=jevans-gpu
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
 #SBATCH --time=06:00:00
 #SBATCH --output=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/bench_v2/s16_bias_detect/v4/slurm-%j.out
 #SBATCH --error=/project/jevans/tzhang3/dotty-project/linear-political-llm/runs/bench_v2/s16_bias_detect/v4/slurm-%j.err
