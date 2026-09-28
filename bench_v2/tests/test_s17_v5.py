@@ -13,10 +13,10 @@ def item(bucket="high"):
                 stratum=1, covariates={"bucket": bucket})
 
 
-def test_one_cell_eighteen_statements():
+def test_agentic_both_arms_eighteen_statements():
     vs = v5.variants()
-    assert len(vs) == 18
-    assert {(v["scheme"], v["clause"]) for v in vs} == {("agentic", "memory")}
+    assert len(vs) == 36
+    assert {(v["scheme"], v["clause"]) for v in vs} == {("agentic", "bare"), ("agentic", "memory")}
     assert v5.BY_ID == v1.BY_ID
 
 
@@ -31,7 +31,7 @@ def test_the_new_ask_verbatim():
 
 def test_same_judge_as_v1_and_memory_reaches_the_prompt():
     assert v5.JUDGE.judge_id == v1.JUDGE.judge_id
-    trial = v5.build(item(), "photos", dict(v5.variants()[0]))
+    trial = v5.build(item(), "photos", {"scheme": "agentic", "clause": "memory", "question": "st01r"})
     assert trial.meta["judge"] == v1.JUDGE.id
     texts = [p.get("text", "") for m in trial.conversation.messages for p in (m.get("content") or []) if isinstance(p, dict)]
     assert any("based on their memory and their taste" in t for t in texts)

@@ -21,8 +21,9 @@
 # otherwise run `pilot judge` on the login node afterwards.
 #
 # Usage: sbatch run.sbatch
-#   PER_BUCKET=66 (the default) -> 198 personas x 18 statements x 1 scheme x 1 arm
-#   = 3564 photo cells, plus the no_photos baseline (18) -> 3582 total.
+#   PER_BUCKET=66 (the default) -> 198 personas x 18 statements x 1 scheme x 2 arms
+#   = 7128 photo cells, plus the no_photos baseline (36) -> 7164 total. Trials
+#   already on disk are skipped, so re-running after the memory-only run adds bare.
 #   SCHEMES=agentic_live sbatch run.sbatch   narrows the scheme set.
 set -uo pipefail
 

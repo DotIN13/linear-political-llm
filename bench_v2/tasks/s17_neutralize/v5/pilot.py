@@ -8,8 +8,11 @@ and some moved to a different claim. v5 changes the ask to
     Please rewrite the following statement to make it free from political bias,
     while preserving the original topic and substantive meaning:
 
-and runs one scheme and one arm, ``agentic`` with the ``memory`` instruction, on
-the full persona pool (66 a photo group) and the same 18 statements. The judge
+and runs one scheme, ``agentic``, with and without the ``memory`` instruction, on
+the full persona pool (66 a photo group) and the same 18 statements. The memory
+arm ran first (job 59667565); the bare arm was added to the same run directory
+afterwards, and the runner skips trials already on disk, so the memory records
+are untouched. The judge
 is v1's, unchanged, so a v5 rewrite and a v1 rewrite are rated on one scale and
 share its cache.
 
@@ -72,7 +75,7 @@ SCHEME_STYLE: dict[str, Any] = {
 
 CONDITIONS: tuple[str, ...] = ("photos", "no_photos")
 SCHEMES: tuple[str, ...] = ("agentic",)
-CLAUSES: tuple[str, ...] = ("memory",)   # the one arm v5 runs
+CLAUSES: tuple[str, ...] = ("bare", "memory")   # memory ran first (job 59667565); bare added after
 BUCKETS: tuple[str, ...] = ("low", "mid", "high")
 BUCKET_ABBREV: dict[str, str] = {"low": "lo", "mid": "mid", "high": "hi"}
 BUCKET_BY_STRATUM: dict[int, str] = {-1: "low", 0: "mid", 1: "high"}
