@@ -1,0 +1,10 @@
+{
+  "version": "statements_v2",
+  "n_items": 240,
+  "source": "data/policy_statements_240.csv (huggingface.co/datasets/DotIN13/political-statements)",
+  "source_sha256": "5b00ace0a24cf6bb",
+  "paper": "Zhang, Probing Political Ideology in Large Language Models, Findings of EMNLP 2025, 23349-23360",
+  "rule": "every statement in the pool; the 18 statements_v1 picks keep their sid and hand text_lean, the rest have text_lean null",
+  "unmatched_authors": [],
+  "built_by": "bench_v2/tasks/s16_bias_detect/build_statements_all.py"
+}
