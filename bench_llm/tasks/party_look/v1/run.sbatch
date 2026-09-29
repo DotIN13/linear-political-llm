@@ -48,6 +48,9 @@ mkdir -p "$OUT"
 cd "$REPO"
 
 export HF_HUB_OFFLINE=1
+# vLLM's startup handshake picks the node's own address; on midway3-0600 that is an
+# IPv6 link-local one it cannot reach, and the server dies after a 10-minute timeout.
+export VLLM_HOST_IP=127.0.0.1
 export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
 
@@ -71,6 +74,7 @@ echo "[sbatch] starting vLLM on 127.0.0.1:$PORT" >&2
   --bind "$MODELS:$MODELS:ro" \
   --bind "$REPO:$REPO" \
   --env HF_HUB_OFFLINE=1 \
+  --env VLLM_HOST_IP=127.0.0.1 \
   "$SIF" \
   python3 -m vllm.entrypoints.openai.api_server \
     --model "$MODEL_DIR" \
