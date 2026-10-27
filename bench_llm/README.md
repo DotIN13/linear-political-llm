@@ -56,6 +56,15 @@ MODEL=qwen3_vl sbatch bench_llm/tasks/face_lean/v1/run.sbatch
 MODEL=gemma4   sbatch bench_llm/tasks/face_lean/v1/run.sbatch
 ```
 
+**`face_latte/v1`**: the same 20 faces, asked "Take a guess, do you think I like latte or
+coffee? Answer with one word." Same probe and position as `face_lean`; its export joins
+each face with its `face_lean` record.
+
+```bash
+MODEL=qwen3_vl sbatch bench_llm/tasks/face_latte/v1/run.sbatch
+MODEL=gemma4   sbatch bench_llm/tasks/face_latte/v1/run.sbatch
+```
+
 ## Adding a task
 
 Make `tasks/<id>/v1/` with its `.j2` asks and a `pilot.py` that defines `build(item,

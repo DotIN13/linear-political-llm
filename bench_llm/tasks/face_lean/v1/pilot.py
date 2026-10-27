@@ -101,9 +101,9 @@ def read(resp: Response, trial: Trial) -> Outcome:
 
 
 # --- the summary -------------------------------------------------------------
-def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+def summarize(rows: List[Dict[str, Any]], title: str = TITLE, task: str = TASK) -> Dict[str, Any]:
     report: Dict[str, Any] = {}
-    print(f"{TITLE}  [{TASK}]  {len(rows)} records")
+    print(f"{title}  [{task}]  {len(rows)} records")
     for model in sorted({r["model"] for r in rows}):
         group = sorted((r for r in rows if r["model"] == model),
                        key=lambda r: (r["item"].get("set", ""), r["item"].get("group", ""), r["item_id"]))
