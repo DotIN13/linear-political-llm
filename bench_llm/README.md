@@ -65,6 +65,14 @@ MODEL=qwen3_vl sbatch bench_llm/tasks/face_latte/v1/run.sbatch
 MODEL=gemma4   sbatch bench_llm/tasks/face_latte/v1/run.sbatch
 ```
 
+**`face_latte/v2`**: v1's question asked both ways, "latte or coffee" and "coffee or
+latte", 40 trials per model; the summary counts the faces that get the same answer in both.
+
+```bash
+MODEL=qwen3_vl sbatch bench_llm/tasks/face_latte/v2/run.sbatch
+MODEL=gemma4   sbatch bench_llm/tasks/face_latte/v2/run.sbatch
+```
+
 ## Adding a task
 
 Make `tasks/<id>/v1/` with its `.j2` asks and a `pilot.py` that defines `build(item,
