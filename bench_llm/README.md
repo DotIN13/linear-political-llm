@@ -10,7 +10,7 @@ summary compares) lives in the task's `pilot.py` and its `.j2` files.
 | module | provides |
 |---|---|
 | `types.py` | `Item`, `Conversation`, `Trial`, `Response`, `Outcome` |
-| `adaptors.py` | `OpenAICompat`: greedy chat completions with first-token logprobs, for a local vLLM server or a hosted API |
+| `adaptors.py` | `OpenAICompat`: greedy chat completions with first-token logprobs, for a local vLLM server or a hosted API; `HFProbe`: the model in transformers, greedy, plus one trained probe's score at the last prompt token |
 | `run.py` | `cells`, `run_cells` (resume by trial key, threads, fsynced `trials.jsonl`, `manifest.json`), `read_trials`, `instrument_rev` |
 | `sources.py` | `read_csv`, `dedupe`, `stratify`, `sample_per_stratum`, `read_table`, `to_items`, `resolve`, `file_sha16` |
 | `prompts.py` | `render` a `.j2`, `user_turn`, `conversation` |
@@ -45,6 +45,16 @@ python -m bench_llm.tasks.party_look.v1.pilot summary \
 
 The probe was trained partly on portraits, so on the congressional portraits the party,
 not the probe, is the ground truth.
+
+**`face_lean/v1`**: the 20 faces in `faces.csv` (12 Congress members, 8 EasyPortrait),
+asked "liberal or conservative leaning? Answer with one word." Each record keeps the word
+and the text-only headwise probe (`textual_ideology_headwise_linear`, top 16 heads) at the
+last prompt token. Runs through `HFProbe`, one model per job, no vLLM.
+
+```bash
+MODEL=qwen3_vl sbatch bench_llm/tasks/face_lean/v1/run.sbatch
+MODEL=gemma4   sbatch bench_llm/tasks/face_lean/v1/run.sbatch
+```
 
 ## Adding a task
 

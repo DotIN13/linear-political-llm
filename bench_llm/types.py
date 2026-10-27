@@ -51,17 +51,22 @@ class Trial:
 
 @dataclass
 class Response:
-    """What an adaptor returns. ``logprobs`` is the first generated token's top tokens."""
+    """What an adaptor returns. ``logprobs`` is the first generated token's top tokens;
+    ``probe`` is what an adaptor that can read activations found in them (None otherwise)."""
 
     text: Optional[str] = None
     logprobs: Optional[Dict[str, float]] = None
     usage: Dict[str, Any] = field(default_factory=dict)
     timing_ms: Optional[float] = None
     error: Optional[str] = None
+    probe: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"text": self.text, "logprobs": self.logprobs, "usage": self.usage,
-                "timing_ms": self.timing_ms, "error": self.error}
+        out = {"text": self.text, "logprobs": self.logprobs, "usage": self.usage,
+               "timing_ms": self.timing_ms, "error": self.error}
+        if self.probe is not None:
+            out["probe"] = self.probe
+        return out
 
 
 @dataclass(frozen=True)

@@ -1,8 +1,13 @@
-"""Model backends. One for now: any OpenAI-compatible chat endpoint.
+"""Model backends.
 
-That covers a local vLLM server (the sbatch starts one) and hosted APIs alike.
-Decoding is greedy (``temperature=0``) and, when ``top_logprobs`` is asked for,
-the first generated token's top tokens come back as ``{token: logprob}``.
+* ``OpenAICompat``: any OpenAI-compatible chat endpoint, a local vLLM server (the
+  sbatch starts one) and hosted APIs alike. Decoding is greedy (``temperature=0``)
+  and, when ``top_logprobs`` is asked for, the first generated token's top tokens
+  come back as ``{token: logprob}``.
+* ``HFProbe``: the model loaded in transformers in this process, so a trained probe
+  from the repo's ``probes`` package can read its activations. A server cannot hand
+  those back. torch, transformers and ``probes`` are imported in ``setup``, so the
+  rest of this package still runs without them.
 """
 
 from __future__ import annotations
@@ -130,4 +135,120 @@ class OpenAICompat:
         pass
 
 
-ADAPTORS = {"openai_compat": OpenAICompat, "vllm": OpenAICompat}
+HF_LOADERS = {"qwen3-vl": "AutoModelForImageTextToText", "gemma4": "AutoModelForMultimodalLM"}
+PROBE_CLASSES = {"headwise_linear": "HeadwiseLinearProbe", "layerwise_linear": "LayerwiseLinearProbe",
+                 "layerwise_rfm": "LayerwiseRFM"}
+
+
+class HFProbe:
+    """Greedy generation in transformers, plus one probe's score at the last prompt token.
+
+    The prompt is the chat template with the generation prompt appended, so its last
+    token is the position whose output is the answer's first token. ``extract_features``
+    from ``probes.base`` captures every attention head there in one forward pass, and
+    the probe's ``score_samples`` averages its top ``top_k`` heads: positive reads
+    conservative, negative liberal, as in ``scripts/probes/token_scoring.py``.
+
+    One trial at a time (``workers=1``): the model holds the GPU.
+    """
+
+    name = "hf_probe"
+
+    def __init__(self, model: str, model_path: str, model_family: str,
+                 probe_prefix: str = "textual_ideology", probe_type: str = "headwise_linear",
+                 top_k: int = 16, mode: str = "vision", data_dir: str = "results/probes",
+                 seed: int = 42, dtype: str = "bfloat16", device_map: str = "auto", **_: Any) -> None:
+        if model_family not in HF_LOADERS:
+            raise ValueError(f"model_family must be one of {sorted(HF_LOADERS)}")
+        if probe_type not in PROBE_CLASSES:
+            raise ValueError(f"probe_type must be one of {sorted(PROBE_CLASSES)}")
+        self.model = model
+        self.model_path = model_path
+        self.model_family = model_family
+        self.probe_prefix = probe_prefix
+        self.probe_type = probe_type
+        self.top_k = int(top_k)
+        self.mode = mode
+        self.data_dir = data_dir
+        self.seed = seed
+        self.dtype = dtype
+        self.device_map = device_map
+        self._hf = None
+
+    def describe(self) -> Dict[str, Any]:
+        return {"name": self.name, "model": self.model, "model_path": self.model_path,
+                "model_family": self.model_family, "probe": self.probe_id(), "top_k": self.top_k,
+                "mode": self.mode, "seed": self.seed, "dtype": self.dtype}
+
+    def probe_id(self) -> str:
+        return f"{self.probe_prefix}_{self.probe_type}"
+
+    def setup(self) -> None:
+        import torch
+        import transformers
+        import probes
+        from probes.base import extract_features, resolve_module_paths
+
+        torch.manual_seed(self.seed)
+        loader = getattr(transformers, HF_LOADERS[self.model_family])
+        processor = transformers.AutoProcessor.from_pretrained(self.model_path)
+        # The same load as scripts/probes/token_scoring.py, which scored the patch maps.
+        dtype = getattr(torch, self.dtype)
+        if self.model_family == "qwen3-vl":
+            kwargs = {"dtype": dtype, "low_cpu_mem_usage": True, "device_map": self.device_map}
+        else:
+            kwargs = {"torch_dtype": dtype, "device_map": self.device_map}
+        net = loader.from_pretrained(self.model_path, **kwargs)
+        net.eval()
+        probe = getattr(probes, PROBE_CLASSES[self.probe_type])(
+            model_path=self.model_path, prefix=self.probe_prefix, mode=self.mode,
+            model_family=self.model_family, data_dir=self.data_dir).load()
+        saved = (probe.metadata_.extra or {}).get("module_paths") if probe.metadata_ else None
+        if isinstance(saved, dict):
+            probe.module_paths = resolve_module_paths(self.model_family, saved)
+        self._hf = {"torch": torch, "processor": processor, "net": net, "probe": probe,
+                    "extract": extract_features}
+
+    def encode(self, trial: Trial) -> Dict[str, Any]:
+        hf = self._hf
+        encoded = hf["processor"].apply_chat_template(
+            [trial.conversation.messages], tokenize=True, add_generation_prompt=True,
+            return_dict=True, return_tensors="pt")
+        device = hf["net"].device
+        return {k: v.to(device) if hasattr(v, "to") else v for k, v in encoded.items()}
+
+    def run(self, trial: Trial) -> Response:
+        started = time.time()
+        ms = lambda: (time.time() - started) * 1000.0  # noqa: E731
+        if self._hf is None:
+            return Response(error="setup() was not called", timing_ms=ms())
+        hf, torch = self._hf, self._hf["torch"]
+        try:
+            encoded = self.encode(trial)
+            n_prompt = int(encoded["input_ids"].shape[-1])
+            last_id = int(encoded["input_ids"][0, -1])
+            feats = hf["extract"](hf["net"], [encoded], mode=self.mode, model_family=self.model_family,
+                                  module_paths=hf["probe"].module_paths)
+            score = float(hf["probe"].score_samples(feats, k=self.top_k)[0])
+            with torch.no_grad():
+                out = hf["net"].generate(**encoded, max_new_tokens=int(trial.max_new_tokens), do_sample=False)
+            new = out[0, n_prompt:]
+            text = hf["processor"].tokenizer.decode(new, skip_special_tokens=True)
+        except Exception as exc:  # noqa: BLE001
+            return Response(error=f"{type(exc).__name__}: {exc}", timing_ms=ms())
+        tok = hf["processor"].tokenizer
+        return Response(
+            text=text, timing_ms=ms(),
+            usage={"prompt_tokens": n_prompt, "completion_tokens": int(new.numel())},
+            probe={"probe": self.probe_id(), "top_k": self.top_k, "position": "last_prompt_token",
+                   "last_prompt_token": tok.decode([last_id]), "score": score})
+
+    def teardown(self) -> None:
+        if self._hf is not None:
+            torch = self._hf["torch"]
+            self._hf = None
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+
+ADAPTORS = {"openai_compat": OpenAICompat, "vllm": OpenAICompat, "hf_probe": HFProbe}

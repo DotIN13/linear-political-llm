@@ -1,0 +1,21 @@
+item_id,set,group,name,party,nominate_dim1,image_path
+congress_G000578,congress,"Republican, read most Republican",Matt Gaetz,Republican,0.598,results/token_scoring/qwen3_vl/congress/_resized_images_800/035690d60a33e5d34936917767600ce2ded99d47.jpg
+congress_G000359,congress,"Republican, read most Republican",Lindsey Graham,Republican,0.37,results/token_scoring/qwen3_vl/congress/_resized_images_800/4161523ac0c358d0c55f8079f835e2b395c1e0e5.jpg
+congress_R000615,congress,"Republican, read most Republican",Mitt Romney,Republican,0.288,results/token_scoring/qwen3_vl/congress/_resized_images_800/808ae01f2a1121e5d076d662939b0a9aa7e85ecb.jpg
+congress_B001300,congress,"Democrat, read most Democratic",Nanette Diaz Barragán,Democrat,-0.506,results/token_scoring/qwen3_vl/congress/_resized_images_800/3ab51c21f996c58e1e7cdc5944efcce50d42f146.jpg
+congress_C000127,congress,"Democrat, read most Democratic",Maria Cantwell,Democrat,-0.305,results/token_scoring/qwen3_vl/congress/_resized_images_800/f55c5ee2ce1b338d7daa5309bbb83456ec1a6c87.jpg
+congress_M001163,congress,"Democrat, read most Democratic",Doris O. Matsui,Democrat,-0.435,results/token_scoring/qwen3_vl/congress/_resized_images_800/f99ae7f7a35d607d995dcc62b0e56c9f5fb2ae03.jpg
+congress_C001035,congress,"Republican, read most Democratic",Susan M. Collins,Republican,0.118,results/token_scoring/qwen3_vl/congress/_resized_images_800/41f09a5a8e8955e85381c450d618ad405d6bc94c.jpg
+congress_M001159,congress,"Republican, read most Democratic",Cathy McMorris Rodgers,Republican,0.432,results/token_scoring/qwen3_vl/congress/_resized_images_800/5bc2158c739672e77dcff68e106680c8167c55f7.jpg
+congress_S001196,congress,"Republican, read most Democratic",Elise M. Stefanik,Republican,0.301,results/token_scoring/qwen3_vl/congress/_resized_images_800/c537855d93ac8b911c4d1da141adfb8b87d7e624.jpg
+congress_T000464,congress,"Democrat, read most Republican",Jon Tester,Democrat,-0.214,results/token_scoring/qwen3_vl/congress/_resized_images_800/d50b5ffe6ec74222f520513589c3ce125c291a6d.jpg
+congress_M000639,congress,"Democrat, read most Republican",Robert Menendez,Democrat,-0.366,results/token_scoring/qwen3_vl/congress/_resized_images_800/8a12e858ebb5734bef0058fe6c511cd98dc0bab8.jpg
+congress_M001209,congress,"Democrat, read most Republican",Ben McAdams,Democrat,-0.069,results/token_scoring/qwen3_vl/congress/_resized_images_800/fb6a56bbb86c59f0e8c188a4f5f631aca5941cbe.jpg
+easyportrait_006421,easyportrait,read most Republican,2cf38567-e922-4ec5-91bf-91d361af3693.jpg,,,results/token_scoring/qwen3_vl/easyportrait/_resized_images_800/ac61b18629b53b5843c87fa27fb415185b10a5af.jpg
+easyportrait_016645,easyportrait,read most Republican,e78d98a0-95a2-4eb2-b144-3c5ea0be57bf.jpg,,,results/token_scoring/qwen3_vl/easyportrait/_resized_images_800/f8df7224355a4f50eb1fbcff10998293ce4fd90a.jpg
+easyportrait_014174,easyportrait,read most Republican,bc8075d1-fad7-4043-ba98-b7514be6e921.jpg,,,results/token_scoring/qwen3_vl/easyportrait/_resized_images_800/208fdf979226a8e8c5f51e5c575f67d3db4029a4.jpg
+easyportrait_006888,easyportrait,read most Republican,35f17212-a12f-433f-a805-3f36ba05224f.jpg,,,results/token_scoring/qwen3_vl/easyportrait/_resized_images_800/14ae5ffd7c75edf566c6e5b20f09b569f6a2bd38.jpg
+easyportrait_015680,easyportrait,read most Democratic,d6026764-944c-42f3-9dd4-f8843c5a897a.jpg,,,results/token_scoring/qwen3_vl/easyportrait/_resized_images_800/cb77b175157bf4321e8fa065b20f89abb83faf98.jpg
+easyportrait_008669,easyportrait,read most Democratic,56e07e12-a7d6-4c85-9bb0-5b2a239a9b44.jpg,,,results/token_scoring/qwen3_vl/easyportrait/_resized_images_800/bbfd4871cc23d5e7b353b3e9c2c1a5acd9276752.jpg
+easyportrait_009150,easyportrait,read most Democratic,5fe55996-2c5a-4ada-9006-d14fb7f55fc8.jpg,,,results/token_scoring/qwen3_vl/easyportrait/_resized_images_800/9191f8eaae90d1fb0dfc11350a4852ac9470d539.jpg
+easyportrait_018281,easyportrait,read most Democratic,20e408c7-5e75-46c8-b93b-15efe010ec50.jpg,,,results/token_scoring/qwen3_vl/easyportrait/_resized_images_800/c779efe0ea5933931ce9838aaea767c54dcaf2c8.jpg
