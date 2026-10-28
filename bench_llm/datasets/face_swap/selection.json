@@ -1,0 +1,177 @@
+{
+ "csv": "results/token_scoring/qwen3_vl/easyportrait/prompt_token_fg_bg_stats_combined_ideology_headwise_linear.csv",
+ "probe": "qwen3_vl combined_ideology_headwise_linear, image-token means",
+ "pool": 14016,
+ "people": {
+  "liberal": [
+   {
+    "record_id": "easyportrait_003168",
+    "uuid": "c9bdd749-c79d-40db-b524-d1b99ca938f7",
+    "split": "test",
+    "score": -0.5139209628105164,
+    "fg_mean": -0.5139209628105164,
+    "bg_mean": 0.18906529247760773
+   },
+   {
+    "record_id": "easyportrait_012568",
+    "uuid": "9f4340db-a42e-40d8-8710-531fc69a0855",
+    "split": "train",
+    "score": -0.44730374217033386,
+    "fg_mean": -0.44730374217033386,
+    "bg_mean": 0.24269738793373108
+   },
+   {
+    "record_id": "easyportrait_006397",
+    "uuid": "2ca474f4-9fd5-497a-808b-0d70cdff1b74",
+    "split": "train",
+    "score": -0.4390873312950134,
+    "fg_mean": -0.4390873312950134,
+    "bg_mean": -0.26024147868156433
+   },
+   {
+    "record_id": "easyportrait_011267",
+    "uuid": "86fca7b4-f125-4518-ae1d-d8fbb165c244",
+    "split": "train",
+    "score": -0.42339181900024414,
+    "fg_mean": -0.42339181900024414,
+    "bg_mean": -0.03129219263792038
+   },
+   {
+    "record_id": "easyportrait_001403",
+    "uuid": "57ff3342-a80e-45a5-a33a-47256b0fbd22",
+    "split": "test",
+    "score": -0.41747668385505676,
+    "fg_mean": -0.41747668385505676,
+    "bg_mean": 0.013425109907984734
+   }
+  ],
+  "conservative": [
+   {
+    "record_id": "easyportrait_016645",
+    "uuid": "e78d98a0-95a2-4eb2-b144-3c5ea0be57bf",
+    "split": "train",
+    "score": 0.8913571238517761,
+    "fg_mean": 0.8913571238517761,
+    "bg_mean": 0.8382426500320435
+   },
+   {
+    "record_id": "easyportrait_012355",
+    "uuid": "9ab309b2-d240-4adc-b7d6-4d9c68cc5eef",
+    "split": "train",
+    "score": 0.8552300930023193,
+    "fg_mean": 0.8552300930023193,
+    "bg_mean": 0.5502293109893799
+   },
+   {
+    "record_id": "easyportrait_004801",
+    "uuid": "0ead3890-88b5-4d4a-8cc4-60ea7557cbf3",
+    "split": "train",
+    "score": 0.8140685558319092,
+    "fg_mean": 0.8140685558319092,
+    "bg_mean": 0.6543749570846558
+   },
+   {
+    "record_id": "easyportrait_000913",
+    "uuid": "382af466-0d46-4fa5-8737-cfd3d9c7b3f0",
+    "split": "test",
+    "score": 0.8084073662757874,
+    "fg_mean": 0.8084073662757874,
+    "bg_mean": 0.4885459840297699
+   },
+   {
+    "record_id": "easyportrait_009362",
+    "uuid": "63de9a40-d14a-4aab-a66a-aac8bd1f7fbe",
+    "split": "train",
+    "score": 0.801090657711029,
+    "fg_mean": 0.801090657711029,
+    "bg_mean": 0.7252644896507263
+   }
+  ]
+ },
+ "backgrounds": {
+  "liberal": [
+   {
+    "record_id": "easyportrait_012911",
+    "uuid": "a589d81b-9b8c-40a7-b362-52cf877235b6",
+    "split": "train",
+    "score": -0.5064026713371277,
+    "fg_mean": -0.18724894523620605,
+    "bg_mean": -0.5064026713371277
+   },
+   {
+    "record_id": "easyportrait_012483",
+    "uuid": "9d81baf6-2ea5-47b2-8d87-628e3f4393fa",
+    "split": "train",
+    "score": -0.4014907479286194,
+    "fg_mean": -0.19383908808231354,
+    "bg_mean": -0.4014907479286194
+   },
+   {
+    "record_id": "easyportrait_004407",
+    "uuid": "072b0229-87c1-4b8a-98ea-3a8713d35d74",
+    "split": "train",
+    "score": -0.3982810974121094,
+    "fg_mean": -0.18637622892856598,
+    "bg_mean": -0.3982810974121094
+   },
+   {
+    "record_id": "easyportrait_016813",
+    "uuid": "ea940462-5843-4205-91ba-95d8e45510be",
+    "split": "train",
+    "score": -0.38854289054870605,
+    "fg_mean": -0.13366682827472687,
+    "bg_mean": -0.38854289054870605
+   },
+   {
+    "record_id": "easyportrait_005562",
+    "uuid": "1c6f98fb-ae6d-45dd-96d0-5bd2d60e7801",
+    "split": "train",
+    "score": -0.38106584548950195,
+    "fg_mean": -0.20057079195976257,
+    "bg_mean": -0.38106584548950195
+   }
+  ],
+  "conservative": [
+   {
+    "record_id": "easyportrait_014987",
+    "uuid": "ca4eabe3-4103-40a9-a31a-bb622eacd7a4",
+    "split": "train",
+    "score": 0.8556080460548401,
+    "fg_mean": 0.6551101207733154,
+    "bg_mean": 0.8556080460548401
+   },
+   {
+    "record_id": "easyportrait_011582",
+    "uuid": "8c5c3e45-9bab-4da0-8ffc-c9178951e23f",
+    "split": "train",
+    "score": 0.7844368815422058,
+    "fg_mean": 0.3868860602378845,
+    "bg_mean": 0.7844368815422058
+   },
+   {
+    "record_id": "easyportrait_012955",
+    "uuid": "a6724286-bb00-4c67-acb4-29e961095340",
+    "split": "train",
+    "score": 0.7830891013145447,
+    "fg_mean": 0.7036293148994446,
+    "bg_mean": 0.7830891013145447
+   },
+   {
+    "record_id": "easyportrait_009285",
+    "uuid": "629d7051-967a-4e30-89e7-3c3c28ae8df7",
+    "split": "train",
+    "score": 0.7643979787826538,
+    "fg_mean": 0.4951888620853424,
+    "bg_mean": 0.7643979787826538
+   },
+   {
+    "record_id": "easyportrait_010685",
+    "uuid": "7c74333f-eae1-4a3f-8fdc-e16c4c20269b",
+    "split": "train",
+    "score": 0.7512397170066833,
+    "fg_mean": 0.5331249833106995,
+    "bg_mean": 0.7512397170066833
+   }
+  ]
+ }
+}

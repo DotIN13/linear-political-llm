@@ -11,6 +11,9 @@ data/audio_silence_probe
 data/news_images
 data/twitter_images
 datasets
+# bench_llm/datasets/ holds the code that builds a task's stimuli; the images go to data/<name>/images
+!bench_llm/datasets/
+data/face_swap/images/
 
 .gradio
 app/results

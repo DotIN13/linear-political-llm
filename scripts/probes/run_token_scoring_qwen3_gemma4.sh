@@ -49,6 +49,7 @@ declare -A DATASET_PATHS=(
   [easyportrait]="data/probes/easyportrait_score_data.jsonl"
   [lvis]="data/probes/lvis_score_data.jsonl"
   [protest_sign]="data/probes/protest_sign_score_data.jsonl"
+  [face_swap]="data/probes/face_swap_score_data.jsonl"
 )
 
 # Allow caller to restrict which datasets to run (space-separated names)
