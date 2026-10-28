@@ -73,6 +73,14 @@ MODEL=qwen3_vl sbatch bench_llm/tasks/face_latte/v2/run.sbatch
 MODEL=gemma4   sbatch bench_llm/tasks/face_latte/v2/run.sbatch
 ```
 
+**`face_latte/v3`**: v2 plus each candidate word scored by teacher forcing (`HFProbe`
+`candidates`), so every trial also keeps the log-odds of latte over coffee, spellings pooled.
+
+```bash
+MODEL=qwen3_vl sbatch bench_llm/tasks/face_latte/v3/run.sbatch
+MODEL=gemma4   sbatch bench_llm/tasks/face_latte/v3/run.sbatch
+```
+
 ## Adding a task
 
 Make `tasks/<id>/v1/` with its `.j2` asks and a `pilot.py` that defines `build(item,

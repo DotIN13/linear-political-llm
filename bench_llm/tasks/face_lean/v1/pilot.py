@@ -138,7 +138,8 @@ def export(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         ex = r["outcome"].get("extra") or {}
         f["models"][r["model"]] = {"word": ex.get("word"), "label": ex.get("label"),
                                    "text": ex.get("answer_text"), "score": r["outcome"].get("value"),
-                                   "read_at": ex.get("read_at"), "error": r.get("error")}
+                                   "read_at": ex.get("read_at"), "error": r.get("error"),
+                                   **{k: ex[k] for k in ("log_odds", "p_latte", "mass") if k in ex}}
     order = {it.item_id: i for i, it in enumerate(load_faces())}
     return sorted(faces.values(), key=lambda f: order.get(f["item_id"], 1 << 30))
 

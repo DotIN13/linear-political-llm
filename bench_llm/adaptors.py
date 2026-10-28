@@ -19,7 +19,7 @@ import os
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Sequence
 
 from bench_llm.types import Response, Trial
 
@@ -157,7 +157,8 @@ class HFProbe:
     def __init__(self, model: str, model_path: str, model_family: str,
                  probe_prefix: str = "textual_ideology", probe_type: str = "headwise_linear",
                  top_k: int = 16, mode: str = "vision", data_dir: str = "results/probes",
-                 seed: int = 42, dtype: str = "bfloat16", device_map: str = "auto", **_: Any) -> None:
+                 seed: int = 42, dtype: str = "bfloat16", device_map: str = "auto",
+                 candidates: Sequence[str] = (), **_: Any) -> None:
         if model_family not in HF_LOADERS:
             raise ValueError(f"model_family must be one of {sorted(HF_LOADERS)}")
         if probe_type not in PROBE_CLASSES:
@@ -173,12 +174,16 @@ class HFProbe:
         self.seed = seed
         self.dtype = dtype
         self.device_map = device_map
+        self.candidates = tuple(candidates)
         self._hf = None
 
     def describe(self) -> Dict[str, Any]:
-        return {"name": self.name, "model": self.model, "model_path": self.model_path,
-                "model_family": self.model_family, "probe": self.probe_id(), "top_k": self.top_k,
-                "mode": self.mode, "seed": self.seed, "dtype": self.dtype}
+        out = {"name": self.name, "model": self.model, "model_path": self.model_path,
+               "model_family": self.model_family, "probe": self.probe_id(), "top_k": self.top_k,
+               "mode": self.mode, "seed": self.seed, "dtype": self.dtype}
+        if self.candidates:
+            out["candidates"] = list(self.candidates)
+        return out
 
     def probe_id(self) -> str:
         return f"{self.probe_prefix}_{self.probe_type}"
@@ -234,14 +239,43 @@ class HFProbe:
                 out = hf["net"].generate(**encoded, max_new_tokens=int(trial.max_new_tokens), do_sample=False)
             new = out[0, n_prompt:]
             text = hf["processor"].tokenizer.decode(new, skip_special_tokens=True)
+            cands = {c: self.continuation_logprob(encoded, c) for c in self.candidates}
         except Exception as exc:  # noqa: BLE001
             return Response(error=f"{type(exc).__name__}: {exc}", timing_ms=ms())
         tok = hf["processor"].tokenizer
+        probe = {"probe": self.probe_id(), "top_k": self.top_k, "position": "last_prompt_token",
+                 "last_prompt_token": tok.decode([last_id]), "score": score}
+        if cands:
+            probe["candidates"] = cands
         return Response(
             text=text, timing_ms=ms(),
-            usage={"prompt_tokens": n_prompt, "completion_tokens": int(new.numel())},
-            probe={"probe": self.probe_id(), "top_k": self.top_k, "position": "last_prompt_token",
-                   "last_prompt_token": tok.decode([last_id]), "score": score})
+            usage={"prompt_tokens": n_prompt, "completion_tokens": int(new.numel())}, probe=probe)
+
+    def continuation_logprob(self, encoded: Dict[str, Any], word: str) -> Dict[str, Any]:
+        """log P(word | prompt): the word's tokens appended to the prompt, scored by teacher forcing,
+        their log-probabilities summed, so a word split into pieces counts in full."""
+        hf, torch = self._hf, self._hf["torch"]
+        ids = hf["processor"].tokenizer.encode(word, add_special_tokens=False)
+        n = int(encoded["input_ids"].shape[-1])
+        extra = torch.tensor([ids], device=encoded["input_ids"].device, dtype=encoded["input_ids"].dtype)
+        longer = dict(encoded)
+        for key, value in encoded.items():
+            # every per-token tensor ([1, n]) grows with the word: ids get the word, masks get ones,
+            # token-type ids get zeros (text)
+            if hasattr(value, "shape") and value.dim() == 2 and int(value.shape[0]) == 1 and int(value.shape[-1]) == n:
+                if key == "input_ids":
+                    fill = extra
+                elif key == "attention_mask":
+                    fill = torch.ones_like(extra, dtype=value.dtype)
+                else:
+                    fill = torch.zeros_like(extra, dtype=value.dtype)
+                longer[key] = torch.cat([value, fill], dim=-1)
+        with torch.no_grad():
+            logits = hf["net"](**longer).logits[0, n - 1:n - 1 + len(ids)].float()
+        lp = torch.log_softmax(logits, dim=-1)
+        per = [float(lp[i, t]) for i, t in enumerate(ids)]
+        return {"logprob": sum(per), "tokens": [hf["processor"].tokenizer.decode([t]) for t in ids],
+                "per_token": per}
 
     def teardown(self) -> None:
         if self._hf is not None:
