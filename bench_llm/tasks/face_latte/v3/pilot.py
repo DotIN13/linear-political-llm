@@ -5,8 +5,9 @@ prompt token. v3 also scores each candidate word by teacher forcing (``HFProbe``
 ``candidates``): log P(word | prompt), its tokens summed. Spellings are pooled per drink
 (latte, Latte; coffee, Coffee) and each trial keeps
 
-* ``log_odds`` = log P(latte) - log P(coffee), above 0 leaning latte;
-* ``p_latte`` = P(latte) / (P(latte) + P(coffee)), the same thing as a share;
+* ``log_odds_coffee`` = log P(coffee) - log P(latte), above 0 leaning coffee, the same
+  direction as the probe (above 0 conservative);
+* ``p_coffee`` = P(coffee) / (P(latte) + P(coffee)), the same thing as a share;
 * ``mass`` = P(latte) + P(coffee), how much of the answer is either drink at all. The
 same 20 faces and images as face_lean v1 (its ``faces.csv``), in the user's voice
 (``ask.j2``), image first. Each record
@@ -85,14 +86,21 @@ def logsumexp(xs: List[float]) -> Optional[float]:
 
 
 def drink_odds(cands: Dict[str, Dict[str, Any]]) -> Dict[str, Optional[float]]:
-    """Pool each drink's spellings and compare: log-odds, the share for latte, the mass on both."""
+    """Pool each drink's spellings and compare: log-odds of coffee over latte, the share for
+    coffee, and the mass on both."""
     lat = logsumexp([(cands.get(w) or {}).get("logprob") for w in CANDIDATES["latte"]])
     cof = logsumexp([(cands.get(w) or {}).get("logprob") for w in CANDIDATES["coffee"]])
     if lat is None or cof is None:
-        return {"log_odds": None, "p_latte": None, "mass": None, "logp_latte": lat, "logp_coffee": cof}
-    lo = lat - cof
-    return {"log_odds": lo, "p_latte": 1 / (1 + math.exp(-lo)), "mass": math.exp(lat) + math.exp(cof),
+        return {"log_odds_coffee": None, "p_coffee": None, "mass": None, "logp_latte": lat, "logp_coffee": cof}
+    lo = cof - lat
+    return {"log_odds_coffee": lo, "p_coffee": 1 / (1 + math.exp(-lo)), "mass": math.exp(lat) + math.exp(cof),
             "logp_latte": lat, "logp_coffee": cof}
+
+
+def odds(row: Dict[str, Any]) -> Dict[str, Optional[float]]:
+    """A record's odds, recomputed from the candidate log-probabilities it stores, so records read
+    under an earlier definition (latte - coffee) come out the same as new ones."""
+    return drink_odds(((row.get("response") or {}).get("probe") or {}).get("candidates") or {})
 
 
 def read(resp: Response, trial: Trial) -> Outcome:
@@ -126,10 +134,10 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             mean = sum(vals) / len(vals) if vals else None
             print(f"  {order:<14}{len(cell):>3} trials  {counts}  mean probe {mean:+.3f}" if mean is not None
                   else f"  {order:<14}{len(cell):>3} trials  {counts}")
-            los = [(r["outcome"].get("extra") or {}).get("log_odds") for r in cell]
+            los = [odds(r)["log_odds_coffee"] for r in cell]
             los = [x for x in los if x is not None]
             if los:
-                print(f"  {'':<14}mean log-odds latte - coffee {sum(los) / len(los):+.2f} (n {len(los)})")
+                print(f"  {'':<14}mean log-odds coffee - latte {sum(los) / len(los):+.2f} (n {len(los)})")
             rep[order] = {"n": len(cell), "labels": counts, "mean_score": mean,
                           "mean_log_odds": sum(los) / len(los) if los else None}
         by_face: Dict[str, Dict[str, str]] = {}
@@ -152,6 +160,11 @@ def export(rows: List[Dict[str, Any]], lean_rows: List[Dict[str, Any]]) -> List[
             base = faces.setdefault(f["item_id"], {**f, "models": {}})
             for model, m in f["models"].items():
                 base["models"].setdefault(model, {}).setdefault("latte", {})[order] = m
+        for r in part:
+            m = faces[r["item_id"]]["models"][r["model"]]["latte"][order]
+            for k in ("log_odds", "p_latte"):
+                m.pop(k, None)
+            m.update({k: v for k, v in odds(r).items() if k in ("log_odds_coffee", "p_coffee", "mass")})
     order = {it.item_id: i for i, it in enumerate(load_faces())}
     return sorted(faces.values(), key=lambda f: order.get(f["item_id"], 1 << 30))
 
