@@ -239,7 +239,8 @@ class HFProbe:
                 out = hf["net"].generate(**encoded, max_new_tokens=int(trial.max_new_tokens), do_sample=False)
             new = out[0, n_prompt:]
             text = hf["processor"].tokenizer.decode(new, skip_special_tokens=True)
-            cands = {c: self.continuation_logprob(encoded, c) for c in self.candidates}
+            words = trial.meta.get("candidates") or self.candidates   # a trial may name its own
+            cands = {c: self.continuation_logprob(encoded, c) for c in words}
         except Exception as exc:  # noqa: BLE001
             return Response(error=f"{type(exc).__name__}: {exc}", timing_ms=ms())
         tok = hf["processor"].tokenizer

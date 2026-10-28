@@ -81,6 +81,16 @@ MODEL=qwen3_vl sbatch bench_llm/tasks/face_latte/v3/run.sbatch
 MODEL=gemma4   sbatch bench_llm/tasks/face_latte/v3/run.sbatch
 ```
 
+**`face_swap/v1`**: the politics and latte questions, both orders, on the 110 background-swap
+composites from `bench_llm/datasets/face_swap` (440 trials per model): the word, the text-only
+probe at the last prompt token, and whole-word log-odds (conservative - liberal, coffee - latte).
+Each trial scores only its own question's words (`Trial.meta["candidates"]`).
+
+```bash
+MODEL=qwen3_vl sbatch --job-name=face-swap-qwen  bench_llm/tasks/face_swap/v1/run.sbatch
+MODEL=gemma4   sbatch --job-name=face-swap-gemma bench_llm/tasks/face_swap/v1/run.sbatch
+```
+
 ## Adding a task
 
 Make `tasks/<id>/v1/` with its `.j2` asks and a `pilot.py` that defines `build(item,
