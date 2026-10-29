@@ -278,8 +278,8 @@ class HFProbe:
         ``{"mode": "swap" | "fill_check" | "normal", "donor_image": path, "base_mask": path,
         "donor_mask": path, "aspect": height / width}``, and for ``"ranked"`` also ``share``, ``how``
         (top | random), ``direction`` (+1: the donor's most conservative tokens; -1: most liberal) and
-        ``seed``: that share of the cells that are person in both photos moves from the donor, at the
-        same positions. The trial's own image is the base;
+        ``seed``: that share of the cells that are person in both photos (``region`` "person", the
+        default) or of every cell (``region`` "all") moves from the donor, at the same positions. The trial's own image is the base;
         the donor is encoded with the same prompt. See ``bench_llm/splice.py``."""
         import numpy as np
         from PIL import Image
@@ -300,11 +300,16 @@ class HFProbe:
             scores = self.image_token_scores(donor_encoded)
             if len(scores) != base.n:
                 raise RuntimeError(f"{len(scores)} scored image tokens, the encoder gave {base.n}")
-            eligible = [a and b for a, b in zip(bp, dp)]
+            region = spec.get("region", "person")
+            if region not in ("person", "all"):
+                raise ValueError("region must be person or all")
+            eligible = [a and b for a, b in zip(bp, dp)] if region == "person" else [True] * base.n
             cells = sp.ranked_cells(scores, eligible, float(spec["share"]), spec.get("how", "top"),
                                     int(spec.get("direction", 1)), int(spec.get("seed", 0)))
             plan = sp.ranked_plan(base.n, cells)
             extra = {"share": spec["share"], "how": spec.get("how", "top"), "direction": int(spec.get("direction", 1)),
+                     "region": region, "moved_person_base": sum(1 for i in cells if bp[i]),
+                     "moved_person_donor": sum(1 for i in cells if dp[i]),
                      "eligible": sum(eligible), "cells": cells, "rank_probe": self._scorer.probe_id,
                      "moved_score_mean": float(scores[cells].mean()) if cells else None,
                      "donor_eligible_score_mean": float(scores[[i for i, e in enumerate(eligible) if e]].mean()) if any(eligible) else None}

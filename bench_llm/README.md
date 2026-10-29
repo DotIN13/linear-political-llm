@@ -104,6 +104,9 @@ that are person in both takes the other face's tokens, either the ones the donor
 image-token probe ranks most extreme (`token_scores.py`) or as many at random. Both
 directions, 2,080 trials per model.
 
+**`face_swap/v4`**: v3 across the whole portrait: every cell of the frame can move, not only
+the cells that are person in both photos. 2,080 trials per model.
+
 ## Adding a task
 
 Make `tasks/<id>/v1/` with its `.j2` asks and a `pilot.py` that defines `build(item,
