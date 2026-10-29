@@ -15,6 +15,7 @@ summary compares) lives in the task's `pilot.py` and its `.j2` files.
 | `sources.py` | `read_csv`, `dedupe`, `stratify`, `sample_per_stratum`, `read_table`, `to_items`, `resolve`, `file_sha16` |
 | `prompts.py` | `render` a `.j2`, `user_turn`, `conversation` |
 | `readers.py` | `option_probs`, `top_option`, `expected_value`, `log_odds`, `first_mention`, `matches`, `word_count` |
+| `splice.py` | `VisionTap` (read or override a model's image tokens at the encoder output, deepstack included), `splice_plan` and `apply_plan`: splice image tokens between two equally framed images |
 | `stats.py` | `mean_se`, `spearman`, `pearson`, `corr_se`, `auc` |
 
 Each row of `trials.jsonl` carries the item's data, the variant, the messages sent,
@@ -90,6 +91,11 @@ Each trial scores only its own question's words (`Trial.meta["candidates"]`).
 MODEL=qwen3_vl sbatch --job-name=face-swap-qwen  bench_llm/tasks/face_swap/v1/run.sbatch
 MODEL=gemma4   sbatch --job-name=face-swap-gemma bench_llm/tasks/face_swap/v1/run.sbatch
 ```
+
+**`face_swap/v2`**: the background moved by token splicing (`splice.py`): person P2's photo
+runs with P1's background tokens in its background cells, and the mean of P1's background
+tokens where P1's own person sat; against a fill-only check, P2's normal run, and v2's pixel
+composites. 1,240 trials per model.
 
 ## Adding a task
 

@@ -14,6 +14,9 @@ datasets
 # bench_llm/datasets/ holds the code that builds a task's stimuli; the images go to data/<name>/images
 !bench_llm/datasets/
 data/face_swap/images/
+data/face_swap_v2/images/
+data/face_swap_v2/frames/
+data/face_swap_v2/masks/
 
 .gradio
 app/results

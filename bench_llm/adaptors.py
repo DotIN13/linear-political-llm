@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import mimetypes
 import os
@@ -135,6 +136,17 @@ class OpenAICompat:
         pass
 
 
+def _with_image(conv: Any, path: str) -> Any:
+    """The conversation with every image part pointing at ``path``."""
+    msgs = []
+    for m in conv.messages:
+        c = m["content"]
+        if isinstance(c, list):
+            c = [dict(p, image=path) if p.get("type") == "image" else p for p in c]
+        msgs.append({**m, "content": c})
+    return type(conv)(messages=msgs)
+
+
 HF_LOADERS = {"qwen3-vl": "AutoModelForImageTextToText", "gemma4": "AutoModelForMultimodalLM"}
 PROBE_CLASSES = {"headwise_linear": "HeadwiseLinearProbe", "layerwise_linear": "LayerwiseLinearProbe",
                  "layerwise_rfm": "LayerwiseRFM"}
@@ -213,6 +225,7 @@ class HFProbe:
             probe.module_paths = resolve_module_paths(self.model_family, saved)
         self._hf = {"torch": torch, "processor": processor, "net": net, "probe": probe,
                     "extract": extract_features}
+        self._tap = None   # a bench_llm.splice.VisionTap, made on the first spliced trial
 
     def encode(self, trial: Trial) -> Dict[str, Any]:
         hf = self._hf
@@ -228,8 +241,10 @@ class HFProbe:
         if self._hf is None:
             return Response(error="setup() was not called", timing_ms=ms())
         hf, torch = self._hf, self._hf["torch"]
+        stack = contextlib.ExitStack()
         try:
             encoded = self.encode(trial)
+            spliced = self.splice(trial, encoded, stack) if trial.meta.get("splice") else None
             n_prompt = int(encoded["input_ids"].shape[-1])
             last_id = int(encoded["input_ids"][0, -1])
             feats = hf["extract"](hf["net"], [encoded], mode=self.mode, model_family=self.model_family,
@@ -242,15 +257,42 @@ class HFProbe:
             words = trial.meta.get("candidates") or self.candidates   # a trial may name its own
             cands = {c: self.continuation_logprob(encoded, c) for c in words}
         except Exception as exc:  # noqa: BLE001
+            stack.close()
             return Response(error=f"{type(exc).__name__}: {exc}", timing_ms=ms())
+        stack.close()
         tok = hf["processor"].tokenizer
         probe = {"probe": self.probe_id(), "top_k": self.top_k, "position": "last_prompt_token",
                  "last_prompt_token": tok.decode([last_id]), "score": score}
+        if spliced:
+            probe["splice"] = spliced
         if cands:
             probe["candidates"] = cands
         return Response(
             text=text, timing_ms=ms(),
             usage={"prompt_tokens": n_prompt, "completion_tokens": int(new.numel())}, probe=probe)
+
+    def splice(self, trial: Trial, encoded: Dict[str, Any], stack: contextlib.ExitStack) -> Dict[str, Any]:
+        """Swap image tokens for the rest of this trial, as ``trial.meta["splice"]`` says:
+        ``{"mode": "swap" | "fill_check" | "normal", "donor_image": path, "base_mask": path,
+        "donor_mask": path, "aspect": height / width}``. The trial's own image is the base;
+        the donor is encoded with the same prompt. See ``bench_llm/splice.py``."""
+        import numpy as np
+        from PIL import Image
+        from bench_llm import splice as sp
+        spec = trial.meta["splice"]
+        if self._tap is None:
+            self._tap = sp.VisionTap(self._hf["net"], self.model_family)
+        base = self._tap.capture(encoded)
+        donor_trial = Trial(item_id=trial.item_id, conversation=_with_image(trial.conversation, spec["donor_image"]),
+                            variant=trial.variant, max_new_tokens=trial.max_new_tokens, meta={})
+        donor = self._tap.capture(self.encode(donor_trial))
+        h, w = sp.infer_grid(base.n, float(spec["aspect"]))
+        bp = sp.person_cells(np.asarray(Image.open(spec["base_mask"])) > 127, h, w)
+        dp = sp.person_cells(np.asarray(Image.open(spec["donor_mask"])) > 127, h, w)
+        plan = sp.splice_plan(bp, dp, spec["mode"])
+        stack.enter_context(self._tap.override(sp.apply_plan(base, donor, plan, bp, dp)))
+        return {"mode": spec["mode"], "grid": [h, w], "sources": sp.plan_counts(plan),
+                "deepstack_layers": len(base.deepstack)}
 
     def continuation_logprob(self, encoded: Dict[str, Any], word: str) -> Dict[str, Any]:
         """log P(word | prompt): the word's tokens appended to the prompt, scored by teacher forcing,

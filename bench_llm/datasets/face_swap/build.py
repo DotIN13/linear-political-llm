@@ -20,6 +20,18 @@ explain a difference between cells:
     python -m bench_llm.datasets.face_swap.build select     # writes selection.json beside this file
     python -m bench_llm.datasets.face_swap.build build      # writes data/face_swap/images/ and manifest.csv
     python -m bench_llm.datasets.face_swap.build jsonl      # writes data/probes/face_swap_score_data.jsonl
+    python -m bench_llm.datasets.face_swap.build build --version v2   # data/face_swap_v2/
+    python -m bench_llm.datasets.face_swap.build jsonl --version v2   # data/probes/face_swap_v2_score_data.jsonl
+    python -m bench_llm.datasets.face_swap.build frames                # data/face_swap_v2/frames/ and masks/
+
+``frames`` writes the 20 source photos themselves, unedited, in v2's frame, with their person
+masks: what the token-swap task (``bench_llm/tasks/face_swap/v2``) encodes and splices.
+
+v2 keeps each person exactly the same in all 11 of their images. v1 scaled the person to the
+height of whoever they replaced, so the same face appeared at different sizes and places on
+different backgrounds, and size travelled with the background. In v2 every image is one fixed
+frame (600 x 800); the person keeps the size and position they had in their own photo, cropped
+to that frame, and only the pixels around them change.
 
 ``jsonl`` writes the composites in the same record format and with the same prompt as
 ``data/probes/easyportrait_score_data.jsonl``, so ``scripts/probes/token_scoring.py`` scores them
@@ -193,6 +205,77 @@ def build(sel: Dict[str, Any], source: Path, out_dir: Path) -> List[Dict[str, An
     return rows
 
 
+FRAME = (600, 800)   # v2: width, height of every image
+
+
+def cover(img: np.ndarray, mask: np.ndarray):
+    """Scale to cover the v2 frame, then crop its centre, image and mask alike."""
+    import cv2
+    W, H = FRAME
+    s = max(W / img.shape[1], H / img.shape[0])
+    size = (max(W, round(img.shape[1] * s)), max(H, round(img.shape[0] * s)))
+    img = cv2.resize(img, size, interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_CUBIC)
+    mask = cv2.resize(mask.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) > 0
+    x0, y0 = (size[0] - W) // 2, (size[1] - H) // 2
+    return img[y0:y0 + H, x0:x0 + W], mask[y0:y0 + H, x0:x0 + W]
+
+
+def build_v2(sel: Dict[str, Any], source: Path, out_dir: Path) -> List[Dict[str, Any]]:
+    """Every person at one size and place in all their images; backgrounds filled and framed alike."""
+    import cv2
+    (out_dir / "images").mkdir(parents=True, exist_ok=True)
+    people = [dict(p, side=s) for s in ("liberal", "conservative") for p in sel["people"][s]]
+    bgs = [dict(b, side=s) for s in ("liberal", "conservative") for b in sel["backgrounds"][s]]
+    framed = {}
+    for it in people + bgs:
+        img, mask = load(source, it)
+        framed[it["uuid"]] = (img, mask, plate(img, mask))
+    for u, (img, mask, pl) in list(framed.items()):
+        fi, fm = cover(img, mask)
+        fp, _ = cover(pl, mask)
+        framed[u] = (fi, fm, fp)
+    rows = []
+
+    def paste(person_img, person_mask, bg_plate):
+        a = cv2.GaussianBlur(person_mask.astype(np.float32), (2 * FEATHER + 1, 2 * FEATHER + 1), 0)[..., None]
+        return np.clip(a * person_img + (1 - a) * bg_plate.astype(np.float32), 0, 255).astype(np.uint8)
+
+    def save(name: str, img: np.ndarray, **meta: Any) -> None:
+        cv2.imwrite(str(out_dir / "images" / f"{name}.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        rows.append({"item_id": name, "image_path": str((out_dir / "images" / f"{name}.jpg").relative_to(ROOT)), **meta})
+
+    for i, p in enumerate(people):
+        pi, pm, own = framed[p["uuid"]]
+        for j, b in enumerate(bgs):
+            save(f"p{i:02d}_b{j:02d}", paste(pi, pm, framed[b["uuid"]][2]), kind="swap",
+                 person=p["uuid"], person_side=p["side"], person_score=round(p["fg_mean"], 4),
+                 background=b["uuid"], background_side=b["side"], background_score=round(b["bg_mean"], 4))
+        save(f"p{i:02d}_self", paste(pi, pm, own), kind="self",
+             person=p["uuid"], person_side=p["side"], person_score=round(p["fg_mean"], 4),
+             background=p["uuid"], background_side="own", background_score=round(p["bg_mean"], 4))
+    with open(out_dir / "manifest.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    return rows
+
+
+def build_frames(sel: Dict[str, Any], source: Path, out_dir: Path) -> List[Dict[str, Any]]:
+    """Each source photo, unedited, in the v2 frame, and its person mask (0 or 255)."""
+    import cv2
+    (out_dir / "frames").mkdir(parents=True, exist_ok=True)
+    (out_dir / "masks").mkdir(parents=True, exist_ok=True)
+    rows = []
+    for role in ("people", "backgrounds"):
+        for side, items in sel[role].items():
+            for it in items:
+                img, mask = cover(*load(source, it))
+                cv2.imwrite(str(out_dir / "frames" / f"{it['uuid']}.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+                cv2.imwrite(str(out_dir / "masks" / f"{it['uuid']}.png"), mask.astype(np.uint8) * 255)
+                rows.append({"uuid": it["uuid"], "role": role, "side": side})
+    return rows
+
+
 def portrait_prompt() -> str:
     """The prompt EasyPortrait was scored with, read from the script that wrote its JSONL."""
     import importlib.util
@@ -203,14 +286,14 @@ def portrait_prompt() -> str:
     return mod.DEFAULT_PROMPT
 
 
-def write_jsonl(out_dir: Path, path: Path) -> int:
+def write_jsonl(out_dir: Path, path: Path, source_name: str = "face_swap") -> int:
     prompt = portrait_prompt()
     rows = list(csv.DictReader(open(out_dir / "manifest.csv", encoding="utf-8")))
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         for r in rows:
             img = r["image_path"]
-            rec = {"id": f"face_swap_{r['item_id']}", "source": "face_swap", "name": Path(img).name,
+            rec = {"id": f"{source_name}_{r['item_id']}", "source": source_name, "name": Path(img).name,
                    "image_path": img, "prompt": prompt, "text": prompt,
                    "messages": [{"role": "user", "content": [{"type": "text", "text": prompt},
                                                             {"type": "image", "image": img}]}]}
@@ -220,13 +303,15 @@ def write_jsonl(out_dir: Path, path: Path) -> int:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="build the face_swap composites")
-    ap.add_argument("phase", choices=["select", "build", "jsonl"])
+    ap.add_argument("phase", choices=["select", "build", "jsonl", "frames"])
     ap.add_argument("--csv", default=str(ROOT / CSV))
     ap.add_argument("--index", default=str(ROOT / INDEX))
     ap.add_argument("--source", default=str(ROOT / SOURCE))
-    ap.add_argument("--out", default=str(ROOT / OUT), help="where the images and manifest go")
+    ap.add_argument("--version", default="v1", choices=["v1", "v2"])
+    ap.add_argument("--out", default=None, help="where the images and manifest go")
     a = ap.parse_args(argv)
-    out = Path(a.out)
+    name = "face_swap" if a.version == "v1" else f"face_swap_{a.version}"
+    out = Path(a.out) if a.out else ROOT / "data" / name
     if a.phase == "select":
         sel = select(Path(a.csv), Path(a.index))
         (HERE / "selection.json").write_text(json.dumps(sel, indent=1) + "\n", encoding="utf-8")
@@ -236,11 +321,15 @@ def main(argv=None) -> int:
         print(f"pool {sel['pool']} portraits -> {HERE / 'selection.json'}")
         return 0
     if a.phase == "jsonl":
-        path = ROOT / "data" / "probes" / "face_swap_score_data.jsonl"
-        print(f"{write_jsonl(out, path)} records -> {path}")
+        path = ROOT / "data" / "probes" / f"{name}_score_data.jsonl"
+        print(f"{write_jsonl(out, path, name)} records -> {path}")
         return 0
     sel = json.loads((HERE / "selection.json").read_text(encoding="utf-8"))
-    rows = build(sel, Path(a.source), out)
+    if a.phase == "frames":
+        out = Path(a.out) if a.out else ROOT / "data" / "face_swap_v2"
+        print(f"{len(build_frames(sel, Path(a.source), out))} photos -> {out / 'frames'}, masks in {out / 'masks'}")
+        return 0
+    rows = (build if a.version == "v1" else build_v2)(sel, Path(a.source), out)
     print(f"{len(rows)} images -> {out / 'images'}, manifest {out / 'manifest.csv'}")
     return 0
 
