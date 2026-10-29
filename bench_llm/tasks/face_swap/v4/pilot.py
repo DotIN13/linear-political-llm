@@ -1,6 +1,7 @@
 """face_swap v4 -- the best-token swap across the whole portrait, not only the face.
 
-As v3, except that the cells that can move are every cell of the 600 x 800 frame (background,
+As face_swap v3 (which this file does not import), except that the cells that can move are
+every cell of the 600 x 800 frame (background,
 hair, clothes and the grey outside the photo included), not only the cells that are person in
 both photos; the top-ranked cells may now be background. Each trial records how many moved
 cells were person in the base and in the donor.
@@ -19,7 +20,7 @@ up (``build faces``), are paired most extreme with most extreme. In each pair on
   faces); ``random``: as many cells at random, the control;
 * ``normal``: each of the 40 photos as it is.
 
-Readings as v1 (both questions, both orders): the answer, the text-only probe at the last
+Readings as face_swap v1 (both questions, both orders): the answer, the text-only probe at the last
 prompt token, and the whole-word log-odds on the conservative-coded side. Each trial records
 the cells moved and their scores.
 
@@ -36,6 +37,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -44,11 +47,10 @@ ROOT = Path(__file__).resolve().parents[4]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from bench_llm import prompts, readers, sources
 from bench_llm import run as runner
-from bench_llm import sources
 from bench_llm.adaptors import ADAPTORS
-from bench_llm.tasks.face_swap.v1 import pilot as v1
-from bench_llm.types import Item, Trial
+from bench_llm.types import Item, Outcome, Response, Trial
 
 TASK = "face_swap/v4"
 TITLE = "best-token swap across the whole portrait"
@@ -61,6 +63,24 @@ HOWS = ("top", "random")
 DIRECTIONS = {"c2l": ("liberal", "conservative", 1), "l2c": ("conservative", "liberal", -1)}
 CONDITIONS = ("normal", "top", "random")
 REGION = "all"        # every cell can move; v3 moved only cells that are person in both photos
+HERE = Path(__file__).resolve().parent
+MODELS: Dict[str, Dict[str, str]] = {
+    "qwen3_vl": {"model": "qwen3-vl-8b-instruct", "model_family": "qwen3-vl",
+                 "model_path": "/home/tzhang3/jevans/models/Qwen3-VL-8B-Instruct"},
+    "gemma4": {"model": "gemma-4-31b-it", "model_family": "gemma4",
+               "model_path": "/project/jevans/tzhang3/models/gemma-4-31B-it"},
+}
+PROBE_PREFIX, PROBE_TYPE, TOP_K = "textual_ideology", "headwise_linear", 16   # the last-token probe
+MAX_NEW_TOKENS = 8
+# per question: the template, the conservative-coded option, the other, and the spellings pooled
+QUESTIONS = {
+    "lean": {"ask": "ask_lean.j2", "con": "conservative", "other": "liberal",
+             "spell": {"conservative": ("conservative", "Conservative"), "liberal": ("liberal", "Liberal")}},
+    "latte": {"ask": "ask_latte.j2", "con": "coffee", "other": "latte",
+              "spell": {"coffee": ("coffee", "Coffee"), "latte": ("latte", "Latte")}},
+}
+WORD = re.compile(r"[A-Za-z][A-Za-z\-']*")
+REFUSAL = re.compile(r"i(?:'m| am) (?:sorry|not able|unable)|i can(?:no|')t|cannot (?:determine|tell|say)", re.I)
 
 
 def load_items(root: Optional[str] = None) -> List[Item]:
@@ -90,20 +110,58 @@ def load_items(root: Optional[str] = None) -> List[Item]:
     return items
 
 
+# --- the ask -----------------------------------------------------------------
 def variants() -> List[Dict[str, Any]]:
-    return v1.variants()
+    out = []
+    for q, spec in QUESTIONS.items():
+        for first in (spec["other"], spec["con"]):
+            out.append({"question": q, "order": f"{first}_first", "probe": f"{PROBE_PREFIX}_{PROBE_TYPE}",
+                        "top_k": TOP_K})
+    return out
 
 
 def build(item: Item, variant: Dict[str, Any]) -> Trial:
-    t = v1.build(item, variant)
-    meta = dict(t.meta)
+    spec = QUESTIONS[variant["question"]]
+    first = variant["order"].removesuffix("_first")
+    second = spec["con"] if first == spec["other"] else spec["other"]
+    text = prompts.render(HERE / spec["ask"], first=first, second=second)
+    meta: Dict[str, Any] = {"question": text, "candidates": [w for ws in spec["spell"].values() for w in ws]}
     if item.data.get("splice"):
         meta["splice"] = item.data["splice"]
-    return Trial(item_id=t.item_id, conversation=t.conversation, variant=t.variant,
-                 max_new_tokens=t.max_new_tokens, meta=meta)
+    return Trial(item_id=item.item_id, conversation=prompts.conversation(text, item.image_paths),
+                 variant=dict(variant), max_new_tokens=MAX_NEW_TOKENS, meta=meta)
 
 
-read = v1.read
+# --- the read ----------------------------------------------------------------
+def logsumexp(xs: List[Optional[float]]) -> Optional[float]:
+    xs = [x for x in xs if x is not None]
+    if not xs:
+        return None
+    m = max(xs)
+    return m + math.log(sum(math.exp(x - m) for x in xs))
+
+
+def odds(spec: Dict[str, Any], cands: Dict[str, Dict[str, Any]]) -> Dict[str, Optional[float]]:
+    lp = {opt: logsumexp([(cands.get(w) or {}).get("logprob") for w in ws]) for opt, ws in spec["spell"].items()}
+    c, o = lp[spec["con"]], lp[spec["other"]]
+    if c is None or o is None:
+        return {"log_odds": None, "mass": None, f"logp_{spec['con']}": c, f"logp_{spec['other']}": o}
+    return {"log_odds": c - o, "mass": math.exp(c) + math.exp(o), f"logp_{spec['con']}": c, f"logp_{spec['other']}": o}
+
+
+def read(resp: Response, trial: Trial) -> Outcome:
+    spec = QUESTIONS[trial.variant["question"]]
+    text = (resp.text or "").strip()
+    m = WORD.search(text)
+    word = m.group(0) if m else None
+    w = (word or "").lower().rstrip("-'")
+    probe = resp.probe or {}
+    score = probe.get("score")
+    return Outcome(value=float(score) if score is not None else None, extra={
+        "word": word, "label": w if w in spec["spell"] else "other", "answer_text": text,
+        **odds(spec, probe.get("candidates") or {}), "refusal": readers.matches(text, REFUSAL),
+        "probe": probe.get("probe"), "top_k": probe.get("top_k"), "read_at": probe.get("last_prompt_token"),
+        "splice": probe.get("splice")})
 
 
 def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -146,7 +204,7 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(description=f"{TITLE} pilot")
     p.add_argument("phase", nargs="?", default="plan", choices=["plan", "run", "summary"])
-    p.add_argument("--model", default="qwen3_vl", choices=sorted(v1.MODELS))
+    p.add_argument("--model", default="qwen3_vl", choices=sorted(MODELS))
     p.add_argument("--model-path", default=None)
     p.add_argument("--data-dir", default="results/probes")
     p.add_argument("--only", action="append", default=None, help="run only these item ids (repeatable)")
@@ -162,10 +220,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"{TITLE}  [{TASK}]  {len(items)} images {n} x {len(variants())} asks -> {len(items) * len(variants())} trials per model")
         return 0
     if a.phase == "run":
-        spec = dict(v1.MODELS[a.model])
+        spec = dict(MODELS[a.model])
         if a.model_path:
             spec["model_path"] = a.model_path
-        adaptor = ADAPTORS["hf_probe"](probe_prefix=v1.PROBE_PREFIX, probe_type=v1.PROBE_TYPE, top_k=v1.TOP_K,
+        adaptor = ADAPTORS["hf_probe"](probe_prefix=PROBE_PREFIX, probe_type=PROBE_TYPE, top_k=TOP_K,
                                        data_dir=a.data_dir, seed=a.seed, **spec)
         # normal runs first, then shares from small to large, so a partial run already has the curve's start
         items = sorted(load_items(), key=lambda it: (it.data["condition"] != "normal", it.data.get("share", 0)))
