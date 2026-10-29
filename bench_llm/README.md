@@ -15,7 +15,8 @@ summary compares) lives in the task's `pilot.py` and its `.j2` files.
 | `sources.py` | `read_csv`, `dedupe`, `stratify`, `sample_per_stratum`, `read_table`, `to_items`, `resolve`, `file_sha16` |
 | `prompts.py` | `render` a `.j2`, `user_turn`, `conversation` |
 | `readers.py` | `option_probs`, `top_option`, `expected_value`, `log_odds`, `first_mention`, `matches`, `word_count` |
-| `splice.py` | `VisionTap` (read or override a model's image tokens at the encoder output, deepstack included), `splice_plan` and `apply_plan`: splice image tokens between two equally framed images |
+| `splice.py` | `VisionTap` (read or override a model's image tokens at the encoder output, deepstack included), `splice_plan` and `apply_plan`: splice image tokens between two equally framed images; `ranked_cells` picks the cells for a best-token swap |
+| `token_scores.py` | `ImageTokenScorer`: per-image-token probe scores during a trial, by the token scoring script's own functions |
 | `stats.py` | `mean_se`, `spearman`, `pearson`, `corr_se`, `auc` |
 
 Each row of `trials.jsonl` carries the item's data, the variant, the messages sent,
@@ -96,6 +97,12 @@ MODEL=gemma4   sbatch --job-name=face-swap-gemma bench_llm/tasks/face_swap/v1/ru
 runs with P1's background tokens in its background cells, and the mean of P1's background
 tokens where P1's own person sat; against a fill-only check, P2's normal run, and v2's pixel
 composites. 1,240 trials per model.
+
+**`face_swap/v3`**: the best-token swap. The 20 most liberal and 20 most conservative faces
+(by their own token scores), aligned on the face, are paired; a share (2 to 100%) of the cells
+that are person in both takes the other face's tokens, either the ones the donor's own
+image-token probe ranks most extreme (`token_scores.py`) or as many at random. Both
+directions, 2,080 trials per model.
 
 ## Adding a task
 

@@ -28,3 +28,5 @@ runs/
 items/
 conversations/
 judge_cache/
+data/face_swap_v3/frames/
+data/face_swap_v3/masks/

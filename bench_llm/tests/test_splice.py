@@ -44,3 +44,21 @@ def test_the_donor_conversation_only_changes_the_image():
     out = _with_image(conv, "/b.jpg")
     assert out.messages[0]["content"][0]["image"] == "/b.jpg" and out.messages[0]["content"][1]["text"] == "q"
     assert conv.messages[0]["content"][0]["image"] == "/a.jpg"
+
+
+def test_ranked_cells_pick_the_top_share_of_eligible_cells():
+    scores = [0.9, 0.1, 0.5, 0.8, 0.3, 0.7]
+    eligible = [False, True, True, True, True, True]   # cell 0 scores highest but is not eligible
+    assert sp.ranked_cells(scores, eligible, 0.4) == [3, 5]
+    assert sp.ranked_cells(scores, eligible, 0.4, direction=-1) == [1, 4]
+    assert sp.ranked_cells(scores, eligible, 0.01) == [3]          # at least one
+    assert sp.ranked_cells(scores, eligible, 1.0) == [1, 2, 3, 4, 5]
+    r = sp.ranked_cells(scores, eligible, 0.4, how="random", seed=7)
+    assert len(r) == 2 and all(eligible[i] for i in r) and r == sp.ranked_cells(scores, eligible, 0.4, how="random", seed=7)
+    with pytest.raises(ValueError):
+        sp.ranked_cells(scores, eligible, 0)
+
+
+def test_ranked_plan_moves_only_the_chosen_cells():
+    plan = sp.ranked_plan(4, [1, 3])
+    assert [s.kind for s in plan] == ["base", "donor", "base", "donor"] and plan[3].index == 3

@@ -170,7 +170,7 @@ class HFProbe:
                  probe_prefix: str = "textual_ideology", probe_type: str = "headwise_linear",
                  top_k: int = 16, mode: str = "vision", data_dir: str = "results/probes",
                  seed: int = 42, dtype: str = "bfloat16", device_map: str = "auto",
-                 candidates: Sequence[str] = (), **_: Any) -> None:
+                 candidates: Sequence[str] = (), rank_prefix: str = "combined_ideology", **_: Any) -> None:
         if model_family not in HF_LOADERS:
             raise ValueError(f"model_family must be one of {sorted(HF_LOADERS)}")
         if probe_type not in PROBE_CLASSES:
@@ -187,7 +187,9 @@ class HFProbe:
         self.dtype = dtype
         self.device_map = device_map
         self.candidates = tuple(candidates)
+        self.rank_prefix = rank_prefix   # the image-token probe a ranked splice orders cells by
         self._hf = None
+        self._scorer = None
 
     def describe(self) -> Dict[str, Any]:
         out = {"name": self.name, "model": self.model, "model_path": self.model_path,
@@ -274,7 +276,10 @@ class HFProbe:
     def splice(self, trial: Trial, encoded: Dict[str, Any], stack: contextlib.ExitStack) -> Dict[str, Any]:
         """Swap image tokens for the rest of this trial, as ``trial.meta["splice"]`` says:
         ``{"mode": "swap" | "fill_check" | "normal", "donor_image": path, "base_mask": path,
-        "donor_mask": path, "aspect": height / width}``. The trial's own image is the base;
+        "donor_mask": path, "aspect": height / width}``, and for ``"ranked"`` also ``share``, ``how``
+        (top | random), ``direction`` (+1: the donor's most conservative tokens; -1: most liberal) and
+        ``seed``: that share of the cells that are person in both photos moves from the donor, at the
+        same positions. The trial's own image is the base;
         the donor is encoded with the same prompt. See ``bench_llm/splice.py``."""
         import numpy as np
         from PIL import Image
@@ -285,14 +290,39 @@ class HFProbe:
         base = self._tap.capture(encoded)
         donor_trial = Trial(item_id=trial.item_id, conversation=_with_image(trial.conversation, spec["donor_image"]),
                             variant=trial.variant, max_new_tokens=trial.max_new_tokens, meta={})
-        donor = self._tap.capture(self.encode(donor_trial))
+        donor_encoded = self.encode(donor_trial)
+        donor = self._tap.capture(donor_encoded)
         h, w = sp.infer_grid(base.n, float(spec["aspect"]))
         bp = sp.person_cells(np.asarray(Image.open(spec["base_mask"])) > 127, h, w)
         dp = sp.person_cells(np.asarray(Image.open(spec["donor_mask"])) > 127, h, w)
-        plan = sp.splice_plan(bp, dp, spec["mode"])
+        extra: Dict[str, Any] = {}
+        if spec["mode"] == "ranked":
+            scores = self.image_token_scores(donor_encoded)
+            if len(scores) != base.n:
+                raise RuntimeError(f"{len(scores)} scored image tokens, the encoder gave {base.n}")
+            eligible = [a and b for a, b in zip(bp, dp)]
+            cells = sp.ranked_cells(scores, eligible, float(spec["share"]), spec.get("how", "top"),
+                                    int(spec.get("direction", 1)), int(spec.get("seed", 0)))
+            plan = sp.ranked_plan(base.n, cells)
+            extra = {"share": spec["share"], "how": spec.get("how", "top"), "direction": int(spec.get("direction", 1)),
+                     "eligible": sum(eligible), "cells": cells, "rank_probe": self._scorer.probe_id,
+                     "moved_score_mean": float(scores[cells].mean()) if cells else None,
+                     "donor_eligible_score_mean": float(scores[[i for i, e in enumerate(eligible) if e]].mean()) if any(eligible) else None}
+        else:
+            plan = sp.splice_plan(bp, dp, spec["mode"])
         stack.enter_context(self._tap.override(sp.apply_plan(base, donor, plan, bp, dp)))
         return {"mode": spec["mode"], "grid": [h, w], "sources": sp.plan_counts(plan),
-                "deepstack_layers": len(base.deepstack)}
+                "deepstack_layers": len(base.deepstack), **extra}
+
+    def image_token_scores(self, encoded: Dict[str, Any]):
+        """The donor's own per-image-token probe scores (``bench_llm/token_scores.py``), with the
+        ranking probe of the token scoring: combined_ideology_headwise_linear, top 16 heads."""
+        if getattr(self, "_scorer", None) is None:
+            from bench_llm.token_scores import ImageTokenScorer
+            self._scorer = ImageTokenScorer(self._hf["net"], self._hf["processor"], self.model_path,
+                                            self.model_family, prefix=self.rank_prefix, top_k=self.top_k,
+                                            mode=self.mode, data_dir=self.data_dir)
+        return self._scorer.image_scores(encoded)
 
     def continuation_logprob(self, encoded: Dict[str, Any], word: str) -> Dict[str, Any]:
         """log P(word | prompt): the word's tokens appended to the prompt, scored by teacher forcing,

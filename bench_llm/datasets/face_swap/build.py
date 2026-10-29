@@ -23,6 +23,12 @@ explain a difference between cells:
     python -m bench_llm.datasets.face_swap.build build --version v2   # data/face_swap_v2/
     python -m bench_llm.datasets.face_swap.build jsonl --version v2   # data/probes/face_swap_v2_score_data.jsonl
     python -m bench_llm.datasets.face_swap.build frames                # data/face_swap_v2/frames/ and masks/
+    python -m bench_llm.datasets.face_swap.build faces                 # faces.json, data/face_swap_v3/frames/ and masks/
+
+``faces`` picks the 20 people whose own tokens read most liberal and the 20 most conservative and
+aligns each photo on its face (the face box FACE_H tall, centred at FACE_C, grey outside the
+photo), so a cell over one person's eyes lies over another's: what the best-token swap
+(``bench_llm/tasks/face_swap/v3``) needs.
 
 ``frames`` writes the 20 source photos themselves, unedited, in v2's frame, with their person
 masks: what the token-swap task (``bench_llm/tasks/face_swap/v2``) encodes and splices.
@@ -276,6 +282,80 @@ def build_frames(sel: Dict[str, Any], source: Path, out_dir: Path) -> List[Dict[
     return rows
 
 
+# --- v3: aligned faces for the best-token swap -----------------------------------
+FACES_N = 20          # people per end
+FACE_H = 300          # face height (skin, brows, eyes, lips, teeth) in the 600 x 800 frame
+FACE_C = (300, 330)   # where the centre of the face box lands
+FACE_CLASSES = (2, 3, 4, 5, 6, 7, 8)
+GREY = (127, 127, 127)
+# EasyPortrait has several photos of some people; each later photo of someone already picked
+# is left out, so no one is in the set twice (checked by eye on the 100 most liberal and 100
+# most conservative; key: the photo left out, value: the photo of the same person kept)
+SAME_PERSON = {
+    "96108742-3ebd-4e08-8ddd-85c9fdad040c": "9f4340db-a42e-40d8-8710-531fc69a0855",
+    "8401f416-8bf2-46a0-971c-f6197e08d348": "57ff3342-a80e-45a5-a33a-47256b0fbd22",
+    "0899b3b1-991e-4e3c-bb44-9c7f35ea4372": "57ff3342-a80e-45a5-a33a-47256b0fbd22",
+    "1939480e-0cd9-48fe-b152-83749ad25a35": "57ff3342-a80e-45a5-a33a-47256b0fbd22",
+    "c8cf850e-d04d-46fc-9971-38121158b58d": "a1caa0ee-0d46-47f8-a6a8-e35d1bed7c8e",
+    "dbdb5f4e-5f5d-40fb-9534-06bab59a22af": "a1caa0ee-0d46-47f8-a6a8-e35d1bed7c8e",
+    "4128c020-c053-4944-ad19-197efb5a031e": "5495a00e-b937-4f6a-95d3-c330454fad88",
+}
+
+
+def select_faces(csv_path: Path, index_path: Path, n: int = FACES_N) -> Dict[str, Any]:
+    """The n people whose own tokens read most liberal and the n most conservative."""
+    rows = [r for r in csv.DictReader(open(csv_path, encoding="utf-8")) if usable(r)]
+    where = {}
+    for line in open(index_path, encoding="utf-8"):
+        d = json.loads(line)
+        where[d["id"]] = d["image_path"]
+    rows = sorted((r for r in rows if r["record_id"] in where and Path(where[r["record_id"]]).stem not in EXCLUDE
+                   and Path(where[r["record_id"]]).stem not in SAME_PERSON),
+                  key=lambda r: float(r["image_fg_mean"]))
+    pick = lambda seq, side: [{"record_id": r["record_id"], "uuid": Path(where[r["record_id"]]).stem,  # noqa: E731
+                               "split": Path(where[r["record_id"]]).parts[-2], "side": side,
+                               "fg_mean": float(r["image_fg_mean"])} for r in seq[:n]]
+    return {"csv": CSV, "probe": "qwen3_vl combined_ideology_headwise_linear, mean over the person's own tokens",
+            "pool": len(rows), "liberal": pick(rows, "liberal"), "conservative": pick(rows[::-1], "conservative")}
+
+
+def align_face(source: Path, item: Dict[str, Any]):
+    """The photo scaled so its face box is FACE_H tall and centred on FACE_C in the 600 x 800
+    frame; outside the photo is grey. Returns the image and its person mask."""
+    import cv2
+    img = cv2.imread(str(source / "images" / item["split"] / f"{item['uuid']}.jpg"), cv2.IMREAD_COLOR)
+    ann = cv2.imread(str(source / "annotations" / item["split"] / f"{item['uuid']}.png"), cv2.IMREAD_GRAYSCALE)
+    if img is None or ann is None:
+        raise FileNotFoundError(f"missing photo or mask for {item['uuid']} under {source}")
+    if ann.shape != img.shape[:2]:
+        ann = cv2.resize(ann, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+    face = np.isin(ann, FACE_CLASSES)
+    if not face.any():
+        raise ValueError(f"no face in the mask of {item['uuid']}")
+    x0, y0, x1, y1 = bbox(face)
+    s = FACE_H / (y1 - y0)
+    M = np.float32([[s, 0, FACE_C[0] - s * (x0 + x1) / 2], [0, s, FACE_C[1] - s * (y0 + y1) / 2]])
+    out = cv2.warpAffine(img, M, FRAME, flags=cv2.INTER_AREA if s < 1 else cv2.INTER_CUBIC,
+                         borderMode=cv2.BORDER_CONSTANT, borderValue=GREY)
+    mask = cv2.warpAffine((ann > 0).astype(np.uint8), M, FRAME, flags=cv2.INTER_NEAREST, borderValue=0) > 0
+    return out, mask
+
+
+def build_faces(sel: Dict[str, Any], source: Path, out_dir: Path) -> List[Dict[str, Any]]:
+    """The selected faces, aligned, with their person masks (0 or 255)."""
+    import cv2
+    (out_dir / "frames").mkdir(parents=True, exist_ok=True)
+    (out_dir / "masks").mkdir(parents=True, exist_ok=True)
+    rows = []
+    for side in ("liberal", "conservative"):
+        for it in sel[side]:
+            img, mask = align_face(source, it)
+            cv2.imwrite(str(out_dir / "frames" / f"{it['uuid']}.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            cv2.imwrite(str(out_dir / "masks" / f"{it['uuid']}.png"), mask.astype(np.uint8) * 255)
+            rows.append({"uuid": it["uuid"], "side": side, "person_share": round(float(mask.mean()), 3)})
+    return rows
+
+
 def portrait_prompt() -> str:
     """The prompt EasyPortrait was scored with, read from the script that wrote its JSONL."""
     import importlib.util
@@ -303,7 +383,7 @@ def write_jsonl(out_dir: Path, path: Path, source_name: str = "face_swap") -> in
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="build the face_swap composites")
-    ap.add_argument("phase", choices=["select", "build", "jsonl", "frames"])
+    ap.add_argument("phase", choices=["select", "build", "jsonl", "frames", "faces"])
     ap.add_argument("--csv", default=str(ROOT / CSV))
     ap.add_argument("--index", default=str(ROOT / INDEX))
     ap.add_argument("--source", default=str(ROOT / SOURCE))
@@ -323,6 +403,15 @@ def main(argv=None) -> int:
     if a.phase == "jsonl":
         path = ROOT / "data" / "probes" / f"{name}_score_data.jsonl"
         print(f"{write_jsonl(out, path, name)} records -> {path}")
+        return 0
+    if a.phase == "faces":
+        sel = select_faces(Path(a.csv), Path(a.index))
+        (HERE / "faces.json").write_text(json.dumps(sel, indent=1) + "\n", encoding="utf-8")
+        out = Path(a.out) if a.out else ROOT / "data" / "face_swap_v3"
+        rows = build_faces(sel, Path(a.source), out)
+        for side in ("liberal", "conservative"):
+            print(f"{side:<14}" + "  ".join(f"{it['fg_mean']:+.2f}" for it in sel[side]))
+        print(f"pool {sel['pool']}; {len(rows)} aligned faces -> {out / 'frames'}, masks in {out / 'masks'}")
         return 0
     sel = json.loads((HERE / "selection.json").read_text(encoding="utf-8"))
     if a.phase == "frames":

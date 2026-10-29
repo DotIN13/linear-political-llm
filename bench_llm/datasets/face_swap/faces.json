@@ -1,0 +1,289 @@
+{
+ "csv": "results/token_scoring/qwen3_vl/easyportrait/prompt_token_fg_bg_stats_combined_ideology_headwise_linear.csv",
+ "probe": "qwen3_vl combined_ideology_headwise_linear, mean over the person's own tokens",
+ "pool": 14008,
+ "liberal": [
+  {
+   "record_id": "easyportrait_003168",
+   "uuid": "c9bdd749-c79d-40db-b524-d1b99ca938f7",
+   "split": "test",
+   "side": "liberal",
+   "fg_mean": -0.5139209628105164
+  },
+  {
+   "record_id": "easyportrait_012568",
+   "uuid": "9f4340db-a42e-40d8-8710-531fc69a0855",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.44730374217033386
+  },
+  {
+   "record_id": "easyportrait_006397",
+   "uuid": "2ca474f4-9fd5-497a-808b-0d70cdff1b74",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.4390873312950134
+  },
+  {
+   "record_id": "easyportrait_011267",
+   "uuid": "86fca7b4-f125-4518-ae1d-d8fbb165c244",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.42339181900024414
+  },
+  {
+   "record_id": "easyportrait_001403",
+   "uuid": "57ff3342-a80e-45a5-a33a-47256b0fbd22",
+   "split": "test",
+   "side": "liberal",
+   "fg_mean": -0.41747668385505676
+  },
+  {
+   "record_id": "easyportrait_010492",
+   "uuid": "79423d13-8e1c-4451-9992-d8881af43026",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.4138505160808563
+  },
+  {
+   "record_id": "easyportrait_012639",
+   "uuid": "a0c3d921-0c1d-41c0-bafd-d3328737d08a",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.4001164436340332
+  },
+  {
+   "record_id": "easyportrait_010424",
+   "uuid": "780b103b-74b4-4a9d-9723-25333895c6c3",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.37166929244995117
+  },
+  {
+   "record_id": "easyportrait_012613",
+   "uuid": "a03bb04f-97eb-42af-ba77-79311acaaab6",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.37153398990631104
+  },
+  {
+   "record_id": "easyportrait_001344",
+   "uuid": "5495a00e-b937-4f6a-95d3-c330454fad88",
+   "split": "test",
+   "side": "liberal",
+   "fg_mean": -0.36822524666786194
+  },
+  {
+   "record_id": "easyportrait_014748",
+   "uuid": "c617fa3b-ba57-4bb2-9a25-7e66d25179a8",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.3588179349899292
+  },
+  {
+   "record_id": "easyportrait_011926",
+   "uuid": "925ed481-a114-4a34-9c7f-068be4390c99",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.34862926602363586
+  },
+  {
+   "record_id": "easyportrait_015367",
+   "uuid": "d0dbf64b-bdac-4417-a3fc-f4c5391d88a3",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.34516870975494385
+  },
+  {
+   "record_id": "easyportrait_002513",
+   "uuid": "a1caa0ee-0d46-47f8-a6a8-e35d1bed7c8e",
+   "split": "test",
+   "side": "liberal",
+   "fg_mean": -0.3434852063655853
+  },
+  {
+   "record_id": "easyportrait_012498",
+   "uuid": "9de97ded-9b58-4997-98ec-2008ba9aa5eb",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.34146541357040405
+  },
+  {
+   "record_id": "easyportrait_006043",
+   "uuid": "25b94411-4df6-4825-a808-ff72331d574b",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.3329724371433258
+  },
+  {
+   "record_id": "easyportrait_016838",
+   "uuid": "eb014bf1-25be-4405-87e5-0d05c5223c1c",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.3323712646961212
+  },
+  {
+   "record_id": "easyportrait_016430",
+   "uuid": "e35bda23-f37d-4e7f-af69-6402b93d3bea",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.32985547184944153
+  },
+  {
+   "record_id": "easyportrait_016333",
+   "uuid": "e19d534a-2154-4350-a56a-b91772fa1aab",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.3295869529247284
+  },
+  {
+   "record_id": "easyportrait_017947",
+   "uuid": "ff280bd0-12d3-4ed8-bb12-876bb80a5220",
+   "split": "train",
+   "side": "liberal",
+   "fg_mean": -0.327735960483551
+  }
+ ],
+ "conservative": [
+  {
+   "record_id": "easyportrait_016645",
+   "uuid": "e78d98a0-95a2-4eb2-b144-3c5ea0be57bf",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.8913571238517761
+  },
+  {
+   "record_id": "easyportrait_012355",
+   "uuid": "9ab309b2-d240-4adc-b7d6-4d9c68cc5eef",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.8552300930023193
+  },
+  {
+   "record_id": "easyportrait_004801",
+   "uuid": "0ead3890-88b5-4d4a-8cc4-60ea7557cbf3",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.8140685558319092
+  },
+  {
+   "record_id": "easyportrait_000913",
+   "uuid": "382af466-0d46-4fa5-8737-cfd3d9c7b3f0",
+   "split": "test",
+   "side": "conservative",
+   "fg_mean": 0.8084073662757874
+  },
+  {
+   "record_id": "easyportrait_009362",
+   "uuid": "63de9a40-d14a-4aab-a66a-aac8bd1f7fbe",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.801090657711029
+  },
+  {
+   "record_id": "easyportrait_010200",
+   "uuid": "73d903cf-5db0-4949-a70a-752e55fe6800",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.7916934490203857
+  },
+  {
+   "record_id": "easyportrait_004106",
+   "uuid": "02287a05-e2f3-4e79-99fa-17ac8d51ad95",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.7675485610961914
+  },
+  {
+   "record_id": "easyportrait_008126",
+   "uuid": "4ca565fc-5330-4dee-8ccd-e6a76a6ba051",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.761108934879303
+  },
+  {
+   "record_id": "easyportrait_014480",
+   "uuid": "c17176e0-2c77-46e9-9f69-86f8f7ea6649",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.7609231472015381
+  },
+  {
+   "record_id": "easyportrait_011268",
+   "uuid": "86fea729-e7f8-44d4-bc85-09981e3e9fd5",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.7562978863716125
+  },
+  {
+   "record_id": "easyportrait_003479",
+   "uuid": "df78e856-e59c-4bb8-8209-4710fd4c5354",
+   "split": "test",
+   "side": "conservative",
+   "fg_mean": 0.7555200457572937
+  },
+  {
+   "record_id": "easyportrait_012537",
+   "uuid": "9e936bc9-921b-4c16-b8e3-9cdc9910d01c",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.7491424083709717
+  },
+  {
+   "record_id": "easyportrait_002381",
+   "uuid": "9a4485ef-07d6-4f43-9ae5-2a546b2dfceb",
+   "split": "test",
+   "side": "conservative",
+   "fg_mean": 0.7470524907112122
+  },
+  {
+   "record_id": "easyportrait_010952",
+   "uuid": "813b612f-4ecb-4721-b742-478445cbb595",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.7409923672676086
+  },
+  {
+   "record_id": "easyportrait_004340",
+   "uuid": "0639cefa-6531-48ae-aed2-2305639fd578",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.7360290884971619
+  },
+  {
+   "record_id": "easyportrait_015087",
+   "uuid": "cbf196cd-ffd0-454e-8540-c6398b85e32e",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.7299883365631104
+  },
+  {
+   "record_id": "easyportrait_015194",
+   "uuid": "cdd83ac6-6e1d-413e-b97d-16967543d790",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.7291333675384521
+  },
+  {
+   "record_id": "easyportrait_003535",
+   "uuid": "e3c62c9c-22b9-42c6-a5df-55d9e4c5cb9f",
+   "split": "test",
+   "side": "conservative",
+   "fg_mean": 0.7281175851821899
+  },
+  {
+   "record_id": "easyportrait_007124",
+   "uuid": "39d0653c-3680-4370-a970-433aece79f13",
+   "split": "train",
+   "side": "conservative",
+   "fg_mean": 0.7268178462982178
+  },
+  {
+   "record_id": "easyportrait_003967",
+   "uuid": "fd780403-187a-43a0-8935-509b91c01b9a",
+   "split": "test",
+   "side": "conservative",
+   "fg_mean": 0.723038375377655
+  }
+ ]
+}

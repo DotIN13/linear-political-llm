@@ -17,6 +17,8 @@ The pieces, from the model outwards:
   person mask of the image.
 * ``splice_plan`` -- pure Python: for each token, where it comes from (the base image, the
   donor image, or the mean of one image's background tokens). Tested without a GPU.
+* ``ranked_cells`` / ``ranked_plan`` -- the best-token swap: a share of the cells, picked by a
+  per-token score (or at random, as its control), moved from the donor at the same positions.
 * ``apply_plan`` -- builds the spliced tokens from two captures and a plan.
 
 Two images can only be spliced if their grids match, so both should be framed to the same
@@ -116,6 +118,37 @@ def splice_plan(base_person: Sequence[bool], donor_person: Sequence[bool], mode:
         else:  # fill_check
             plan.append(Source("base", i) if not dp else Source("base_mean"))
     return plan
+
+
+HOWS = ("top", "random")
+
+
+def ranked_cells(scores: Sequence[float], eligible: Sequence[bool], share: float, how: str = "top",
+                 direction: int = 1, seed: int = 0) -> List[int]:
+    """The cells to move: ``share`` of the eligible cells (at least one), either the ones whose
+    ``scores`` are highest (``direction`` +1) or lowest (-1), or as many chosen at random.
+    Ties keep raster order, so the choice is the same on every run."""
+    if how not in HOWS:
+        raise ValueError(f"how must be one of {HOWS}")
+    if len(scores) != len(eligible):
+        raise ValueError("scores and eligible cells differ in length")
+    if not 0 < share <= 1:
+        raise ValueError("share must be in (0, 1]")
+    pool = [i for i, e in enumerate(eligible) if e]
+    k = max(1, round(share * len(pool))) if pool else 0
+    if how == "top":
+        chosen = sorted(pool, key=lambda i: (-direction * float(scores[i]), i))[:k]
+    else:
+        import random
+        chosen = random.Random(seed).sample(pool, k)
+    return sorted(chosen)
+
+
+def ranked_plan(n: int, cells: Sequence[int]) -> List[Source]:
+    """Every token from the base image, except ``cells``, which take the donor's token at the
+    same cell."""
+    moved = set(cells)
+    return [Source("donor", i) if i in moved else Source("base", i) for i in range(n)]
 
 
 def plan_counts(plan: Sequence[Source]) -> Dict[str, int]:
