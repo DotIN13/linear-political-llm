@@ -58,8 +58,7 @@ DIRECTIONS = {"c2l": ("liberal", "conservative", 1), "l2c": ("conservative", "li
 CONDITIONS = ("normal", "top", "random")
 
 
-def load_items(root: Optional[str] = None, region: str = "person") -> List[Item]:
-    """``region``: the cells that can move, "person" (person in both photos) or "all"."""
+def load_items(root: Optional[str] = None) -> List[Item]:
     sel = json.loads(FACES.read_text(encoding="utf-8"))
     frame = lambda u: sources.resolve(f"{DATA}/frames/{u}.jpg", root)  # noqa: E731
     mask = lambda u: sources.resolve(f"{DATA}/masks/{u}.png", root)    # noqa: E731
@@ -81,8 +80,7 @@ def load_items(root: Optional[str] = None, region: str = "person") -> List[Item]
                         "donor": o["uuid"], "donor_side": donor_side, "donor_score": round(o["fg_mean"], 4),
                         "splice": {"mode": "ranked", "donor_image": frame(o["uuid"]), "base_mask": mask(b["uuid"]),
                                    "donor_mask": mask(o["uuid"]), "aspect": ASPECT, "share": share, "how": how,
-                                   "direction": direction, "seed": 1000 * i + round(share * 100),
-                                   **({} if region == "person" else {"region": region})}}))
+                                   "direction": direction, "seed": 1000 * i + round(share * 100)}}))
     return items
 
 
@@ -128,10 +126,8 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     return report
 
 
-def main(argv: Optional[List[str]] = None, task: str = TASK, title: str = TITLE,
-         out_dir: Path = OUT_DIR, region: str = "person") -> int:
-    """The command line; v4 calls it with its own name, folder and region."""
-    p = argparse.ArgumentParser(description=f"{title} pilot")
+def main(argv: Optional[List[str]] = None) -> int:
+    p = argparse.ArgumentParser(description=f"{TITLE} pilot")
     p.add_argument("phase", nargs="?", default="plan", choices=["plan", "run", "summary"])
     p.add_argument("--model", default="qwen3_vl", choices=sorted(v1.MODELS))
     p.add_argument("--model-path", default=None)
@@ -142,11 +138,11 @@ def main(argv: Optional[List[str]] = None, task: str = TASK, title: str = TITLE,
     p.add_argument("--out", default=None)
     p.add_argument("--runs", action="append", default=None)
     a = p.parse_args(argv)
-    run_dir = Path(a.out) if a.out else out_dir / a.model
+    run_dir = Path(a.out) if a.out else OUT_DIR / a.model
     if a.phase == "plan":
-        items = load_items(region=region)
+        items = load_items()
         n = {c: sum(1 for it in items if it.data["condition"] == c) for c in CONDITIONS}
-        print(f"{title}  [{task}]  {len(items)} images {n} x {len(variants())} asks -> {len(items) * len(variants())} trials per model")
+        print(f"{TITLE}  [{TASK}]  {len(items)} images {n} x {len(variants())} asks -> {len(items) * len(variants())} trials per model")
         return 0
     if a.phase == "run":
         spec = dict(v1.MODELS[a.model])
@@ -155,10 +151,10 @@ def main(argv: Optional[List[str]] = None, task: str = TASK, title: str = TITLE,
         adaptor = ADAPTORS["hf_probe"](probe_prefix=v1.PROBE_PREFIX, probe_type=v1.PROBE_TYPE, top_k=v1.TOP_K,
                                        data_dir=a.data_dir, seed=a.seed, **spec)
         # normal runs first, then shares from small to large, so a partial run already has the curve's start
-        items = sorted(load_items(region=region), key=lambda it: (it.data["condition"] != "normal", it.data.get("share", 0)))
+        items = sorted(load_items(), key=lambda it: (it.data["condition"] != "normal", it.data.get("share", 0)))
         if a.only:
             items = [it for it in items if it.item_id in set(a.only)]
-        runner.run_cells(task=task, cells=runner.cells(variants(), items), build=build, read=read,
+        runner.run_cells(task=TASK, cells=runner.cells(variants(), items), build=build, read=read,
                          adaptor=adaptor, out_dir=run_dir, workers=1, limit=a.limit)
         rows = runner.read_trials([run_dir])
         (run_dir / "summary.json").write_text(json.dumps(summarize(rows), indent=1) + "\n", encoding="utf-8")
